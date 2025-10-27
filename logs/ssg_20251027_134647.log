@@ -1,0 +1,12 @@
+2025-10-27 13:46:47,953 - INFO - Logging to: logs\ssg_20251027_134647.log
+2025-10-27 13:46:51,591 - INFO - Selected airport: KPHX
+2025-10-27 13:46:51,591 - INFO - Loading GeoJSON data...
+2025-10-27 13:46:51,593 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 13:46:53,429 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 13:46:53,429 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 13:46:53,429 - INFO - GeoJSON data loaded successfully
+2025-10-27 13:46:53,429 - INFO - Loading CIFP data...
+2025-10-27 13:46:53,691 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 13:46:53,692 - INFO - Found 11 arrival procedures
+2025-10-27 13:46:53,692 - INFO - CIFP data loaded successfully
+2025-10-27 13:46:57,726 - INFO - Selected scenario type: tower_mixed

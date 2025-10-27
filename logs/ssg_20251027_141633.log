@@ -1,0 +1,61 @@
+2025-10-27 14:16:33,820 - INFO - Logging to: logs\ssg_20251027_141633.log
+2025-10-27 14:16:38,914 - INFO - Selected airport: KPHX
+2025-10-27 14:16:38,914 - INFO - Loading GeoJSON data...
+2025-10-27 14:16:38,916 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 14:16:39,679 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 14:16:39,680 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 14:16:39,680 - INFO - GeoJSON data loaded successfully
+2025-10-27 14:16:39,680 - INFO - Loading CIFP data...
+2025-10-27 14:16:39,946 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 14:16:39,946 - INFO - Found 11 arrival procedures
+2025-10-27 14:16:39,946 - INFO - Found 0 approach FAF altitudes
+2025-10-27 14:16:39,947 - INFO - CIFP data loaded successfully
+2025-10-27 14:16:47,505 - INFO - Selected scenario type: tower_mixed
+2025-10-27 14:16:56,102 - INFO - Loaded configuration from config.json
+2025-10-27 14:16:56,103 - INFO - Generating Tower scenario: 15 departures, 15 arrivals
+2025-10-27 14:16:56,550 - INFO - Fetched flight plan KPHX -> KMIA: {'route': 'ECLPS1 PHASE LINZY KH06Y KEMPL SAT PSX HOODO LEV Q102 BLVNS Y290 GAWKS FROGZ4', 'altitude': '35000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL2654'}
+2025-10-27 14:16:56,859 - INFO - Fetched flight plan KPHX -> KIAH: {'route': 'ECLPS1 PHASE ELP Q4 FUSCO DIESL GUSHR3', 'altitude': '35000', 'aircraft_type': 'B739/L', 'callsign': 'UAL636'}
+2025-10-27 14:16:57,313 - INFO - Fetched flight plan KPHX -> KCMH: {'route': 'FORPE1 ABQ FTI KA36W KK42A KK45C TYGER HLV VHP JADUB DUBLN1', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA3761'}
+2025-10-27 14:16:57,314 - WARNING - Parking spot C8 is already in use, skipping
+2025-10-27 14:16:57,754 - INFO - Fetched flight plan KPHX -> KBOS: {'route': 'SJN9 ABQ', 'altitude': '35000', 'aircraft_type': 'H25B/L', 'callsign': 'LN125XP'}
+2025-10-27 14:16:58,058 - INFO - Fetched flight plan KPHX -> KSFO: {'route': 'KEENS3 HRRBR CURIV J212 DECAS PMD COREZ MAKRS SERFR SERFR4', 'altitude': '34000', 'aircraft_type': 'B738/L', 'callsign': 'AAL1756'}
+2025-10-27 14:16:58,382 - INFO - Fetched flight plan KPHX -> KEWR: {'route': 'FORPE1 ABQ FTI WRIGL KK48E BUM SPI WWODD RINTE KLYNE Q29 WWSHR DORET J584 SLT FQM3', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'UAL1863'}
+2025-10-27 14:16:58,701 - INFO - Fetched flight plan KPHX -> KMSP: {'route': 'MRBIL1 JARPA RSK DAAYE BRK ONL ERICX TORGY3', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'AAL408'}
+2025-10-27 14:16:59,046 - INFO - Fetched flight plan KPHX -> KONT: {'route': 'KEENS3 HRRBR PHRED SCBBY2', 'altitude': '24000', 'aircraft_type': 'B738/L', 'callsign': 'SWA4220'}
+2025-10-27 14:16:59,363 - INFO - Fetched flight plan KPHX -> KTPA: {'route': 'ECLPS1 PHASE EWM J4 INK ACT MCB GCV DEFUN MAATY5', 'altitude': '37000', 'aircraft_type': 'B38M/Z', 'callsign': 'SWA1448'}
+2025-10-27 14:16:59,673 - INFO - Fetched flight plan KPHX -> KPDX: {'route': 'ZEPER2 RRSTA DOVEE BTY J92 LMT OCITY3', 'altitude': '35000', 'aircraft_type': 'B39M/L', 'callsign': 'ASA662'}
+2025-10-27 14:16:59,972 - INFO - Fetched flight plan KPHX -> KSAN: {'route': 'FYRBD1 MOHAK J18 HOGGZ LUCKI1', 'altitude': '10000', 'aircraft_type': 'B39M/L', 'callsign': 'ASA1271'}
+2025-10-27 14:17:00,266 - INFO - Fetched flight plan KPHX -> KPBI: {'route': 'ECLPS1 PHASE ELP FST J2 JCT J86 LEV Q100 REMIS GAWKS VUUDU1', 'altitude': '35000', 'aircraft_type': 'GL5T/L', 'callsign': 'N50VC'}
+2025-10-27 14:17:00,572 - INFO - Fetched flight plan KPHX -> KSTL: {'route': 'FORPE1 ABQ FTI KA36W ICT J134 ROKNE BUM KAYLA3', 'altitude': '11000', 'aircraft_type': 'B738/L', 'callsign': 'AAL2303'}
+2025-10-27 14:17:00,573 - WARNING - Parking spot GA1 is already in use, skipping
+2025-10-27 14:17:00,915 - INFO - Fetched flight plan KSAN -> KPHX: {'route': 'ZZOOO4 HOGGZ HYDRR1', 'altitude': '25000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL2057'}
+2025-10-27 14:17:00,916 - INFO - Creating arrival: AAL2057 at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:01,210 - INFO - Fetched flight plan KDCA -> KPHX: {'route': 'REBLL5 OTTTO Q176 GBEES J134 MOSEY ELIOE KI51M SLVER SGF PER MMB MIRME CURLY ZUN EAGUL6', 'altitude': '26000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL1218'}
+2025-10-27 14:17:01,211 - INFO - Creating arrival: AAL1218 at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:01,211 - INFO - Creating arrival: FFT1920 at 11.0 NM, alt 4435 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:01,541 - INFO - Fetched flight plan KBUR -> KPHX: {'route': 'SLAPP2 HEC PRFUM WOTRO BRUSR1', 'altitude': '23000', 'aircraft_type': 'A319/L', 'callsign': 'AAL2379'}
+2025-10-27 14:17:01,542 - INFO - Creating arrival: AAL2379 at 10.0 NM, alt 4135 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:01,858 - INFO - Fetched flight plan KMIA -> KPHX: {'route': 'BNGOS4 DOLIE Y280 LEV JEPEG TNV DILLO FUSCO LINZY J50 ALIBY DRRVR PINNG1', 'altitude': '35000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL1454'}
+2025-10-27 14:17:01,859 - INFO - Creating arrival: AAL1454 at 16.0 NM, alt 5935 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:02,195 - INFO - Fetched flight plan KORD -> KPHX: {'route': 'PEKUE PIGGG QUANE CARET ROEZZ STJ GCK KK45Y ESPAN ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'A321/L', 'callsign': 'AAL3137'}
+2025-10-27 14:17:02,196 - INFO - Creating arrival: AAL3137 at 16.0 NM, alt 5935 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:02,559 - INFO - Fetched flight plan KDEN -> KPHX: {'route': 'SMMUR2 DAAYE GUP EAGUL6', 'altitude': '36000', 'aircraft_type': 'A21N/L', 'callsign': 'UAL1686'}
+2025-10-27 14:17:02,560 - INFO - Creating arrival: UAL1686 at 24.0 NM, alt 8335 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:03,009 - INFO - Fetched flight plan KCLE -> KPHX: {'route': 'GTLKE4 YABRO IOW KP60C OATHE GOSIP ROSEI GUP EAGUL6', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA2100'}
+2025-10-27 14:17:03,010 - INFO - Creating arrival: SWA2100 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:03,460 - INFO - Fetched flight plan KMDW -> KPHX: {'route': 'PEKUE PIPPN ELYNA BACNN STJ J18 GCK J96 CIM ZUN EAGUL6', 'altitude': '38000', 'aircraft_type': 'B737/L', 'callsign': 'SWA528'}
+2025-10-27 14:17:03,460 - INFO - Creating arrival: SWA528 at 26.0 NM, alt 8935 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:03,771 - INFO - Fetched flight plan KABQ -> KPHX: {'route': 'RDRNR3 ZUN EAGUL6', 'altitude': '28000', 'aircraft_type': 'CRJ7/G', 'callsign': 'SKW6395'}
+2025-10-27 14:17:03,772 - INFO - Creating arrival: SKW6395 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:03,772 - INFO - Creating arrival: SWA3083 at 21.0 NM, alt 7435 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:03,773 - INFO - Creating arrival: UPS8454 at 21.0 NM, alt 7435 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:04,059 - INFO - Fetched flight plan KPBI -> KPHX: {'route': 'OLAKE2 JAYMC Y280 LEV J86 ELP DRRVR PINNG1', 'altitude': '35000', 'aircraft_type': 'E550/L', 'callsign': 'LXJ600'}
+2025-10-27 14:17:04,060 - INFO - Creating arrival: LXJ600 at 36.0 NM, alt 11935 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:04,345 - INFO - Fetched flight plan KBDL -> KPHX: {'route': 'VEERS PWL BASYE Q406 BWZ J6 HVQ Q68 RAMRD ARG FSM IRW PNH J6 ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'HA4T/L', 'callsign': 'TFF910'}
+2025-10-27 14:17:04,345 - INFO - Creating arrival: TFF910 at 30.0 NM, alt 10135 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:04,669 - INFO - Fetched flight plan KTPA -> KPHX: {'route': 'DORMR3 FROOT ROZZI Y280 REDFN PEKON DBOYS MARCS CSI KOBLE ELP DRRVR PINNG1', 'altitude': '30000', 'aircraft_type': 'A321/L', 'callsign': 'AAL1402'}
+2025-10-27 14:17:04,670 - INFO - Creating arrival: AAL1402 at 34.0 NM, alt 11335 ft, hdg 270°, spd 140 kts
+2025-10-27 14:17:04,670 - INFO - Generated 30 total aircraft (2 GA)
+2025-10-27 14:17:04,671 - INFO - Generated .air file with 30 aircraft at KPHX_scenario.air
+2025-10-27 14:17:04,671 - INFO - Successfully generated 30 aircraft
+2025-10-27 14:17:04,671 - INFO - Saved to: KPHX_scenario.air

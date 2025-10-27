@@ -1,0 +1,43 @@
+2025-10-27 13:23:38,189 - INFO - Logging to: logs\ssg_20251027_132338.log
+2025-10-27 13:23:42,025 - INFO - Selected airport: KPHX
+2025-10-27 13:23:42,025 - INFO - Loading GeoJSON data...
+2025-10-27 13:23:42,027 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 13:23:43,972 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 13:23:43,973 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 13:23:43,973 - INFO - GeoJSON data loaded successfully
+2025-10-27 13:23:43,973 - INFO - Loading CIFP data...
+2025-10-27 13:23:44,234 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 13:23:44,234 - INFO - Found 11 arrival procedures
+2025-10-27 13:23:44,235 - INFO - CIFP data loaded successfully
+2025-10-27 13:24:23,315 - INFO - Selected scenario type: tower_mixed
+2025-10-27 13:24:52,060 - INFO - Loaded configuration from config.json
+2025-10-27 13:24:52,061 - INFO - Generating Tower scenario: 20 departures, 20 arrivals
+2025-10-27 13:24:52,661 - INFO - Fetched flight plan KPHX -> KSEA: {'route': 'QUAKY1 GCN WINEN NEERO KOATA PDT CHINS5', 'altitude': '35000', 'aircraft_type': 'B39M/L', 'callsign': 'ASA1006'}
+2025-10-27 13:24:53,117 - INFO - Fetched flight plan KPHX -> KBOS: {'route': 'KBOS', 'altitude': '35000', 'aircraft_type': 'H25B/L', 'callsign': 'LN125XP'}
+2025-10-27 13:24:53,586 - INFO - Fetched flight plan KPHX -> KSAN: {'route': 'FYRBD1 MOHAK J2 HOGGZ LUCKI1', 'altitude': '24000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA1776'}
+2025-10-27 13:24:54,022 - INFO - Fetched flight plan KPHX -> KPDX: {'route': 'ZEPER2 RRSTA DOVEE BTY RYANN WNDEL LMT MOXEE TMBRS3', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'ASA1348'}
+2025-10-27 13:24:54,337 - INFO - Fetched flight plan KPHX -> KABQ: {'route': 'FORPE1 SJN TMALE BRRTO1', 'altitude': '31000', 'aircraft_type': 'A321/L', 'callsign': 'AAL3038'}
+2025-10-27 13:24:54,628 - INFO - Fetched flight plan KPHX -> KPVD: {'route': 'FORPE1 ABQ J18 GCK J96 PIA PNT FWA DJB YTOWN SLT HNK WIPOR3', 'altitude': '35000', 'aircraft_type': 'LJ60/L', 'callsign': 'N79SC'}
+2025-10-27 13:24:55,132 - INFO - Fetched flight plan KPHX -> KLAS: {'route': 'ZEPER2 RRSTA ELLDA RKSTR4', 'altitude': '10000', 'aircraft_type': 'B737/L', 'callsign': 'SWA3367'}
+2025-10-27 13:24:55,459 - INFO - Fetched flight plan KPHX -> KMDW: {'route': 'FORPE1 ABQ CELAV KENTO KK51C IRK ENDEE8', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA5679'}
+2025-10-27 13:24:55,871 - INFO - Fetched flight plan KPHX -> KMKE: {'route': 'MRBIL1 JARPA RSK LAA STL LEEDN GOPAC3', 'altitude': '35000', 'aircraft_type': 'A319/L', 'callsign': 'AAL2708'}
+2025-10-27 13:24:58,105 - INFO - Fetched flight plan KPHX -> KORD: {'route': 'FORPE1 ABQ GCK J18 SLN J96 IRK SHAIN2', 'altitude': '29000', 'aircraft_type': 'B39M/L', 'callsign': 'UAL1399'}
+2025-10-27 13:24:58,668 - INFO - Fetched flight plan KPHX -> KOAK: {'route': 'ZEPER2 RRSTA DOVEE BTY RUSME OAKES3', 'altitude': '32000', 'aircraft_type': 'B738/L', 'callsign': 'SWA8501'}
+2025-10-27 13:24:59,095 - INFO - Fetched flight plan KPHX -> KTPA: {'route': 'ECLPS1 PHASE ELP SAT PALMS PSX SBIRD BOWFN REDFN Y280 CHRGE RAYZZ3', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'AAL1837'}
+2025-10-27 13:24:59,096 - ERROR - Attempted to reuse parking spot: GA1
+2025-10-27 13:24:59,096 - ERROR - Error generating scenario
+Traceback (most recent call last):
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\gui\main_window.py", line 218, in _do_generation
+    aircraft = self._generate_aircraft(
+        scenario,
+    ...<6 lines>...
+        arrival_waypoints
+    )
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\gui\main_window.py", line 293, in _generate_aircraft
+    return scenario.generate(num_departures, num_arrivals, active_runways, separation_range)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\scenarios\tower_mixed.py", line 63, in generate
+    aircraft = self._create_ga_aircraft(spot)
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\scenarios\base_scenario.py", line 319, in _create_ga_aircraft
+    raise ValueError(f"Parking spot {parking_spot.name} is already in use!")
+ValueError: Parking spot GA1 is already in use!

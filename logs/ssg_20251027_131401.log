@@ -1,0 +1,34 @@
+2025-10-27 13:14:01,682 - INFO - Logging to: logs\ssg_20251027_131401.log
+2025-10-27 13:14:05,468 - INFO - Selected airport: KPHX
+2025-10-27 13:14:05,469 - INFO - Loading GeoJSON data...
+2025-10-27 13:14:05,470 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 13:14:07,599 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 13:14:07,599 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 13:14:07,599 - INFO - GeoJSON data loaded successfully
+2025-10-27 13:14:07,600 - INFO - Loading CIFP data...
+2025-10-27 13:14:07,860 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 13:14:07,861 - INFO - Found 11 arrival procedures
+2025-10-27 13:14:07,861 - INFO - CIFP data loaded successfully
+2025-10-27 13:14:09,346 - INFO - Selected scenario type: ground_departures
+2025-10-27 13:14:20,531 - INFO - Loaded configuration from config.json
+2025-10-27 13:14:20,532 - INFO - Generating 20 departure aircraft
+2025-10-27 13:14:21,019 - INFO - Fetched flight plan KPHX -> KATL: {'route': 'FORPE1 ABQ J6 IRW FSM MEMFS HUTCC KNSAW RUSSA GLAVN1', 'altitude': '35000', 'aircraft_type': 'E550/L', 'callsign': 'N632BL'}
+2025-10-27 13:14:21,638 - INFO - Fetched flight plan KPHX -> KCLE: {'route': 'FORPE1 ABQ FTI GCK IRK BDF BENJO BRWNZ4', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA1097'}
+2025-10-27 13:14:21,939 - INFO - Fetched flight plan KPHX -> KMDW: {'route': 'FORPE1 ABQ FTI J18 SLN J96 IRK ENDEE8', 'altitude': '35000', 'aircraft_type': 'G280/L', 'callsign': 'N929AW'}
+2025-10-27 13:14:22,366 - INFO - Fetched flight plan KPHX -> KMKE: {'route': 'MRBIL1 JARPA RSK OVR JORDY OGECA GOPAC3', 'altitude': '35000', 'aircraft_type': 'A319/L', 'callsign': 'AAL899'}
+2025-10-27 13:14:22,900 - INFO - Fetched flight plan KPHX -> KJFK: {'route': 'FORPE1 ABQ KA39Y KYLER KK51E DRIVL ALHAH SPI AXC VHP KLYNE Q29 WWSHR JHW J70 LVZ LENDY8', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'AAL2339'}
+2025-10-27 13:14:23,372 - INFO - Fetched flight plan KPHX -> KSAN: {'route': 'FYRBD1 MOHAK J18 HOGGZ LUCKI1', 'altitude': '24000', 'aircraft_type': 'B739/L', 'callsign': 'ASA1273'}
+2025-10-27 13:14:23,987 - INFO - Fetched flight plan KPHX -> KSNA: {'route': 'KEENS3 HRRBR EMLLD DSNEE6', 'altitude': '30000', 'aircraft_type': 'C25B/L', 'callsign': 'N503KK'}
+2025-10-27 13:14:24,470 - INFO - Fetched flight plan KPHX -> KDEN: {'route': 'MRBIL1 YOOPR CRUDD TBARR4', 'altitude': '37000', 'aircraft_type': 'B738/L', 'callsign': 'SWA4171'}
+2025-10-27 13:14:24,471 - INFO - Creating GA aircraft for parking spot: GA2
+2025-10-27 13:14:24,891 - INFO - Fetched flight plan KPHX -> KMCO: {'route': 'STRRM1 TUS ELP FST J86 LEV Y280 CHRGE PRICY4', 'altitude': '35000', 'aircraft_type': 'C560/L', 'callsign': 'LN810BE'}
+2025-10-27 13:14:25,208 - INFO - Fetched flight plan KPHX -> KSAT: {'route': 'ECLPS1 PHASE ELP TXSAS FST J138 SHUCK MOPPP DNKIN1', 'altitude': '35000', 'aircraft_type': 'A320/L', 'callsign': 'AAL2375'}
+2025-10-27 13:14:25,741 - INFO - Fetched flight plan KPHX -> KLAX: {'route': 'KEENS3 WLVRN ESTWD HLYWD1', 'altitude': '32000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL463'}
+2025-10-27 13:14:26,165 - INFO - Fetched flight plan KPHX -> KBOS: {'route': 'MRBIL1 JARPA RSK ALS KINGO EXHAS SLN CATTS KIDER J96 IRK KG66M KC72U JHW Q82 PONCT JFUND2', 'altitude': '35000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL2701'}
+2025-10-27 13:14:26,166 - INFO - Creating GA aircraft for parking spot: GA1
+2025-10-27 13:14:26,621 - INFO - Fetched flight plan KPHX -> KBWI: {'route': 'FORPE1 ABQ OTO ACH ADM DECOD TXK ELD IZAAC Q30 VLKNN THRSR KBLER KELLN Q58 PEETT THHMP RAVNN8', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA824'}
+2025-10-27 13:14:27,001 - INFO - Fetched flight plan KPHX -> KLAS: {'route': 'ZEPER2 RRSTA ELLDA RKSTR4', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'AAL3022'}
+2025-10-27 13:14:27,002 - INFO - Generated 20 departure aircraft
+2025-10-27 13:14:27,003 - INFO - Generated .air file with 20 aircraft at KPHX_scenario.air
+2025-10-27 13:14:27,003 - INFO - Successfully generated 20 aircraft
+2025-10-27 13:14:27,003 - INFO - Saved to: KPHX_scenario.air
