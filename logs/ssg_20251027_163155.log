@@ -1,0 +1,83 @@
+2025-10-27 16:31:55,193 - INFO - Logging to: logs\ssg_20251027_163155.log
+2025-10-27 16:31:59,037 - INFO - Selected airport: KPHX
+2025-10-27 16:31:59,037 - INFO - Loading GeoJSON data...
+2025-10-27 16:31:59,039 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 16:32:01,015 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 16:32:01,015 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 16:32:01,015 - INFO - GeoJSON data loaded successfully
+2025-10-27 16:32:01,015 - INFO - Loading CIFP data...
+2025-10-27 16:32:01,278 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 16:32:01,278 - INFO - Found 11 arrival procedures
+2025-10-27 16:32:01,278 - INFO - Found 0 approach FAF altitudes
+2025-10-27 16:32:01,279 - INFO - CIFP data loaded successfully
+2025-10-27 16:32:02,675 - INFO - Selected scenario type: ground_mixed
+2025-10-27 16:32:06,575 - INFO - Loaded configuration from config.json
+2025-10-27 16:32:06,577 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 16:32:07,516 - INFO - Fetched flight plan KPHX -> KSAT: {'route': 'ECLPS1 PHASE ELP FST J138 SHUCK MOPPP DNKIN1', 'altitude': '24000', 'aircraft_type': 'A320/L', 'callsign': 'AAL2375'}
+2025-10-27 16:32:08,505 - INFO - Fetched flight plan KPHX -> KOAK: {'route': 'ZEPER2 RRSTA DOVEE BTY RUSME OAKES3', 'altitude': '32000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA2993'}
+2025-10-27 16:32:09,148 - INFO - Fetched flight plan KPHX -> KTPA: {'route': 'ECLPS1 PHASE EWM J4 CONNE J4 INK JUMBO TORNN GIFFA CIDOR J50 AEX GCV DEFUN MAATY5', 'altitude': '35000', 'aircraft_type': 'A321/L', 'callsign': 'AAL1402'}
+2025-10-27 16:32:09,806 - INFO - Fetched flight plan KPHX -> KSAN: {'route': 'FYRBD1 MOHAK J2 HOGGZ LUCKI1', 'altitude': '28000', 'aircraft_type': 'A20N/L', 'callsign': 'FFT1571'}
+2025-10-27 16:32:10,644 - INFO - Fetched flight plan KPHX -> KJFK: {'route': 'FORPE1 ABQ J18 SLN J24 MCI J80 SPI KOLTS WWODD RINTE KLYNE Q29 WWSHR JHW J70 LVZ LENDY8', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'AAL832'}
+2025-10-27 16:32:11,278 - INFO - Fetched flight plan KLGA -> KPHX: {'route': 'ZIMMZ Q42 MIKYG Q480 AIR J110 STL BUM ICT LBL FTI BUKKO ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'G280/L', 'callsign': 'N79DH'}
+2025-10-27 16:32:11,278 - INFO - Creating arrival: N79DH at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 16:32:11,949 - INFO - Fetched flight plan KLAX -> KPHX: {'route': 'DOTSS2 CNERY BLH HYDRR1', 'altitude': '25000', 'aircraft_type': 'B737/L', 'callsign': 'SWA582'}
+2025-10-27 16:32:11,950 - INFO - Creating arrival: SWA582 at 12.0 NM, alt 4735 ft, hdg 270°, spd 140 kts
+2025-10-27 16:32:12,592 - INFO - Fetched flight plan KCMH -> KPHX: {'route': 'RIKLE SCOTO ENL KK45G CHELI PNH ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'AAL1958'}
+2025-10-27 16:32:12,593 - INFO - Creating arrival: AAL1958 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 16:32:13,533 - INFO - Fetched flight plan KRDU -> KPHX: {'route': 'SHPRD4 SHPRD AWYAT Q52 CHOPZ THRSR MHZ EMG GGG YEAGR DOSXX BGS J66 EWM DRRVR PINNG1', 'altitude': '34000', 'aircraft_type': 'A321/L', 'callsign': 'AAL2601'}
+2025-10-27 16:32:13,534 - INFO - Creating arrival: AAL2601 at 24.0 NM, alt 8335 ft, hdg 270°, spd 140 kts
+2025-10-27 16:32:14,175 - INFO - Fetched flight plan KPDX -> KPHX: {'route': 'WHAMY5 KOATA Q35 NEERO JAJAY REANA AHOWW CORKR TENTS BRUSR1', 'altitude': '37000', 'aircraft_type': 'B738/L', 'callsign': 'SWA3784'}
+2025-10-27 16:32:14,175 - INFO - Creating arrival: SWA3784 at 30.0 NM, alt 10135 ft, hdg 270°, spd 140 kts
+2025-10-27 16:32:14,176 - INFO - Generated 10 total aircraft
+2025-10-27 16:32:14,176 - INFO - Generated .air file with 10 aircraft at KPHX_scenario.air
+2025-10-27 16:32:14,176 - INFO - Successfully generated 10 aircraft
+2025-10-27 16:32:14,176 - INFO - Saved to: KPHX_scenario.air
+2025-10-27 16:32:19,284 - INFO - Fetched coordinates for KPHX: 33.434269, -112.011002
+2025-10-27 16:32:19,286 - INFO - Airport KPHX is in ARTCC ZAB
+2025-10-27 16:32:19,286 - INFO - Auto-detected ARTCC: ZAB for airport KPHX
+2025-10-27 16:32:19,286 - INFO - Created vNAS scenario with 10 aircraft
+2025-10-27 16:32:19,288 - INFO - Launching undetected Chrome browser for vNAS login...
+2025-10-27 16:32:19,667 - INFO - patching driver executable C:\Users\flyma\appdata\roaming\undetected_chromedriver\undetected_chromedriver.exe
+2025-10-27 16:32:21,154 - INFO - Navigating to https://data-admin.vnas.vatsim.net/training
+2025-10-27 16:32:21,505 - INFO - Please log in to vNAS and navigate to your scenario in the browser window...
+2025-10-27 16:32:21,505 - INFO - Waiting for you to navigate to a scenario (URL pattern: /scenarios/{scenario-id})...
+2025-10-27 16:32:46,242 - INFO - Scenario page detected! URL: https://data-admin.vnas.vatsim.net/training/scenarios/01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 16:32:46,243 - INFO - Automatically extracted scenario ID: 01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 16:32:46,245 - INFO - ============================================================
+2025-10-27 16:32:46,245 - INFO - COOKIE CAPTURE DEBUG
+2025-10-27 16:32:46,245 - INFO - ============================================================
+2025-10-27 16:32:46,246 - INFO - Cookie: cf_clearance
+2025-10-27 16:32:46,246 - INFO -   Domain: .vatsim.net
+2025-10-27 16:32:46,246 - INFO -   Path: /
+2025-10-27 16:32:46,246 - INFO -   Value (first 50 chars): cs3Xap31DCFta5.Qt6WQdJNH.rs5xL_xGFdcEiuGrQw-176159...
+2025-10-27 16:32:46,246 - INFO -   Secure: True
+2025-10-27 16:32:46,246 - INFO -   HttpOnly: True
+2025-10-27 16:32:46,246 - INFO - ------------------------------------------------------------
+2025-10-27 16:32:46,246 - INFO - Total cookies captured: 1
+2025-10-27 16:32:46,246 - INFO - ============================================================
+2025-10-27 16:32:46,246 - INFO - Browser will remain open to maintain session. Call cleanup() when done.
+2025-10-27 16:32:46,246 - INFO - ============================================================
+2025-10-27 16:32:46,246 - INFO - API REQUEST DEBUG
+2025-10-27 16:32:46,246 - INFO - ============================================================
+2025-10-27 16:32:46,246 - INFO - Endpoint: https://data-api.vnas.vatsim.net/api/training/scenarios/01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 16:32:46,246 - INFO - Method: PUT
+2025-10-27 16:32:46,246 - INFO - Headers: {'Content-Type': 'application/json', 'Accept': 'application/json', 'Origin': 'https://data-admin.vnas.vatsim.net', 'Referer': 'https://data-admin.vnas.vatsim.net/'}
+2025-10-27 16:32:46,247 - INFO - 
+Cookies being sent:
+2025-10-27 16:32:46,247 - INFO -   cf_clearance = cs3Xap31DCFta5.Qt6WQdJNH.rs5xL_xGFdcEiuGrQw-176159...
+2025-10-27 16:32:46,247 - INFO -     Domain: .vatsim.net, Path: /
+2025-10-27 16:32:46,247 - INFO - 
+Request body size: 5297 bytes
+2025-10-27 16:32:46,247 - INFO - ============================================================
+2025-10-27 16:32:46,509 - INFO - ============================================================
+2025-10-27 16:32:46,509 - INFO - API RESPONSE DEBUG
+2025-10-27 16:32:46,509 - INFO - ============================================================
+2025-10-27 16:32:46,509 - INFO - Status Code: 401
+2025-10-27 16:32:46,509 - INFO - Response Headers: {'Date': 'Mon, 27 Oct 2025 20:32:46 GMT', 'Content-Type': 'application/json; charset=utf-8', 'Transfer-Encoding': 'chunked', 'Connection': 'keep-alive', 'CF-RAY': '9954f6f11d41f78d-EWR', 'access-control-allow-credentials': 'true', 'access-control-allow-origin': 'https://data-admin.vnas.vatsim.net', 'vary': 'Origin', 'cf-cache-status': 'DYNAMIC', 'Strict-Transport-Security': 'max-age=2592000', 'Server': 'cloudflare', 'alt-svc': 'h3=":443"; ma=86400'}
+2025-10-27 16:32:46,509 - INFO - Response Body (first 500 chars): {"type":"https://tools.ietf.org/html/rfc9110#section-15.5.2","title":"Unauthorized","status":401,"traceId":"00-073ae976db2a47aa54a011d96a1624d2-7e6fe3e0e016917e-00"}
+2025-10-27 16:32:46,509 - INFO - ============================================================
+2025-10-27 16:32:46,509 - ERROR - Authentication failed - session may have expired
+2025-10-27 16:32:46,509 - ERROR - Full response: {"type":"https://tools.ietf.org/html/rfc9110#section-15.5.2","title":"Unauthorized","status":401,"traceId":"00-073ae976db2a47aa54a011d96a1624d2-7e6fe3e0e016917e-00"}
+2025-10-27 16:32:46,509 - INFO - Closing browser...
+2025-10-27 16:32:46,661 - INFO - Browser closed successfully
+2025-10-27 16:38:26,818 - INFO - ensuring close

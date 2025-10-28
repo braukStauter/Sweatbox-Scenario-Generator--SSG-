@@ -1,0 +1,35 @@
+2025-10-27 16:19:40,843 - INFO - Logging to: logs\ssg_20251027_161940.log
+2025-10-27 16:19:44,693 - INFO - Selected airport: KPHX
+2025-10-27 16:19:44,693 - INFO - Loading GeoJSON data...
+2025-10-27 16:19:44,695 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 16:19:46,911 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 16:19:46,912 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 16:19:46,912 - INFO - GeoJSON data loaded successfully
+2025-10-27 16:19:46,912 - INFO - Loading CIFP data...
+2025-10-27 16:19:47,174 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 16:19:47,175 - INFO - Found 11 arrival procedures
+2025-10-27 16:19:47,175 - INFO - Found 0 approach FAF altitudes
+2025-10-27 16:19:47,175 - INFO - CIFP data loaded successfully
+2025-10-27 16:19:48,997 - INFO - Selected scenario type: ground_mixed
+2025-10-27 16:19:52,664 - INFO - Loaded configuration from config.json
+2025-10-27 16:19:52,666 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 16:19:53,638 - INFO - Fetched flight plan KPHX -> KBWI: {'route': 'FORPE1 ABQ MIRME MMB SGF J98 TWRAY J98 FAM J78 IIU ZIEBR SITTR CJAAE RAVNN8', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA2565'}
+2025-10-27 16:19:54,713 - INFO - Fetched flight plan KPHX -> KSJC: {'route': 'KEENS3 HRRBR DECAS J65 PMD J6 AVE TROXX SILCN6', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA4063'}
+2025-10-27 16:19:54,713 - INFO - Creating GA aircraft for parking spot: GA3
+2025-10-27 16:19:55,379 - INFO - Fetched flight plan KPHX -> KSMF: {'route': 'KEENS3 HRRBR J212 DECAS J65 PMD AMONT EHF NURAY SUUTR4', 'altitude': '35000', 'aircraft_type': 'A321/L', 'callsign': 'AAL1620'}
+2025-10-27 16:19:56,093 - INFO - Fetched flight plan KPHX -> KONT: {'route': 'KEENS3 HRRBR PHRED SCBBY2', 'altitude': '24000', 'aircraft_type': 'A319/L', 'callsign': 'AAL2626'}
+2025-10-27 16:19:56,094 - ERROR - Error generating scenario
+Traceback (most recent call last):
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\gui\main_window.py", line 219, in _do_generation
+    aircraft = self._generate_aircraft(
+        scenario,
+    ...<6 lines>...
+        arrival_waypoints
+    )
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\gui\main_window.py", line 298, in _generate_aircraft
+    return scenario.generate(num_departures, num_arrivals, active_runways)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\scenarios\ground_mixed.py", line 65, in generate
+    runway_name = active_runways[i % len(active_runways)]
+                                 ~~^~~~~~~~~~~~~~~~~~~~~
+ZeroDivisionError: integer modulo by zero

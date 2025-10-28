@@ -1,0 +1,39 @@
+2025-10-27 15:19:57,076 - INFO - Logging to: logs\ssg_20251027_151957.log
+2025-10-27 15:20:00,952 - INFO - Selected airport: KPHX
+2025-10-27 15:20:00,952 - INFO - Loading GeoJSON data...
+2025-10-27 15:20:00,954 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 15:20:02,846 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 15:20:02,847 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 15:20:02,847 - INFO - GeoJSON data loaded successfully
+2025-10-27 15:20:02,847 - INFO - Loading CIFP data...
+2025-10-27 15:20:03,113 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 15:20:03,113 - INFO - Found 11 arrival procedures
+2025-10-27 15:20:03,113 - INFO - Found 0 approach FAF altitudes
+2025-10-27 15:20:03,113 - INFO - CIFP data loaded successfully
+2025-10-27 15:20:13,888 - INFO - Selected scenario type: ground_mixed
+2025-10-27 15:20:22,512 - INFO - Loaded configuration from config.json
+2025-10-27 15:20:22,513 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 15:20:23,569 - INFO - Fetched flight plan KPHX -> KOAK: {'route': 'ZEPER2 RRSTA DOVEE BTY RUSME OAKES3', 'altitude': '35000', 'aircraft_type': 'CL35/L', 'callsign': 'EJA756'}
+2025-10-27 15:20:24,276 - INFO - Fetched flight plan KPHX -> KSAN: {'route': 'FYRBD1 MOHAK J2 HOGGZ LUCKI1', 'altitude': '30000', 'aircraft_type': 'B737/L', 'callsign': 'SWA191'}
+2025-10-27 15:20:25,291 - INFO - Fetched flight plan KPHX -> KATL: {'route': 'STRRM1 TUS ELP J50 ABI J4 FUZ Q184 MERDN DUUCK ORRKK GNDLF2', 'altitude': '35000', 'aircraft_type': 'A321/L', 'callsign': 'FFT1100'}
+2025-10-27 15:20:25,917 - INFO - Fetched flight plan KPHX -> KRSW: {'route': '', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': None}
+2025-10-27 15:20:26,562 - INFO - Fetched flight plan KPHX -> KLGA: {'route': 'MRBIL1 JARPA RSK TXC HCT J60 JOT J146 ETG MIP4', 'altitude': '35000', 'aircraft_type': 'GLEX/L', 'callsign': 'N650CV'}
+2025-10-27 15:20:27,282 - INFO - Fetched flight plan KDEN -> KPHX: {'route': 'SMMUR2 DAAYE GUP EAGUL6', 'altitude': '32000', 'aircraft_type': 'A21N/L', 'callsign': 'UAL1686'}
+2025-10-27 15:20:27,283 - INFO - Creating arrival: UAL1686 at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 15:20:27,966 - INFO - Fetched flight plan KJFK -> KPHX: {'route': 'GAYEL Q818 WOZEE NOSIK ZOHAN LAAKE ONL LBF ALS GUP EAGUL6', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'AAL1186'}
+2025-10-27 15:20:27,967 - INFO - Creating arrival: AAL1186 at 12.0 NM, alt 4735 ft, hdg 270°, spd 140 kts
+2025-10-27 15:20:28,946 - INFO - Fetched flight plan KFLL -> KPHX: {'route': 'BNICE2 DOLIE Y280 LEV IAH JCT ELP DRRVR PINNG1', 'altitude': '35000', 'aircraft_type': 'E550/L', 'callsign': 'DCM3660'}
+2025-10-27 15:20:28,946 - INFO - Creating arrival: DCM3660 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 15:20:29,596 - INFO - Fetched flight plan KPIT -> KPHX: {'route': 'DILNE TVTRN VHP J110 BUM Q176 ROKNE J134 ICT VARNR Q176 TOTOE TAMEY ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA2515'}
+2025-10-27 15:20:29,597 - INFO - Creating arrival: SWA2515 at 24.0 NM, alt 8335 ft, hdg 270°, spd 140 kts
+2025-10-27 15:20:30,244 - INFO - Fetched flight plan KCMH -> KPHX: {'route': 'PKACZ TARRY DQN ENL BACTA SGF CHELI MMB GUP EAGUL6', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA1642'}
+2025-10-27 15:20:30,245 - INFO - Creating arrival: SWA1642 at 30.0 NM, alt 10135 ft, hdg 270°, spd 140 kts
+2025-10-27 15:20:30,245 - INFO - Generated 10 total aircraft
+2025-10-27 15:20:30,246 - INFO - Generated .air file with 10 aircraft at KPHX_scenario.air
+2025-10-27 15:20:30,246 - INFO - Successfully generated 10 aircraft
+2025-10-27 15:20:30,246 - INFO - Saved to: KPHX_scenario.air
+2025-10-27 15:20:39,694 - INFO - Created vNAS scenario with 10 aircraft
+2025-10-27 15:20:39,694 - INFO - Attempting to load cookies from Chrome
+2025-10-27 15:20:39,710 - INFO - Attempting to load cookies from Firefox
+2025-10-27 15:20:39,710 - INFO - Attempting to load cookies from Edge
+2025-10-27 15:20:39,720 - WARNING - Could not load cookies from any browser

@@ -1,0 +1,74 @@
+2025-10-27 17:33:07,019 - INFO - Logging to: logs\ssg_20251027_173307.log
+2025-10-27 17:33:10,916 - INFO - Selected airport: KPHX
+2025-10-27 17:33:10,917 - INFO - Loading GeoJSON data...
+2025-10-27 17:33:10,918 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 17:33:12,734 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 17:33:12,735 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 17:33:12,735 - INFO - GeoJSON data loaded successfully
+2025-10-27 17:33:12,735 - INFO - Loading CIFP data...
+2025-10-27 17:33:12,999 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 17:33:13,000 - INFO - Found 11 arrival procedures
+2025-10-27 17:33:13,000 - INFO - Found 0 approach FAF altitudes
+2025-10-27 17:33:13,000 - INFO - CIFP data loaded successfully
+2025-10-27 17:33:14,456 - INFO - Selected scenario type: ground_mixed
+2025-10-27 17:33:18,637 - INFO - Loaded configuration from config.json
+2025-10-27 17:33:18,639 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 17:33:19,664 - INFO - Fetched flight plan KPHX -> KDEN: {'route': 'MRBIL1 YOOPR CRUDD TBARR4', 'altitude': '27000', 'aircraft_type': 'B737/L', 'callsign': 'SWA3635'}
+2025-10-27 17:33:20,311 - INFO - Fetched flight plan KPHX -> KPVD: {'route': 'FORPE1 ABQ J18 GCK J96 PIA PNT FWA DJB YTOWN SLT HNK WIPOR3', 'altitude': '35000', 'aircraft_type': 'LJ60/L', 'callsign': 'N79SC'}
+2025-10-27 17:33:20,963 - INFO - Fetched flight plan KPHX -> KDCA: {'route': 'FORPE1 ABQ J6 PNH END SGF HESTN ENL KI54M VHP J80 AIR J34 BUCKO FRDMM6', 'altitude': '35000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL1634'}
+2025-10-27 17:33:21,605 - INFO - Fetched flight plan KPHX -> KLGA: {'route': 'MRBIL1 JARPA RSK TXC HCT J60 JOT J146 ETG MIP4', 'altitude': '35000', 'aircraft_type': 'GLEX/L', 'callsign': 'N650CV'}
+2025-10-27 17:33:22,580 - INFO - Fetched flight plan KPHX -> KPIT: {'route': 'BROAK1 MAXXO CNX MMB KK54K VHP EMPTY CTW FEWGA7', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA4269'}
+2025-10-27 17:33:23,217 - INFO - Fetched flight plan KBNA -> KPHX: {'route': 'PARDN3 NAKIY SGF CNU ICT KK45A CIM ZUN EAGUL6', 'altitude': '36000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA1246'}
+2025-10-27 17:33:23,218 - INFO - Creating arrival: SWA1246 at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 17:33:23,907 - INFO - Fetched flight plan KSAN -> KPHX: {'route': 'ZZOOO4 HOGGZ HYDRR1', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA2817'}
+2025-10-27 17:33:23,908 - INFO - Creating arrival: SWA2817 at 12.0 NM, alt 4735 ft, hdg 270°, spd 140 kts
+2025-10-27 17:33:24,556 - INFO - Fetched flight plan KPBI -> KPHX: {'route': 'TBIRD6 SHRKS KJ06Q SWB CINAD EWM HOTTT PINNG1', 'altitude': '35000', 'aircraft_type': 'C68A/L', 'callsign': 'CTF684'}
+2025-10-27 17:33:24,557 - INFO - Creating arrival: CTF684 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 17:33:25,490 - INFO - Fetched flight plan KATL -> KPHX: {'route': 'CUTTN2 HANKO GAD RZC TUL SEARS YARNS IFI ACH OTO ABQ KA30S ZUN EAGUL6', 'altitude': '26000', 'aircraft_type': 'A321/L', 'callsign': 'AAL1992'}
+2025-10-27 17:33:25,490 - INFO - Creating arrival: AAL1992 at 24.0 NM, alt 8335 ft, hdg 270°, spd 140 kts
+2025-10-27 17:33:26,502 - INFO - Fetched flight plan KRDU -> KPHX: {'route': 'SHPRD4 SHPRD VXV BNA KM33K KLUBB DWINE KF30A ABQ ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'A321/L', 'callsign': 'AAL2601'}
+2025-10-27 17:33:26,502 - INFO - Creating arrival: AAL2601 at 30.0 NM, alt 10135 ft, hdg 270°, spd 140 kts
+2025-10-27 17:33:26,502 - INFO - Generated 10 total aircraft
+2025-10-27 17:33:26,503 - INFO - Generated .air file with 10 aircraft at KPHX_scenario.air
+2025-10-27 17:33:26,503 - INFO - Successfully generated 10 aircraft
+2025-10-27 17:33:26,503 - INFO - Saved to: KPHX_scenario.air
+2025-10-27 17:33:34,156 - INFO - Fetched coordinates for KPHX: 33.434269, -112.011002
+2025-10-27 17:33:34,157 - INFO - Airport KPHX is in ARTCC ZAB
+2025-10-27 17:33:34,158 - INFO - Auto-detected ARTCC: ZAB for airport KPHX
+2025-10-27 17:33:34,158 - INFO - Created vNAS scenario with 10 aircraft
+2025-10-27 17:33:34,159 - INFO - Launching undetected Chrome browser for vNAS login...
+2025-10-27 17:33:34,522 - INFO - patching driver executable C:\Users\flyma\appdata\roaming\undetected_chromedriver\undetected_chromedriver.exe
+2025-10-27 17:33:36,033 - INFO - Navigating to https://data-admin.vnas.vatsim.net/training
+2025-10-27 17:33:36,376 - INFO - ============================================================
+2025-10-27 17:33:36,377 - INFO - BROWSER INSTRUCTIONS
+2025-10-27 17:33:36,377 - INFO - ============================================================
+2025-10-27 17:33:36,377 - INFO - 1. Log in to vNAS Data Admin
+2025-10-27 17:33:36,377 - INFO - 2. Navigate to the scenario you want to update
+2025-10-27 17:33:36,377 - INFO - 3. Scenario ID will be extracted automatically
+2025-10-27 17:33:36,377 - INFO - ============================================================
+2025-10-27 17:34:05,799 - INFO - Scenario page detected! URL: https://data-admin.vnas.vatsim.net/training/scenarios/01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 17:34:05,799 - INFO - Automatically extracted scenario ID: 01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 17:34:05,799 - INFO - Browser authenticated successfully. Ready to make API requests.
+2025-10-27 17:34:05,799 - INFO - Fetching existing scenario data...
+2025-10-27 17:34:05,800 - INFO - Fetching existing scenario: 01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 17:34:05,869 - INFO - Successfully fetched existing scenario
+2025-10-27 17:34:05,869 - INFO - Merging new aircraft with existing scenario...
+2025-10-27 17:34:05,870 - INFO - ============================================================
+2025-10-27 17:34:05,870 - INFO - PUSHING SCENARIO VIA BROWSER
+2025-10-27 17:34:05,870 - INFO - ============================================================
+2025-10-27 17:34:05,870 - INFO - Endpoint: https://data-api.vnas.vatsim.net/api/training/scenarios/01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 17:34:05,870 - INFO - Scenario ID: 01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 17:34:05,870 - INFO - Request body size: 5279 bytes
+2025-10-27 17:34:05,870 - INFO - ============================================================
+2025-10-27 17:34:05,870 - INFO - Executing PUT request through browser...
+2025-10-27 17:34:05,953 - INFO - ============================================================
+2025-10-27 17:34:05,954 - INFO - API RESPONSE DEBUG
+2025-10-27 17:34:05,954 - INFO - ============================================================
+2025-10-27 17:34:05,954 - INFO - Status Code: 204
+2025-10-27 17:34:05,954 - INFO - Status Text: 
+2025-10-27 17:34:05,954 - INFO - Response Body (first 500 chars): 
+2025-10-27 17:34:05,954 - INFO - ============================================================
+2025-10-27 17:34:05,954 - INFO - Successfully pushed scenario to vNAS (status 204)
+2025-10-27 17:34:05,954 - INFO - Closing browser...
+2025-10-27 17:34:06,104 - INFO - Browser closed successfully
+2025-10-27 17:36:22,435 - INFO - ensuring close

@@ -1,0 +1,56 @@
+2025-10-27 17:23:53,850 - INFO - Logging to: logs\ssg_20251027_172353.log
+2025-10-27 17:23:59,738 - INFO - Selected airport: KPHX
+2025-10-27 17:23:59,738 - INFO - Loading GeoJSON data...
+2025-10-27 17:23:59,739 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 17:24:01,533 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 17:24:01,533 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 17:24:01,533 - INFO - GeoJSON data loaded successfully
+2025-10-27 17:24:01,533 - INFO - Loading CIFP data...
+2025-10-27 17:24:01,794 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 17:24:01,794 - INFO - Found 11 arrival procedures
+2025-10-27 17:24:01,794 - INFO - Found 0 approach FAF altitudes
+2025-10-27 17:24:01,794 - INFO - CIFP data loaded successfully
+2025-10-27 17:24:05,057 - INFO - Selected scenario type: ground_mixed
+2025-10-27 17:24:08,537 - INFO - Loaded configuration from config.json
+2025-10-27 17:24:08,539 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 17:24:09,509 - INFO - Fetched flight plan KPHX -> KBOS: {'route': 'ECLPS1 PHASE ELP CDS HBR IRW DRLER SGF DELMA WIDAM TTH VHP WWSHR JHW Q82 PONCT JFUND2', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'AAL2778'}
+2025-10-27 17:24:10,626 - INFO - Fetched flight plan KPHX -> KBWI: {'route': 'FORPE1 ABQ FTI KA36W KK42A BURDN KK45G TWRAY J98 FAM J78 IIU ZIEBR SITTR CJAAE RAVNN8', 'altitude': '37000', 'aircraft_type': 'B737/L', 'callsign': 'SWA1586'}
+2025-10-27 17:24:11,292 - INFO - Fetched flight plan KPHX -> KIAH: {'route': 'ECLPS1 PHASE ELP J183 PEQ DIESL TTORO3', 'altitude': '35000', 'aircraft_type': 'A20N/L', 'callsign': 'FFT1704'}
+2025-10-27 17:24:11,980 - INFO - Fetched flight plan KPHX -> KDFW: {'route': 'ECLPS1 PHASE EWM J4 INK GEEKY BOOVE7', 'altitude': '35000', 'aircraft_type': 'A321/L', 'callsign': 'AAL1999'}
+2025-10-27 17:24:12,935 - INFO - Fetched flight plan KPHX -> KONT: {'route': 'KEENS3 HRRBR PHRED SCBBY2', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA9006'}
+2025-10-27 17:24:13,615 - INFO - Fetched flight plan KABQ -> KPHX: {'route': 'LARGO3 ZUN EAGUL6', 'altitude': '32000', 'aircraft_type': 'B737/L', 'callsign': 'SWA2402'}
+2025-10-27 17:24:13,616 - INFO - Creating arrival: SWA2402 at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 17:24:14,303 - INFO - Fetched flight plan KDFW -> KPHX: {'route': 'WSTEX2 CIKAN EWM DRRVR PINNG1', 'altitude': '36000', 'aircraft_type': 'CRJ9/L', 'callsign': 'SKW9920'}
+2025-10-27 17:24:14,304 - INFO - Creating arrival: SKW9920 at 12.0 NM, alt 4735 ft, hdg 270°, spd 140 kts
+2025-10-27 17:24:14,926 - INFO - Fetched flight plan KSTL -> KPHX: {'route': 'BGOOD5 VIH HNKER INK J50 ELP DRRVR PINNG1', 'altitude': '36000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA1958'}
+2025-10-27 17:24:14,927 - INFO - Creating arrival: SWA1958 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 17:24:15,954 - INFO - Fetched flight plan KSAN -> KPHX: {'route': 'ZZOOO4 HOGGZ HYDRR1', 'altitude': '25000', 'aircraft_type': 'B737/L', 'callsign': 'SWA1559'}
+2025-10-27 17:24:15,955 - INFO - Creating arrival: SWA1559 at 24.0 NM, alt 8335 ft, hdg 270°, spd 140 kts
+2025-10-27 17:24:16,621 - INFO - Fetched flight plan KPHL -> KPHX: {'route': 'PTW SARAA RAV J64 LMN PWE HLC J64 PUB ALS J102 GUP EAGUL6', 'altitude': '35000', 'aircraft_type': 'A321/L', 'callsign': 'AAL3186'}
+2025-10-27 17:24:16,622 - INFO - Creating arrival: AAL3186 at 30.0 NM, alt 10135 ft, hdg 270°, spd 140 kts
+2025-10-27 17:24:16,622 - INFO - Generated 10 total aircraft
+2025-10-27 17:24:16,623 - INFO - Generated .air file with 10 aircraft at KPHX_scenario.air
+2025-10-27 17:24:16,623 - INFO - Successfully generated 10 aircraft
+2025-10-27 17:24:16,623 - INFO - Saved to: KPHX_scenario.air
+2025-10-27 17:24:34,660 - INFO - Fetched coordinates for KPHX: 33.434269, -112.011002
+2025-10-27 17:24:34,661 - INFO - Airport KPHX is in ARTCC ZAB
+2025-10-27 17:24:34,662 - INFO - Auto-detected ARTCC: ZAB for airport KPHX
+2025-10-27 17:24:34,662 - INFO - Created vNAS scenario with 10 aircraft
+2025-10-27 17:24:34,663 - INFO - Launching undetected Chrome browser for vNAS login...
+2025-10-27 17:24:35,026 - INFO - patching driver executable C:\Users\flyma\appdata\roaming\undetected_chromedriver\undetected_chromedriver.exe
+2025-10-27 17:24:36,519 - INFO - Navigating to https://data-admin.vnas.vatsim.net/training
+2025-10-27 17:24:36,864 - INFO - ============================================================
+2025-10-27 17:24:36,864 - INFO - BROWSER INSTRUCTIONS
+2025-10-27 17:24:36,864 - INFO - ============================================================
+2025-10-27 17:24:36,864 - INFO - 1. Log in to vNAS Data Admin
+2025-10-27 17:24:36,864 - INFO - 2. Navigate to the scenario you want to update
+2025-10-27 17:24:36,864 - INFO - 3. Scenario ID will be extracted automatically
+2025-10-27 17:24:36,864 - INFO - ============================================================
+2025-10-27 17:24:54,197 - INFO - Scenario page detected! URL: https://data-admin.vnas.vatsim.net/training/scenarios/01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 17:24:54,197 - INFO - Automatically extracted scenario ID: 01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 17:24:54,197 - INFO - Browser authenticated successfully. Ready to make API requests.
+2025-10-27 17:24:54,197 - INFO - Testing connection before pushing scenario...
+2025-10-27 17:24:54,259 - ERROR - Connection test failed: Connection test failed with status 405
+2025-10-27 17:24:54,259 - INFO - Closing browser...
+2025-10-27 17:24:54,399 - INFO - Browser closed successfully
+2025-10-27 17:29:24,664 - INFO - ensuring close

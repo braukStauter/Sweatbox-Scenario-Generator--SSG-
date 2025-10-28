@@ -1,0 +1,62 @@
+2025-10-27 16:52:25,686 - INFO - Logging to: logs\ssg_20251027_165225.log
+2025-10-27 16:52:32,380 - INFO - Selected airport: KPHX
+2025-10-27 16:52:32,380 - INFO - Loading GeoJSON data...
+2025-10-27 16:52:32,382 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 16:52:34,123 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 16:52:34,124 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 16:52:34,124 - INFO - GeoJSON data loaded successfully
+2025-10-27 16:52:34,124 - INFO - Loading CIFP data...
+2025-10-27 16:52:34,386 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 16:52:34,386 - INFO - Found 11 arrival procedures
+2025-10-27 16:52:34,386 - INFO - Found 0 approach FAF altitudes
+2025-10-27 16:52:34,386 - INFO - CIFP data loaded successfully
+2025-10-27 16:52:36,004 - INFO - Selected scenario type: ground_mixed
+2025-10-27 16:52:40,390 - INFO - Loaded configuration from config.json
+2025-10-27 16:52:40,391 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 16:52:41,376 - INFO - Fetched flight plan KPHX -> KDTW: {'route': 'FORPE1 ABQ KA39Y ICT KK51G STL CMI BVT SWAYD LECTR3', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'AAL3140'}
+2025-10-27 16:52:42,019 - INFO - Fetched flight plan KPHX -> KBNA: {'route': 'BROAK1 MAXXO KA27U IMMAS KA30Y IRW KM33I LOPPY CHSNE2', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA1156'}
+2025-10-27 16:52:42,653 - INFO - Fetched flight plan KPHX -> KSJC: {'route': 'KEENS3 HRRBR DECAS J65 PMD J6 AVE TROXX SILCN6', 'altitude': '35000', 'aircraft_type': 'A319/L', 'callsign': 'AAL3316'}
+2025-10-27 16:52:52,997 - ERROR - Error fetching flight plan (attempt 1/3): HTTPSConnectionPool(host='flight-plans.csko.hu', port=443): Read timed out. (read timeout=10)
+2025-10-27 16:52:54,980 - INFO - Fetched flight plan KPHX -> KCLT: {'route': 'FORPE1 ABQ FTI MIRME KK36A KK36C OKM CHESO ECIGE TROVE HCH TAZZA FILPZ4', 'altitude': '35000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL2821'}
+2025-10-27 16:52:55,901 - INFO - Fetched flight plan KSEA -> KPHX: {'route': 'SUMMA2 SUMMA LTJ IMB Q35 CORKR TENTS BRUSR1', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'DAL2698'}
+2025-10-27 16:52:55,901 - INFO - Creating arrival: DAL2698 at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 16:52:56,534 - INFO - Fetched flight plan KBNA -> KPHX: {'route': 'PARDN3 HODJS ARG IRW KA30Y IMMAS ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA1675'}
+2025-10-27 16:52:56,535 - INFO - Creating arrival: SWA1675 at 12.0 NM, alt 4735 ft, hdg 270°, spd 140 kts
+2025-10-27 16:52:57,187 - INFO - Fetched flight plan KEWR -> KPHX: {'route': 'PARKE J6 MRB J6 HVQ J78 IIU KI48O KI48M KK48K RUZSU KK45E CARON KA39Y FTI ZUN EAGUL6', 'altitude': '36000', 'aircraft_type': 'B39M/L', 'callsign': 'UAL1331'}
+2025-10-27 16:52:57,188 - INFO - Creating arrival: UAL1331 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 16:52:57,830 - INFO - Fetched flight plan KSAT -> KPHX: {'route': 'ALISS7 ALISS FST J86 ELP J50 ALIBY DRRVR PINNG1', 'altitude': '34000', 'aircraft_type': 'A320/L', 'callsign': 'AAL2375'}
+2025-10-27 16:52:57,831 - INFO - Creating arrival: AAL2375 at 24.0 NM, alt 8335 ft, hdg 270°, spd 140 kts
+2025-10-27 16:52:58,466 - INFO - Fetched flight plan KBWI -> KPHX: {'route': 'FOXHL1 OTTTO Q80 BULVE Q80 FAREV RAMRD Q68 LITTR TXK FUZ ABI J50 ELP DRRVR PINNG1', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA3028'}
+2025-10-27 16:52:58,467 - INFO - Creating arrival: SWA3028 at 30.0 NM, alt 10135 ft, hdg 270°, spd 140 kts
+2025-10-27 16:52:58,467 - INFO - Generated 10 total aircraft
+2025-10-27 16:52:58,468 - INFO - Generated .air file with 10 aircraft at KPHX_scenario.air
+2025-10-27 16:52:58,468 - INFO - Successfully generated 10 aircraft
+2025-10-27 16:52:58,468 - INFO - Saved to: KPHX_scenario.air
+2025-10-27 16:53:02,721 - INFO - Fetched coordinates for KPHX: 33.434269, -112.011002
+2025-10-27 16:53:02,722 - INFO - Airport KPHX is in ARTCC ZAB
+2025-10-27 16:53:02,722 - INFO - Auto-detected ARTCC: ZAB for airport KPHX
+2025-10-27 16:53:02,722 - INFO - Created vNAS scenario with 10 aircraft
+2025-10-27 16:53:02,723 - INFO - Launching undetected Chrome browser for vNAS login...
+2025-10-27 16:53:03,095 - INFO - patching driver executable C:\Users\flyma\appdata\roaming\undetected_chromedriver\undetected_chromedriver.exe
+2025-10-27 16:53:04,576 - INFO - Navigating to https://data-admin.vnas.vatsim.net/training
+2025-10-27 16:53:05,386 - INFO - Please log in to vNAS and navigate to your scenario in the browser window...
+2025-10-27 16:53:05,386 - INFO - Waiting for you to navigate to a scenario (URL pattern: /scenarios/{scenario-id})...
+2025-10-27 16:53:47,118 - ERROR - Error during browser login: expected string or bytes-like object, got 'NoneType'
+Traceback (most recent call last):
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\utils\vnas_client.py", line 69, in _login_via_browser
+    WebDriverWait(self.driver, timeout).until(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        lambda d: re.search(r'/scenarios/([a-zA-Z0-9_-]+)', d.current_url)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\flyma\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\selenium\webdriver\support\wait.py", line 129, in until
+    value = method(self._driver)
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\utils\vnas_client.py", line 70, in <lambda>
+    lambda d: re.search(r'/scenarios/([a-zA-Z0-9_-]+)', d.current_url)
+              ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.2544.0_x64__qbz5n2kfra8p0\Lib\re\__init__.py", line 177, in search
+    return _compile(pattern, flags).search(string)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+TypeError: expected string or bytes-like object, got 'NoneType'
+2025-10-27 16:53:49,038 - INFO - ensuring close

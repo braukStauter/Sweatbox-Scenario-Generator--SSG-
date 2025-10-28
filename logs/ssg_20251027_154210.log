@@ -1,0 +1,42 @@
+2025-10-27 15:42:10,597 - INFO - Logging to: logs\ssg_20251027_154210.log
+2025-10-27 15:42:14,674 - INFO - Selected airport: KPHX
+2025-10-27 15:42:14,675 - INFO - Loading GeoJSON data...
+2025-10-27 15:42:14,676 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 15:42:16,632 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 15:42:16,633 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 15:42:16,633 - INFO - GeoJSON data loaded successfully
+2025-10-27 15:42:16,633 - INFO - Loading CIFP data...
+2025-10-27 15:42:16,898 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 15:42:16,898 - INFO - Found 11 arrival procedures
+2025-10-27 15:42:16,898 - INFO - Found 0 approach FAF altitudes
+2025-10-27 15:42:16,898 - INFO - CIFP data loaded successfully
+2025-10-27 15:42:18,611 - INFO - Selected scenario type: ground_mixed
+2025-10-27 15:42:23,095 - INFO - Loaded configuration from config.json
+2025-10-27 15:42:23,096 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 15:42:24,065 - INFO - Fetched flight plan KPHX -> KORD: {'route': 'BROAK1 MAXXO IRW J98 SGF WELTS TRTLL6', 'altitude': '35000', 'aircraft_type': 'B39M/L', 'callsign': 'UAL1625'}
+2025-10-27 15:42:24,702 - INFO - Fetched flight plan KPHX -> KDTW: {'route': 'QUAKY1 YOOPR STL WWODD LECTR3', 'altitude': '35000', 'aircraft_type': 'A20N/L', 'callsign': 'FFT4672'}
+2025-10-27 15:42:25,672 - INFO - Fetched flight plan KPHX -> KBNA: {'route': 'FORPE1 ABQ MMB END DRLER RZC KM36I LOPPY CHSNE3', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA1251'}
+2025-10-27 15:42:26,301 - INFO - Fetched flight plan KPHX -> KPDX: {'route': 'QUAKY1 GCN WINEN Q73 CRITO ROOHZ PRNCS RIELY JOTBA SODDA HHOOD5', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'AAL2397'}
+2025-10-27 15:42:26,980 - INFO - Fetched flight plan KPHX -> KRDU: {'route': 'MRBIL1 JARPA RSK GOSIP HYS SPI AXC CVG BKW FRIKY ALDAN4', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'AAL2332'}
+2025-10-27 15:42:27,629 - INFO - Fetched flight plan KSEA -> KPHX: {'route': 'SUMMA2 SUMMA LTJ IMB TABIO ROOHZ WINEN Q35 CORKR TENTS BRUSR1', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA2767'}
+2025-10-27 15:42:27,630 - INFO - Creating arrival: SWA2767 at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 15:42:28,272 - INFO - Fetched flight plan KMKE -> KPHX: {'route': 'GREAS JAYEX CAPPR KP66E AYEGI KD57A DUUZE GOSIP ROSEI GUP EAGUL6', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA186'}
+2025-10-27 15:42:28,273 - INFO - Creating arrival: SWA186 at 12.0 NM, alt 4735 ft, hdg 270°, spd 140 kts
+2025-10-27 15:42:29,265 - INFO - Fetched flight plan KCLE -> KPHX: {'route': 'GTLKE4 YABRO IOW PWE HLC PUB ALS GUP EAGUL6', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA2403'}
+2025-10-27 15:42:29,266 - INFO - Creating arrival: SWA2403 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 15:42:29,963 - INFO - Fetched flight plan KMIA -> KPHX: {'route': 'HURCN4 SMELZ Q116 JAWJA ACORI STEIT FAYEE RRNET DWINE ROLLS FTI KA33U ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'AAL2982'}
+2025-10-27 15:42:29,964 - INFO - Creating arrival: AAL2982 at 24.0 NM, alt 8335 ft, hdg 270°, spd 140 kts
+2025-10-27 15:42:30,616 - INFO - Fetched flight plan KDCA -> KPHX: {'route': 'REBLL5 OTTTO Q176 TOTOE FTI BUKKO ZUN EAGUL6', 'altitude': '34000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL2006'}
+2025-10-27 15:42:30,617 - INFO - Creating arrival: AAL2006 at 30.0 NM, alt 10135 ft, hdg 270°, spd 140 kts
+2025-10-27 15:42:30,617 - INFO - Generated 10 total aircraft
+2025-10-27 15:42:30,618 - INFO - Generated .air file with 10 aircraft at KPHX_scenario.air
+2025-10-27 15:42:30,618 - INFO - Successfully generated 10 aircraft
+2025-10-27 15:42:30,618 - INFO - Saved to: KPHX_scenario.air
+2025-10-27 15:42:52,323 - INFO - Created vNAS scenario with 10 aircraft
+2025-10-27 15:42:52,324 - INFO - Launching browser for vNAS login...
+2025-10-27 15:42:53,940 - INFO - Navigating to https://data-api.vnas.vatsim.net
+2025-10-27 15:42:54,101 - INFO - Please log in to vNAS in the browser window...
+2025-10-27 15:42:54,101 - INFO - Waiting for successful login (detecting URL or element changes)...
+2025-10-27 15:42:56,112 - INFO - Login detected! Extracting session cookies...
+2025-10-27 15:42:56,114 - ERROR - No cookies found after login
+2025-10-27 15:42:56,115 - INFO - Closing browser...

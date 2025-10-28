@@ -16,7 +16,7 @@ class TowerMixedScenario(BaseScenario):
     """Scenario for Tower position with departures and arrivals"""
 
     def generate(self, num_departures: int, num_arrivals: int, active_runways: List[str],
-                 separation_range: Tuple[int, int] = (3, 6)) -> List[Aircraft]:
+                 separation_range: Tuple[int, int] = (3, 6), spawn_delay_range: str = "0-0", difficulty_config=None) -> List[Aircraft]:
         """
         Generate tower scenario with departures and arrivals
 
@@ -25,12 +25,20 @@ class TowerMixedScenario(BaseScenario):
             num_arrivals: Number of arrival aircraft
             active_runways: List of active runway designators
             separation_range: Tuple of (min, max) separation in nautical miles
+            spawn_delay_range: Spawn delay range in minutes (format: "min-max", e.g., "0-0" or "1-5")
+            difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
 
         Returns:
             List of Aircraft objects
         """
         # Reset tracking for new generation
         self._reset_tracking()
+
+        # Setup difficulty assignment
+        difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
+
+        # Parse spawn delay range
+        min_delay, max_delay = self._parse_spawn_delay_range(spawn_delay_range)
 
         parking_spots = self.geojson_parser.get_parking_spots()
         ga_spots = self.geojson_parser.get_parking_spots(filter_ga=True)
@@ -62,6 +70,8 @@ class TowerMixedScenario(BaseScenario):
 
                 aircraft = self._create_departure_aircraft(spot)
                 if aircraft is not None:
+                    aircraft.spawn_delay = random.randint(min_delay, max_delay)
+                    difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
                     self.aircraft.append(aircraft)
 
                 attempts += 1
@@ -79,23 +89,33 @@ class TowerMixedScenario(BaseScenario):
 
                 aircraft = self._create_ga_aircraft(spot)
                 if aircraft is not None:
+                    aircraft.spawn_delay = random.randint(min_delay, max_delay)
+                    difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
                     self.aircraft.append(aircraft)
                     num_ga_created += 1
 
                 attempts += 1
 
         # Generate arrivals with random separation
+        # If spawn delay > 2 minutes, all aircraft spawn at 5 NM (no spacing needed since they spawn sequentially)
+        # Otherwise, use progressive spacing since they all spawn at once
+        use_fixed_distance = max_delay > 120  # 2 minutes in seconds
+
         for i in range(num_arrivals):
             runway_name = active_runways[i % len(active_runways)]
 
-            # Random separation within specified range
-            base_distance = 6
-            separation = random.randint(separation_range[0], separation_range[1])
-
-            # Calculate cumulative distance
-            distance_nm = base_distance + (i // len(active_runways)) * separation
+            if use_fixed_distance:
+                distance_nm = 5  # Fixed 5 NM final approach position
+            else:
+                # Random separation within specified range
+                base_distance = 6
+                separation = random.randint(separation_range[0], separation_range[1])
+                # Calculate cumulative distance
+                distance_nm = base_distance + (i // len(active_runways)) * separation
 
             aircraft = self._create_arrival_aircraft(runway_name, distance_nm)
+            aircraft.spawn_delay = random.randint(min_delay, max_delay)
+            difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
             self.aircraft.append(aircraft)
 
         logger.info(f"Generated {len(self.aircraft)} total aircraft ({num_ga} GA)")
@@ -189,14 +209,16 @@ class TowerMixedScenario(BaseScenario):
             latitude=lat,
             longitude=lon,
             altitude=altitude,
-            heading=int(runway_heading),  # Aircraft heading toward runway (inbound on final)
+            heading=int(runway_heading),
             ground_speed=ground_speed,
             departure=departure,
             arrival=self.airport_icao,
             route=flight_plan['route'],
             cruise_altitude=flight_plan['altitude'],
             flight_rules="I",
-            engine_type="J"
+            engine_type="J",
+            arrival_runway=runway_name,
+            arrival_distance_nm=distance_nm
         )
 
         return aircraft

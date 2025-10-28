@@ -57,6 +57,77 @@ class BaseScenario(ABC):
         self.aircraft.clear()
         logger.debug("Reset tracking sets for new generation")
 
+    def _setup_difficulty_assignment(self, difficulty_config):
+        """
+        Setup difficulty assignment tracking
+
+        Args:
+            difficulty_config: Dict with 'easy', 'medium', 'hard' counts, or None
+
+        Returns:
+            Tuple of (difficulty_list, difficulty_index) for sequential assignment
+        """
+        if not difficulty_config:
+            return None, 0
+
+        # Create a list of difficulty levels in the order they should be assigned
+        difficulty_list = []
+        difficulty_list.extend(['Easy'] * difficulty_config['easy'])
+        difficulty_list.extend(['Medium'] * difficulty_config['medium'])
+        difficulty_list.extend(['Hard'] * difficulty_config['hard'])
+
+        # Shuffle to randomize difficulty assignment
+        import random
+        random.shuffle(difficulty_list)
+
+        logger.info(f"Difficulty assignment enabled: {difficulty_config['easy']} Easy, {difficulty_config['medium']} Medium, {difficulty_config['hard']} Hard")
+
+        return difficulty_list, 0
+
+    def _assign_difficulty(self, aircraft, difficulty_list, difficulty_index):
+        """
+        Assign difficulty level to an aircraft
+
+        Args:
+            aircraft: Aircraft object to assign difficulty to
+            difficulty_list: List of difficulty levels
+            difficulty_index: Current index in difficulty list
+
+        Returns:
+            Updated difficulty_index
+        """
+        if difficulty_list and difficulty_index < len(difficulty_list):
+            aircraft.difficulty = difficulty_list[difficulty_index]
+            logger.debug(f"Assigned difficulty {aircraft.difficulty} to {aircraft.callsign}")
+            return difficulty_index + 1
+        return difficulty_index
+
+    def _parse_spawn_delay_range(self, spawn_delay_range: str) -> tuple:
+        """
+        Parse spawn delay range string into min/max values in seconds
+
+        Args:
+            spawn_delay_range: String in format "min-max" in MINUTES (e.g., "0-0" or "1-5")
+
+        Returns:
+            Tuple of (min_delay, max_delay) in SECONDS
+        """
+        min_delay_minutes, max_delay_minutes = 0, 0  # defaults - spawn all at once
+        if spawn_delay_range:
+            try:
+                parts = spawn_delay_range.split('-')
+                if len(parts) == 2:
+                    min_delay_minutes = int(parts[0])
+                    max_delay_minutes = int(parts[1])
+            except ValueError:
+                logger.warning(f"Invalid spawn delay range: {spawn_delay_range}, using default (0-0)")
+
+        # Convert minutes to seconds for vNAS
+        min_delay_seconds = min_delay_minutes * 60
+        max_delay_seconds = max_delay_minutes * 60
+
+        return min_delay_seconds, max_delay_seconds
+
     def _load_config(self) -> Dict:
         """
         Load configuration from config.json file
@@ -217,7 +288,8 @@ class BaseScenario(ABC):
             route=flight_plan['route'],
             cruise_altitude=flight_plan['altitude'],
             flight_rules="I",
-            engine_type="J"
+            engine_type="J",
+            parking_spot_name=parking_spot.name
         )
 
         return aircraft
@@ -260,7 +332,8 @@ class BaseScenario(ABC):
             route=route,
             cruise_altitude=str(cruise_altitude),
             flight_rules="I",
-            engine_type="P"
+            engine_type="P",
+            parking_spot_name=parking_spot.name
         )
 
         return aircraft

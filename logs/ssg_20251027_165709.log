@@ -1,0 +1,66 @@
+2025-10-27 16:57:09,433 - INFO - Logging to: logs\ssg_20251027_165709.log
+2025-10-27 16:57:14,739 - INFO - Selected airport: KPHX
+2025-10-27 16:57:14,739 - INFO - Loading GeoJSON data...
+2025-10-27 16:57:14,740 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 16:57:16,728 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 16:57:16,728 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 16:57:16,728 - INFO - GeoJSON data loaded successfully
+2025-10-27 16:57:16,728 - INFO - Loading CIFP data...
+2025-10-27 16:57:16,990 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 16:57:16,991 - INFO - Found 11 arrival procedures
+2025-10-27 16:57:16,991 - INFO - Found 0 approach FAF altitudes
+2025-10-27 16:57:16,991 - INFO - CIFP data loaded successfully
+2025-10-27 16:57:20,125 - INFO - Selected scenario type: ground_mixed
+2025-10-27 16:57:24,088 - INFO - Loaded configuration from config.json
+2025-10-27 16:57:24,090 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 16:57:25,180 - INFO - Fetched flight plan KPHX -> KATL: {'route': 'STRRM1 TUS ELP J26 SUMMY LBB ADM LIT J66 GEEYY MEMFS HUTCC KNSAW RUSSA GLAVN1', 'altitude': '35000', 'aircraft_type': 'B752/L', 'callsign': 'DAL366'}
+2025-10-27 16:57:26,062 - INFO - Fetched flight plan KPHX -> KJFK: {'route': 'FORPE1 ABQ LBL WYYNR NALLY BACTA FAM TERGE RINTE KLYNE Q29 WWSHR JHW J70 LVZ LENDY8', 'altitude': '33000', 'aircraft_type': 'A320/L', 'callsign': 'JBU136'}
+2025-10-27 16:57:26,718 - INFO - Fetched flight plan KPHX -> KMSY: {'route': 'ECLPS1 PHASE ELP J2 FST J86 IAH J2 LCH AWDAD1', 'altitude': '35000', 'aircraft_type': 'CL35/L', 'callsign': 'N93EC'}
+2025-10-27 16:57:27,390 - INFO - Fetched flight plan KPHX -> KTPA: {'route': 'ECLPS1 PHASE EWM J4 CONNE J4 INK JUMBO TORNN GIFFA CIDOR J50 AEX GCV DEFUN MAATY5', 'altitude': '35000', 'aircraft_type': 'A321/L', 'callsign': 'AAL1402'}
+2025-10-27 16:57:28,053 - INFO - Fetched flight plan KPHX -> KBOS: {'route': 'MRBIL1 JARPA KD39S LAA HYS LEWRP Q42 STRUK KG63M DJB WAYLA Q82 MEMMS PONCT JFUND2', 'altitude': '33000', 'aircraft_type': 'A21N/L', 'callsign': 'DAL1676'}
+2025-10-27 16:57:28,719 - INFO - Fetched flight plan KBWI -> KPHX: {'route': 'FOXHL1 OTTTO Q176 STL KK42A FTI KA33U ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA1481'}
+2025-10-27 16:57:28,720 - INFO - Creating arrival: SWA1481 at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 16:57:29,386 - INFO - Fetched flight plan KOAK -> KPHX: {'route': 'OAK6 OAK SYRAH BABIT J92 BLD PRFUM WOTRO BRUSR1', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA1472'}
+2025-10-27 16:57:29,386 - INFO - Creating arrival: SWA1472 at 12.0 NM, alt 4735 ft, hdg 270°, spd 140 kts
+2025-10-27 16:57:30,374 - INFO - Fetched flight plan KATL -> KPHX: {'route': 'NASSA2 YAALL J14 LIT J6 ZUN EAGUL6', 'altitude': '34000', 'aircraft_type': 'B752/L', 'callsign': 'DAL1235'}
+2025-10-27 16:57:30,375 - INFO - Creating arrival: DAL1235 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 16:57:31,025 - INFO - Fetched flight plan KBNA -> KPHX: {'route': 'DRURY3 ACKEE SQS ABI ELP BNNKR PINNG1', 'altitude': '34000', 'aircraft_type': 'B738/L', 'callsign': 'AAL3216'}
+2025-10-27 16:57:31,025 - INFO - Creating arrival: AAL3216 at 24.0 NM, alt 8335 ft, hdg 270°, spd 140 kts
+2025-10-27 16:57:31,669 - INFO - Fetched flight plan KONT -> KPHX: {'route': 'RAJEE4 MTBAL CNERY BLH HYDRR1', 'altitude': '25000', 'aircraft_type': 'B737/L', 'callsign': 'SWA2727'}
+2025-10-27 16:57:31,670 - INFO - Creating arrival: SWA2727 at 30.0 NM, alt 10135 ft, hdg 270°, spd 140 kts
+2025-10-27 16:57:31,670 - INFO - Generated 10 total aircraft
+2025-10-27 16:57:31,670 - INFO - Generated .air file with 10 aircraft at KPHX_scenario.air
+2025-10-27 16:57:31,671 - INFO - Successfully generated 10 aircraft
+2025-10-27 16:57:31,671 - INFO - Saved to: KPHX_scenario.air
+2025-10-27 16:57:39,095 - INFO - Fetched coordinates for KPHX: 33.434269, -112.011002
+2025-10-27 16:57:39,096 - INFO - Airport KPHX is in ARTCC ZAB
+2025-10-27 16:57:39,097 - INFO - Auto-detected ARTCC: ZAB for airport KPHX
+2025-10-27 16:57:39,097 - INFO - Created vNAS scenario with 10 aircraft
+2025-10-27 16:57:39,098 - INFO - Launching undetected Chrome browser for vNAS login...
+2025-10-27 16:57:39,456 - INFO - patching driver executable C:\Users\flyma\appdata\roaming\undetected_chromedriver\undetected_chromedriver.exe
+2025-10-27 16:57:40,948 - INFO - Navigating to https://data-admin.vnas.vatsim.net/training
+2025-10-27 16:57:41,254 - INFO - Please log in to vNAS and navigate to your scenario in the browser window...
+2025-10-27 16:57:41,254 - INFO - Waiting for you to navigate to a scenario (URL pattern: /scenarios/{scenario-id})...
+2025-10-27 16:58:09,946 - INFO - Waiting for all cookies to be set...
+2025-10-27 16:58:14,949 - INFO - Scenario page detected! URL: https://data-admin.vnas.vatsim.net/training/scenarios/01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 16:58:14,949 - INFO - Automatically extracted scenario ID: 01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 16:58:14,949 - INFO - Browser authenticated successfully. Ready to make API requests.
+2025-10-27 16:58:14,949 - INFO - ============================================================
+2025-10-27 16:58:14,949 - INFO - PUSHING SCENARIO VIA BROWSER
+2025-10-27 16:58:14,950 - INFO - ============================================================
+2025-10-27 16:58:14,950 - INFO - Endpoint: https://data-api.vnas.vatsim.net/api/training/scenarios/01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 16:58:14,950 - INFO - Scenario ID: 01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 16:58:14,950 - INFO - Request body size: 5305 bytes
+2025-10-27 16:58:14,950 - INFO - ============================================================
+2025-10-27 16:58:14,950 - INFO - Executing PUT request through browser...
+2025-10-27 16:58:15,013 - INFO - ============================================================
+2025-10-27 16:58:15,013 - INFO - API RESPONSE DEBUG
+2025-10-27 16:58:15,014 - INFO - ============================================================
+2025-10-27 16:58:15,014 - INFO - Status Code: 401
+2025-10-27 16:58:15,014 - INFO - Status Text: 
+2025-10-27 16:58:15,014 - INFO - Response Body (first 500 chars): {"type":"https://tools.ietf.org/html/rfc9110#section-15.5.2","title":"Unauthorized","status":401,"traceId":"00-dd38010da9d98cec6d0166b187452234-828db0c4c5440e8a-00"}
+2025-10-27 16:58:15,014 - INFO - ============================================================
+2025-10-27 16:58:15,014 - ERROR - Authentication failed - session may have expired
+2025-10-27 16:58:15,014 - INFO - Closing browser...
+2025-10-27 16:58:15,162 - INFO - Browser closed successfully
+2025-10-27 17:09:08,420 - INFO - ensuring close

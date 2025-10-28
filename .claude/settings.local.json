@@ -5,7 +5,8 @@
       "Bash(pip install:*)",
       "WebFetch(domain:github.com)",
       "Bash(dir \"C:\\Users\\flyma\\Desktop\\Creative Shrimp\\Sweatbox Scenario Generator (SSG)\\airport_data\")",
-      "Bash(move main.py main_cli_legacy.py)"
+      "Bash(move main.py main_cli_legacy.py)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []

@@ -16,7 +16,8 @@ class TraconArrivalsScenario(BaseScenario):
 
     def generate(self, num_arrivals: int, arrival_waypoints: List[str],
                  altitude_range: Tuple[int, int] = (7000, 18000),
-                 delay_range: Tuple[int, int] = (4, 7)) -> List[Aircraft]:
+                 delay_range: Tuple[int, int] = (4, 7),
+                 spawn_delay_range: str = "0-0", difficulty_config=None) -> List[Aircraft]:
         """
         Generate TRACON arrival scenario
 
@@ -25,12 +26,20 @@ class TraconArrivalsScenario(BaseScenario):
             arrival_waypoints: List of arrival waypoint names
             altitude_range: Tuple of (min, max) altitude in feet
             delay_range: Tuple of (min, max) spawn delay in minutes between aircraft
+            spawn_delay_range: Spawn delay range in minutes (format: "min-max", e.g., "0-0" or "1-5")
+            difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
 
         Returns:
             List of Aircraft objects
         """
         # Reset tracking for new generation
         self._reset_tracking()
+
+        # Setup difficulty assignment
+        difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
+
+        # Parse spawn delay range
+        min_delay, max_delay = self._parse_spawn_delay_range(spawn_delay_range)
 
         logger.info(f"Generating TRACON arrival scenario: {num_arrivals} arrivals")
 
@@ -58,6 +67,8 @@ class TraconArrivalsScenario(BaseScenario):
             cumulative_delay = i * delay_seconds
 
             aircraft = self._create_arrival_at_waypoint(waypoint, altitude_range, cumulative_delay)
+            aircraft.spawn_delay = random.randint(min_delay, max_delay)
+            difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
             self.aircraft.append(aircraft)
 
         logger.info(f"Generated {len(self.aircraft)} arrival aircraft")

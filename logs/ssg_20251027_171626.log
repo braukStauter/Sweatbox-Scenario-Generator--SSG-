@@ -1,0 +1,66 @@
+2025-10-27 17:16:26,034 - INFO - Logging to: logs\ssg_20251027_171626.log
+2025-10-27 17:16:29,829 - INFO - Selected airport: KPHX
+2025-10-27 17:16:29,829 - INFO - Loading GeoJSON data...
+2025-10-27 17:16:29,831 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 17:16:31,726 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 17:16:31,727 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 17:16:31,727 - INFO - GeoJSON data loaded successfully
+2025-10-27 17:16:31,727 - INFO - Loading CIFP data...
+2025-10-27 17:16:31,991 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 17:16:31,991 - INFO - Found 11 arrival procedures
+2025-10-27 17:16:31,991 - INFO - Found 0 approach FAF altitudes
+2025-10-27 17:16:31,991 - INFO - CIFP data loaded successfully
+2025-10-27 17:16:33,569 - INFO - Selected scenario type: ground_mixed
+2025-10-27 17:16:37,364 - INFO - Loaded configuration from config.json
+2025-10-27 17:16:37,366 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 17:16:38,044 - INFO - Fetched flight plan KPHX -> KSFO: {'route': 'ZEPER2 RRSTA DOVEE Q15 SKANN RUSME DYAMD5', 'altitude': '8000', 'aircraft_type': 'B738/L', 'callsign': 'UAL2614'}
+2025-10-27 17:16:38,691 - INFO - Fetched flight plan KPHX -> KMKE: {'route': 'BROAK1 MAXXO TCC TOTOE KK45A KK57C PWE DSM OGECA GOPAC3', 'altitude': '35000', 'aircraft_type': 'B752/L', 'callsign': 'DAL8876'}
+2025-10-27 17:16:39,373 - INFO - Fetched flight plan KPHX -> KBNA: {'route': 'FORPE1 ABQ ECISA WIXIX EYMUV TUL LOPPY CHSNE2', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA2112'}
+2025-10-27 17:16:40,014 - INFO - Fetched flight plan KPHX -> KCLE: {'route': 'MRBIL1 JARPA RSK GLD J146 LNK CID OBK DETMR BRWNZ4', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA1097'}
+2025-10-27 17:16:40,982 - INFO - Fetched flight plan KPHX -> KONT: {'route': 'KEENS3 HRRBR PHRED SCBBY2', 'altitude': '24000', 'aircraft_type': 'A319/L', 'callsign': 'AAL2626'}
+2025-10-27 17:16:41,619 - INFO - Fetched flight plan KPVD -> KPHX: {'route': 'PUT BIGGO BUFFY REBBL CXR MAYZE J60 ASHEN BDF GBG ROEZZ SLOWR HYS CIM ZUN EAGUL V528 HOMRR EAGUL6', 'altitude': '35000', 'aircraft_type': 'G280/L', 'callsign': 'N628G'}
+2025-10-27 17:16:41,620 - INFO - Creating arrival: N628G at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 17:16:42,284 - INFO - Fetched flight plan KMSP -> KPHX: {'route': 'SCHEP1 RXANN TEYOU LLUKY PUB ALS GUP EAGUL6', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'AAL3143'}
+2025-10-27 17:16:42,285 - INFO - Creating arrival: AAL3143 at 12.0 NM, alt 4735 ft, hdg 270°, spd 140 kts
+2025-10-27 17:16:42,956 - INFO - Fetched flight plan KSNA -> KPHX: {'route': 'PIGGN3 CNERY BLH HYDRR1', 'altitude': '25000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL2454'}
+2025-10-27 17:16:42,957 - INFO - Creating arrival: AAL2454 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 17:16:43,970 - INFO - Fetched flight plan KRDU -> KPHX: {'route': 'SHPRD4 SHPRD LVT CNG SGF ICT VARNR Q176 CIM ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'CL35/L', 'callsign': 'EJM827'}
+2025-10-27 17:16:43,971 - INFO - Creating arrival: EJM827 at 24.0 NM, alt 8335 ft, hdg 270°, spd 140 kts
+2025-10-27 17:16:44,929 - INFO - Fetched flight plan KRSW -> KPHX: {'route': 'CSHEL7 JAWJA CABLO DEFUN J2 IAH J86 ELP DRRVR PINNG1', 'altitude': '30000', 'aircraft_type': 'G150/L', 'callsign': 'NJM285'}
+2025-10-27 17:16:44,930 - INFO - Creating arrival: NJM285 at 30.0 NM, alt 10135 ft, hdg 270°, spd 140 kts
+2025-10-27 17:16:44,930 - INFO - Generated 10 total aircraft
+2025-10-27 17:16:44,931 - INFO - Generated .air file with 10 aircraft at KPHX_scenario.air
+2025-10-27 17:16:44,931 - INFO - Successfully generated 10 aircraft
+2025-10-27 17:16:44,932 - INFO - Saved to: KPHX_scenario.air
+2025-10-27 17:16:51,206 - INFO - Fetched coordinates for KPHX: 33.434269, -112.011002
+2025-10-27 17:16:51,207 - INFO - Airport KPHX is in ARTCC ZAB
+2025-10-27 17:16:51,207 - INFO - Auto-detected ARTCC: ZAB for airport KPHX
+2025-10-27 17:16:51,207 - INFO - Created vNAS scenario with 10 aircraft
+2025-10-27 17:16:51,209 - INFO - Connecting to Chrome browser...
+2025-10-27 17:17:54,968 - INFO - No Chrome instance found. Launching Chrome...
+2025-10-27 17:17:54,968 - INFO - Launching Chrome with remote debugging...
+2025-10-27 17:19:03,750 - ERROR - Could not connect to Chrome: Message: session not created: cannot connect to chrome at 127.0.0.1:9222
+from chrome not reachable; For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#sessionnotcreatedexception
+Stacktrace:
+	GetHandleVerifier [0x0x7ff693c0e8e5+80021]
+	GetHandleVerifier [0x0x7ff693c0e940+80112]
+	(No symbol) [0x0x7ff693990425]
+	(No symbol) [0x0x7ff693981128]
+	(No symbol) [0x0x7ff6939d4b12]
+	(No symbol) [0x0x7ff6939c9aa4]
+	(No symbol) [0x0x7ff693a1f040]
+	(No symbol) [0x0x7ff693a1e7b0]
+	(No symbol) [0x0x7ff693a11003]
+	(No symbol) [0x0x7ff6939d95d1]
+	(No symbol) [0x0x7ff6939da3f3]
+	GetHandleVerifier [0x0x7ff693ecdc7d+2960429]
+	GetHandleVerifier [0x0x7ff693ec7f3a+2936554]
+	GetHandleVerifier [0x0x7ff693ee8977+3070247]
+	GetHandleVerifier [0x0x7ff693c283ce+185214]
+	GetHandleVerifier [0x0x7ff693c2fe1f+216527]
+	GetHandleVerifier [0x0x7ff693c17b24+117460]
+	GetHandleVerifier [0x0x7ff693c17cdf+117903]
+	GetHandleVerifier [0x0x7ff693bfdbb8+11112]
+	BaseThreadInitThunk [0x0x7fff8dace8d7+23]
+	RtlUserThreadStart [0x0x7fff8f32c53c+44]
+

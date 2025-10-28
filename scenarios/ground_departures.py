@@ -14,18 +14,26 @@ logger = logging.getLogger(__name__)
 class GroundDeparturesScenario(BaseScenario):
     """Scenario with ground departure aircraft only"""
 
-    def generate(self, num_departures: int) -> List[Aircraft]:
+    def generate(self, num_departures: int, spawn_delay_range: str = "0-0", difficulty_config=None) -> List[Aircraft]:
         """
         Generate ground departure aircraft
 
         Args:
             num_departures: Number of departure aircraft to generate
+            spawn_delay_range: Spawn delay range in minutes (format: "min-max", e.g., "0-0" or "1-5")
+            difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
 
         Returns:
             List of Aircraft objects
         """
         # Reset tracking for new generation
         self._reset_tracking()
+
+        # Setup difficulty assignment
+        difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
+
+        # Parse spawn delay range
+        min_delay, max_delay = self._parse_spawn_delay_range(spawn_delay_range)
 
         parking_spots = self.geojson_parser.get_parking_spots()
 
@@ -34,7 +42,7 @@ class GroundDeparturesScenario(BaseScenario):
                 f"Cannot create {num_departures} aircraft with only {len(parking_spots)} parking spots available"
             )
 
-        logger.info(f"Generating {num_departures} departure aircraft")
+        logger.info(f"Generating {num_departures} departure aircraft with spawn delays {min_delay}-{max_delay}s")
 
         # Generate aircraft, trying more spots if needed
         attempts = 0
@@ -54,6 +62,11 @@ class GroundDeparturesScenario(BaseScenario):
                 aircraft = self._create_departure_aircraft(spot)
 
             if aircraft is not None:
+                # Apply random spawn delay
+                aircraft.spawn_delay = random.randint(min_delay, max_delay)
+                # Assign difficulty level
+                difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign}")
                 self.aircraft.append(aircraft)
 
             attempts += 1

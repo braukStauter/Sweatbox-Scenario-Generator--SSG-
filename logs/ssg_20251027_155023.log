@@ -1,0 +1,143 @@
+2025-10-27 15:50:23,390 - INFO - Logging to: logs\ssg_20251027_155023.log
+2025-10-27 15:50:27,216 - INFO - Selected airport: KPHX
+2025-10-27 15:50:27,216 - INFO - Loading GeoJSON data...
+2025-10-27 15:50:27,218 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 15:50:28,991 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 15:50:28,991 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 15:50:28,991 - INFO - GeoJSON data loaded successfully
+2025-10-27 15:50:28,992 - INFO - Loading CIFP data...
+2025-10-27 15:50:29,259 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 15:50:29,259 - INFO - Found 11 arrival procedures
+2025-10-27 15:50:29,259 - INFO - Found 0 approach FAF altitudes
+2025-10-27 15:50:29,259 - INFO - CIFP data loaded successfully
+2025-10-27 15:50:31,082 - INFO - Selected scenario type: ground_mixed
+2025-10-27 15:50:34,094 - INFO - Loaded configuration from config.json
+2025-10-27 15:50:34,095 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 15:50:35,099 - INFO - Fetched flight plan KPHX -> KFLL: {'route': 'ECLPS1 PHASE BGS ACT LCH LEV Q102 BLVNS Y290 OCHHO VNECK TEEKY3', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA4842'}
+2025-10-27 15:50:36,135 - INFO - Fetched flight plan KPHX -> KMCO: {'route': 'FORPE1 ABQ TXO SPS AIRRE JRHED JODOX SQS MGMRY DEEDA GRNCH5', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA4902'}
+2025-10-27 15:50:36,785 - INFO - Fetched flight plan KPHX -> KDCA: {'route': 'BROAK1 MAXXO CNX MMB TUL BERGG ARG SOPIE HITMN Q34 TONIO Q34 SITTR TRUPS5', 'altitude': '35000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL1787'}
+2025-10-27 15:50:37,628 - INFO - Fetched flight plan KPHX -> KJFK: {'route': 'FORPE1 ABQ KA39Y SGF J98 FAM WLSUN ZIEBR SITTR Q108 SIE CAMRN5', 'altitude': '35000', 'aircraft_type': 'A320/L', 'callsign': 'JBU136'}
+2025-10-27 15:50:38,273 - INFO - Fetched flight plan KPHX -> KPIT: {'route': 'BROAK1 MAXXO CNX PNH IFI SGF STL J110 VHP APE CTW FEWGA7', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA2702'}
+2025-10-27 15:50:38,274 - ERROR - Error generating scenario
+Traceback (most recent call last):
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\gui\main_window.py", line 219, in _do_generation
+    aircraft = self._generate_aircraft(
+        scenario,
+    ...<6 lines>...
+        arrival_waypoints
+    )
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\gui\main_window.py", line 298, in _generate_aircraft
+    return scenario.generate(num_departures, num_arrivals, active_runways)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\scenarios\ground_mixed.py", line 65, in generate
+    runway_name = active_runways[i % len(active_runways)]
+                                 ~~^~~~~~~~~~~~~~~~~~~~~
+ZeroDivisionError: integer modulo by zero
+2025-10-27 15:50:55,307 - INFO - Selected airport: KPHX
+2025-10-27 15:50:55,307 - INFO - Loading GeoJSON data...
+2025-10-27 15:50:55,308 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 15:50:57,208 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 15:50:57,208 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 15:50:57,208 - INFO - GeoJSON data loaded successfully
+2025-10-27 15:50:57,208 - INFO - Loading CIFP data...
+2025-10-27 15:50:57,472 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 15:50:57,472 - INFO - Found 11 arrival procedures
+2025-10-27 15:50:57,472 - INFO - Found 0 approach FAF altitudes
+2025-10-27 15:50:57,472 - INFO - CIFP data loaded successfully
+2025-10-27 15:50:59,777 - INFO - Selected scenario type: ground_mixed
+2025-10-27 15:51:08,404 - INFO - Loaded configuration from config.json
+2025-10-27 15:51:08,405 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 15:51:09,085 - INFO - Fetched flight plan KPHX -> KBOS: {'route': 'FORPE1 ABQ KA39Y MORRR EUNIK STL MACES PSKUR OXMAN JHW Q82 PONCT JFUND2', 'altitude': '35000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL1450'}
+2025-10-27 15:51:10,077 - INFO - Fetched flight plan KPHX -> KSEA: {'route': 'QUAKY1 GCN WINEN NEERO KOATA PDT CHINS5', 'altitude': '34000', 'aircraft_type': 'E170/L', 'callsign': 'ENY4117'}
+2025-10-27 15:51:10,706 - INFO - Fetched flight plan KPHX -> KLGA: {'route': 'MRBIL1 JARPA RSK TXC HCT J60 JOT J146 ETG MIP4', 'altitude': '35000', 'aircraft_type': 'C750/L', 'callsign': 'KOW301'}
+2025-10-27 15:51:11,354 - INFO - Fetched flight plan KPHX -> KBWI: {'route': 'BROAK1 MAXXO IRW OKM VLUST YACKS PXV HNN EKN TRIXY BAL', 'altitude': '37000', 'aircraft_type': 'B737/L', 'callsign': 'SWA2728'}
+2025-10-27 15:51:12,028 - INFO - Fetched flight plan KABQ -> KPHX: {'route': 'RDRNR3 ZUN EAGUL6', 'altitude': '12000', 'aircraft_type': 'CRJ7/L', 'callsign': 'SKW6395'}
+2025-10-27 15:51:12,029 - INFO - Creating arrival: SKW6395 at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 15:51:12,699 - INFO - Fetched flight plan KEWR -> KPHX: {'route': 'COATE Q436 RAAKK Q438 CFJHV Q438 RUBYY DABJU J36 BAE MCW ONL PUB ALS GUP EAGUL6', 'altitude': '35000', 'aircraft_type': 'B739/L', 'callsign': 'UAL1331'}
+2025-10-27 15:51:12,699 - INFO - Creating arrival: UAL1331 at 12.0 NM, alt 4735 ft, hdg 270°, spd 140 kts
+2025-10-27 15:51:13,365 - INFO - Fetched flight plan KCMH -> KPHX: {'route': 'PKACZ TARRY DQN VHP WLDBL HLV TYGER UDCOS VARNR Q176 TOTOE TAMEY ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA3815'}
+2025-10-27 15:51:13,366 - INFO - Creating arrival: SWA3815 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 15:51:14,023 - INFO - Fetched flight plan KATL -> KPHX: {'route': 'NASSA2 VUZ HRISN CLOUT IZAAC EIC MRSSH BROBB DOSXX CRUZZ CNM ELP DRRVR PINNG1', 'altitude': '36000', 'aircraft_type': 'B752/L', 'callsign': 'DAL1235'}
+2025-10-27 15:51:14,023 - INFO - Creating arrival: DAL1235 at 24.0 NM, alt 8335 ft, hdg 270°, spd 140 kts
+2025-10-27 15:51:14,652 - INFO - Fetched flight plan KCLE -> KPHX: {'route': 'GTLKE4 YABRO IOW PWE HLC PUB ALS GUP EAGUL6', 'altitude': '35000', 'aircraft_type': 'CL30/L', 'callsign': 'ERY546'}
+2025-10-27 15:51:14,653 - INFO - Creating arrival: ERY546 at 30.0 NM, alt 10135 ft, hdg 270°, spd 140 kts
+2025-10-27 15:51:14,653 - INFO - Generated 10 total aircraft
+2025-10-27 15:51:14,654 - INFO - Generated .air file with 10 aircraft at KPHX_scenario.air
+2025-10-27 15:51:14,654 - INFO - Successfully generated 10 aircraft
+2025-10-27 15:51:14,654 - INFO - Saved to: KPHX_scenario.air
+2025-10-27 15:51:20,144 - INFO - Created vNAS scenario with 10 aircraft
+2025-10-27 15:51:20,144 - INFO - Launching browser for vNAS login...
+2025-10-27 15:51:21,198 - INFO - Navigating to https://data-admin.vnas.vatsim.net/training
+2025-10-27 15:51:22,258 - INFO - Please log in to vNAS and navigate to your scenario in the browser window...
+2025-10-27 15:51:22,258 - INFO - Waiting for you to navigate to a scenario (URL pattern: /scenarios/{scenario-id})...
+2025-10-27 15:51:53,473 - ERROR - Error during browser login: Message: invalid session id: session deleted as the browser has closed the connection
+from disconnected: not connected to DevTools
+  (Session info: chrome=141.0.7390.123); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#invalidsessionidexception
+Stacktrace:
+	GetHandleVerifier [0x0x7ff693c0e8e5+80021]
+	GetHandleVerifier [0x0x7ff693c0e940+80112]
+	(No symbol) [0x0x7ff69399060f]
+	(No symbol) [0x0x7ff69397c145]
+	(No symbol) [0x0x7ff6939a177a]
+	(No symbol) [0x0x7ff693a18b06]
+	(No symbol) [0x0x7ff693a38fa2]
+	(No symbol) [0x0x7ff693a11003]
+	(No symbol) [0x0x7ff6939d95d1]
+	(No symbol) [0x0x7ff6939da3f3]
+	GetHandleVerifier [0x0x7ff693ecdc7d+2960429]
+	GetHandleVerifier [0x0x7ff693ec7f3a+2936554]
+	GetHandleVerifier [0x0x7ff693ee8977+3070247]
+	GetHandleVerifier [0x0x7ff693c283ce+185214]
+	GetHandleVerifier [0x0x7ff693c2fe1f+216527]
+	GetHandleVerifier [0x0x7ff693c17b24+117460]
+	GetHandleVerifier [0x0x7ff693c17cdf+117903]
+	GetHandleVerifier [0x0x7ff693bfdbb8+11112]
+	BaseThreadInitThunk [0x0x7fff8dace8d7+23]
+	RtlUserThreadStart [0x0x7fff8f32c53c+44]
+Traceback (most recent call last):
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\utils\vnas_client.py", line 88, in _login_via_browser
+    WebDriverWait(driver, timeout).until(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        lambda d: re.search(r'/scenarios/([a-zA-Z0-9_-]+)', d.current_url)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\flyma\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\selenium\webdriver\support\wait.py", line 129, in until
+    value = method(self._driver)
+  File "C:\Users\flyma\Desktop\Creative Shrimp\Sweatbox Scenario Generator (SSG)\utils\vnas_client.py", line 89, in <lambda>
+    lambda d: re.search(r'/scenarios/([a-zA-Z0-9_-]+)', d.current_url)
+                                                        ^^^^^^^^^^^^^
+  File "C:\Users\flyma\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\selenium\webdriver\remote\webdriver.py", line 587, in current_url
+    return self.execute(Command.GET_CURRENT_URL)["value"]
+           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\flyma\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\selenium\webdriver\remote\webdriver.py", line 458, in execute
+    self.error_handler.check_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\flyma\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\LocalCache\local-packages\Python313\site-packages\selenium\webdriver\remote\errorhandler.py", line 232, in check_response
+    raise exception_class(message, screen, stacktrace)
+selenium.common.exceptions.InvalidSessionIdException: Message: invalid session id: session deleted as the browser has closed the connection
+from disconnected: not connected to DevTools
+  (Session info: chrome=141.0.7390.123); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#invalidsessionidexception
+Stacktrace:
+	GetHandleVerifier [0x0x7ff693c0e8e5+80021]
+	GetHandleVerifier [0x0x7ff693c0e940+80112]
+	(No symbol) [0x0x7ff69399060f]
+	(No symbol) [0x0x7ff69397c145]
+	(No symbol) [0x0x7ff6939a177a]
+	(No symbol) [0x0x7ff693a18b06]
+	(No symbol) [0x0x7ff693a38fa2]
+	(No symbol) [0x0x7ff693a11003]
+	(No symbol) [0x0x7ff6939d95d1]
+	(No symbol) [0x0x7ff6939da3f3]
+	GetHandleVerifier [0x0x7ff693ecdc7d+2960429]
+	GetHandleVerifier [0x0x7ff693ec7f3a+2936554]
+	GetHandleVerifier [0x0x7ff693ee8977+3070247]
+	GetHandleVerifier [0x0x7ff693c283ce+185214]
+	GetHandleVerifier [0x0x7ff693c2fe1f+216527]
+	GetHandleVerifier [0x0x7ff693c17b24+117460]
+	GetHandleVerifier [0x0x7ff693c17cdf+117903]
+	GetHandleVerifier [0x0x7ff693bfdbb8+11112]
+	BaseThreadInitThunk [0x0x7fff8dace8d7+23]
+	RtlUserThreadStart [0x0x7fff8f32c53c+44]
+
+2025-10-27 15:51:53,476 - INFO - Closing browser...

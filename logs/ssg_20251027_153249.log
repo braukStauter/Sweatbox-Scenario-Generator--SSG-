@@ -1,0 +1,52 @@
+2025-10-27 15:32:49,261 - INFO - Logging to: logs\ssg_20251027_153249.log
+2025-10-27 15:32:53,188 - INFO - Selected airport: KPHX
+2025-10-27 15:32:53,188 - INFO - Loading GeoJSON data...
+2025-10-27 15:32:53,190 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 15:32:55,170 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 15:32:55,170 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 15:32:55,170 - INFO - GeoJSON data loaded successfully
+2025-10-27 15:32:55,170 - INFO - Loading CIFP data...
+2025-10-27 15:32:55,436 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 15:32:55,436 - INFO - Found 11 arrival procedures
+2025-10-27 15:32:55,436 - INFO - Found 0 approach FAF altitudes
+2025-10-27 15:32:55,436 - INFO - CIFP data loaded successfully
+2025-10-27 15:32:57,029 - INFO - Selected scenario type: ground_mixed
+2025-10-27 15:33:02,057 - INFO - Loaded configuration from config.json
+2025-10-27 15:33:02,059 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 15:33:03,089 - INFO - Fetched flight plan KPHX -> KBUR: {'route': 'KEENS3 HRRBR PHRED THRNE4', 'altitude': '24000', 'aircraft_type': 'B737/L', 'callsign': 'SWA1506'}
+2025-10-27 15:33:04,024 - INFO - Fetched flight plan KPHX -> KTPA: {'route': 'ECLPS1 PHASE EWM J4 INK ACT MCB GCV DEFUN MAATY5', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA2362'}
+2025-10-27 15:33:04,674 - INFO - Fetched flight plan KPHX -> KCLT: {'route': 'BROAK1 MAXXO IRW FSM LOPPY WAKOL TAZZA FILPZ4', 'altitude': '35000', 'aircraft_type': 'GLEX/L', 'callsign': 'N650CV'}
+2025-10-27 15:33:05,291 - INFO - Fetched flight plan KPHX -> KMIA: {'route': 'BROAK1 MAXXO TXO TURKI UKW ECKEY EIC DOOMS LBY CEW J2 DEFUN FROGZ4', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'AAL1968'}
+2025-10-27 15:33:05,929 - INFO - Fetched flight plan KPHX -> KMKE: {'route': 'MRBIL1 JARPA RSK SYTHH LNK OGECA GOPAC3', 'altitude': '35000', 'aircraft_type': 'GLF5/L', 'callsign': 'N989JC'}
+2025-10-27 15:33:07,009 - INFO - Fetched flight plan KSJC -> KPHX: {'route': 'SPTNS1 JFREE LOSHN PMD DECAS J65 BLH HYDRR1', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'AAL2094'}
+2025-10-27 15:33:07,009 - INFO - Creating arrival: AAL2094 at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 15:33:07,686 - INFO - Fetched flight plan KSLC -> KPHX: {'route': 'ZIONZ1 BCE CORKR TENTS BRUSR1', 'altitude': '33000', 'aircraft_type': 'A21N/L', 'callsign': 'DAL1496'}
+2025-10-27 15:33:07,687 - INFO - Creating arrival: DAL1496 at 12.0 NM, alt 4735 ft, hdg 270°, spd 140 kts
+2025-10-27 15:33:08,381 - INFO - Fetched flight plan KSAN -> KPHX: {'route': 'ZZOOO4 HOGGZ HYDRR1', 'altitude': '25000', 'aircraft_type': 'A321/L', 'callsign': 'AAL625'}
+2025-10-27 15:33:08,382 - INFO - Creating arrival: AAL625 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 15:33:09,062 - INFO - Fetched flight plan KABQ -> KPHX: {'route': 'RDRNR3 ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA254'}
+2025-10-27 15:33:09,063 - INFO - Creating arrival: SWA254 at 24.0 NM, alt 8335 ft, hdg 270°, spd 140 kts
+2025-10-27 15:33:09,715 - INFO - Fetched flight plan KPDX -> KPHX: {'route': 'CASCD4 PUHTS PAWLI Q11 PASKE EHF J65 BLH HYDRR1', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA3992'}
+2025-10-27 15:33:09,715 - INFO - Creating arrival: SWA3992 at 30.0 NM, alt 10135 ft, hdg 270°, spd 140 kts
+2025-10-27 15:33:09,715 - INFO - Generated 10 total aircraft
+2025-10-27 15:33:09,716 - INFO - Generated .air file with 10 aircraft at KPHX_scenario.air
+2025-10-27 15:33:09,716 - INFO - Successfully generated 10 aircraft
+2025-10-27 15:33:09,716 - INFO - Saved to: KPHX_scenario.air
+2025-10-27 15:33:34,705 - INFO - Attempting to load cookies from Chrome using pycookiecheat (Windows)
+2025-10-27 15:33:34,747 - INFO - Attempting to load cookies from Chrome with domain: vnas.vatsim.net
+2025-10-27 15:33:34,751 - INFO - Attempting to load cookies from Chrome with domain: .vnas.vatsim.net
+2025-10-27 15:33:34,753 - INFO - Attempting to load cookies from Chrome with domain: data-api.vnas.vatsim.net
+2025-10-27 15:33:34,755 - INFO - Attempting to load cookies from Chrome with domain: .vatsim.net
+2025-10-27 15:33:34,756 - INFO - Attempting to load cookies from Chrome with domain: all domains
+2025-10-27 15:33:34,762 - INFO - Attempting to load cookies from Edge with domain: vnas.vatsim.net
+2025-10-27 15:33:34,771 - INFO - Attempting to load cookies from Edge with domain: .vnas.vatsim.net
+2025-10-27 15:33:34,773 - INFO - Attempting to load cookies from Edge with domain: data-api.vnas.vatsim.net
+2025-10-27 15:33:34,775 - INFO - Attempting to load cookies from Edge with domain: .vatsim.net
+2025-10-27 15:33:34,777 - INFO - Attempting to load cookies from Edge with domain: all domains
+2025-10-27 15:33:34,779 - INFO - Attempting to load cookies from Firefox with domain: vnas.vatsim.net
+2025-10-27 15:33:34,779 - INFO - Attempting to load cookies from Firefox with domain: .vnas.vatsim.net
+2025-10-27 15:33:34,779 - INFO - Attempting to load cookies from Firefox with domain: data-api.vnas.vatsim.net
+2025-10-27 15:33:34,779 - INFO - Attempting to load cookies from Firefox with domain: .vatsim.net
+2025-10-27 15:33:34,779 - INFO - Attempting to load cookies from Firefox with domain: all domains
+2025-10-27 15:33:34,780 - WARNING - Could not load cookies from any browser
+2025-10-27 15:33:34,780 - INFO - TIP: Install pycookiecheat for better Windows Chrome support: pip install pycookiecheat

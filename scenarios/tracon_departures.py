@@ -14,19 +14,27 @@ logger = logging.getLogger(__name__)
 class TraconDeparturesScenario(BaseScenario):
     """Scenario for TRACON with departures only"""
 
-    def generate(self, num_departures: int, active_runways: List[str]) -> List[Aircraft]:
+    def generate(self, num_departures: int, active_runways: List[str], spawn_delay_range: str = "0-0", difficulty_config=None) -> List[Aircraft]:
         """
         Generate TRACON departure scenario
 
         Args:
             num_departures: Number of departure aircraft
             active_runways: List of active runway designators (not used for ground aircraft)
+            spawn_delay_range: Spawn delay range in minutes (format: "min-max", e.g., "0-0" or "1-5")
+            difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
 
         Returns:
             List of Aircraft objects
         """
         # Reset tracking for new generation
         self._reset_tracking()
+
+        # Setup difficulty assignment
+        difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
+
+        # Parse spawn delay range
+        min_delay, max_delay = self._parse_spawn_delay_range(spawn_delay_range)
 
         parking_spots = self.geojson_parser.get_parking_spots()
 
@@ -54,6 +62,8 @@ class TraconDeparturesScenario(BaseScenario):
                 aircraft = self._create_departure_aircraft(spot)
 
             if aircraft is not None:
+                aircraft.spawn_delay = random.randint(min_delay, max_delay)
+                difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
                 self.aircraft.append(aircraft)
 
             attempts += 1

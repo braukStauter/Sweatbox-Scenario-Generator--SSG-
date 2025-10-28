@@ -1,0 +1,54 @@
+2025-10-27 16:38:28,671 - INFO - Logging to: logs\ssg_20251027_163828.log
+2025-10-27 16:38:32,548 - INFO - Selected airport: KPHX
+2025-10-27 16:38:32,548 - INFO - Loading GeoJSON data...
+2025-10-27 16:38:32,550 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 16:38:34,844 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 16:38:34,844 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 16:38:34,845 - INFO - GeoJSON data loaded successfully
+2025-10-27 16:38:34,845 - INFO - Loading CIFP data...
+2025-10-27 16:38:35,111 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 16:38:35,111 - INFO - Found 11 arrival procedures
+2025-10-27 16:38:35,112 - INFO - Found 0 approach FAF altitudes
+2025-10-27 16:38:35,112 - INFO - CIFP data loaded successfully
+2025-10-27 16:38:36,752 - INFO - Selected scenario type: ground_mixed
+2025-10-27 16:38:40,896 - INFO - Loaded configuration from config.json
+2025-10-27 16:38:40,897 - INFO - Generating 5 departures and 5 arrivals
+2025-10-27 16:38:41,970 - INFO - Fetched flight plan KPHX -> KORD: {'route': 'BROAK1 MAXXO TCC J6 IRW J98 SGF FTZ TRTLL6', 'altitude': '35000', 'aircraft_type': 'A20N/L', 'callsign': 'FFT1828'}
+2025-10-27 16:38:42,642 - INFO - Fetched flight plan KPHX -> KBOS: {'route': 'MRBIL1 JARPA KD39S LAA HYS LEWRP Q42 STRUK KG63M DJB WAYLA Q82 MEMMS PONCT JFUND2', 'altitude': '33000', 'aircraft_type': 'A21N/L', 'callsign': 'DAL1676'}
+2025-10-27 16:38:43,301 - INFO - Fetched flight plan KPHX -> KDTW: {'route': 'FORPE1 ABQ KA39Y VARNR ICT MCI ROEZZ BURKK VORIN OBK DUUDA RKCTY2', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'AAL3140'}
+2025-10-27 16:38:43,961 - INFO - Fetched flight plan KPHX -> KPIT: {'route': 'FORPE1 ABQ KA39W DRAWL J18 GCK KK54C LMN IOW J146 WOOST TAMDE GRIVY JESEY5', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA2548'}
+2025-10-27 16:38:44,907 - INFO - Fetched flight plan KMIA -> KPHX: {'route': 'GLADZ4 BAGGS Y290 LEV J86 ELP DRRVR PINNG1', 'altitude': '35000', 'aircraft_type': 'C750/L', 'callsign': 'JRE979'}
+2025-10-27 16:38:44,908 - INFO - Creating arrival: JRE979 at 6.0 NM, alt 2935 ft, hdg 270°, spd 140 kts
+2025-10-27 16:38:52,478 - INFO - Fetched flight plan KPIT -> KPHX: {'route': 'DILNE TVTRN VHP TTH ENL SGF MMB FTI ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA4271'}
+2025-10-27 16:38:52,479 - INFO - Creating arrival: SWA4271 at 12.0 NM, alt 4735 ft, hdg 270°, spd 140 kts
+2025-10-27 16:38:53,104 - INFO - Fetched flight plan KRDU -> KPHX: {'route': 'SHPRD4 SHPRD LVT CNG SGF ICT VARNR Q176 CIM ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA3993'}
+2025-10-27 16:38:53,105 - INFO - Creating arrival: SWA3993 at 18.0 NM, alt 6535 ft, hdg 270°, spd 140 kts
+2025-10-27 16:38:54,106 - INFO - Fetched flight plan KLAS -> KPHX: {'route': 'RASLR3 ZAYNE WOTRO BRUSR1', 'altitude': '27000', 'aircraft_type': 'A321/L', 'callsign': 'AAL440'}
+2025-10-27 16:38:54,107 - INFO - Creating arrival: AAL440 at 24.0 NM, alt 8335 ft, hdg 270°, spd 140 kts
+2025-10-27 16:38:54,784 - INFO - Fetched flight plan KABQ -> KPHX: {'route': 'ADYOS3 ZUN EAGUL6', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA1689'}
+2025-10-27 16:38:54,785 - INFO - Creating arrival: SWA1689 at 30.0 NM, alt 10135 ft, hdg 270°, spd 140 kts
+2025-10-27 16:38:54,785 - INFO - Generated 10 total aircraft
+2025-10-27 16:38:54,786 - INFO - Generated .air file with 10 aircraft at KPHX_scenario.air
+2025-10-27 16:38:54,786 - INFO - Successfully generated 10 aircraft
+2025-10-27 16:38:54,786 - INFO - Saved to: KPHX_scenario.air
+2025-10-27 16:39:03,573 - INFO - Fetched coordinates for KPHX: 33.434269, -112.011002
+2025-10-27 16:39:03,574 - INFO - Airport KPHX is in ARTCC ZAB
+2025-10-27 16:39:03,574 - INFO - Auto-detected ARTCC: ZAB for airport KPHX
+2025-10-27 16:39:03,574 - INFO - Created vNAS scenario with 10 aircraft
+2025-10-27 16:39:03,575 - INFO - Launching undetected Chrome browser for vNAS login...
+2025-10-27 16:39:03,950 - INFO - patching driver executable C:\Users\flyma\appdata\roaming\undetected_chromedriver\undetected_chromedriver.exe
+2025-10-27 16:39:05,445 - INFO - Navigating to https://data-admin.vnas.vatsim.net/training
+2025-10-27 16:39:05,849 - INFO - Please log in to vNAS and navigate to your scenario in the browser window...
+2025-10-27 16:39:05,849 - INFO - Waiting for you to navigate to a scenario (URL pattern: /scenarios/{scenario-id})...
+2025-10-27 16:39:29,242 - INFO - Waiting for all cookies to be set...
+2025-10-27 16:39:34,245 - INFO - Scenario page detected! URL: https://data-admin.vnas.vatsim.net/training/scenarios/01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 16:39:34,245 - INFO - Automatically extracted scenario ID: 01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 16:39:34,247 - WARNING - Attempt 1: Missing .AspNetCore.Cookies, waiting...
+2025-10-27 16:39:36,250 - WARNING - Attempt 2: Missing .AspNetCore.Cookies, waiting...
+2025-10-27 16:39:38,253 - WARNING - Attempt 3: Missing .AspNetCore.Cookies, waiting...
+2025-10-27 16:39:40,254 - ERROR - CRITICAL: Missing .AspNetCore.Cookies authentication cookie!
+2025-10-27 16:39:40,254 - ERROR - Available cookies:
+2025-10-27 16:39:40,254 - ERROR -   - cf_clearance (domain: .vatsim.net)
+2025-10-27 16:39:40,254 - INFO - Closing browser...
+2025-10-27 16:39:40,407 - INFO - Browser closed successfully
+2025-10-27 16:40:35,751 - INFO - ensuring close

@@ -1,0 +1,177 @@
+2025-10-27 21:20:23,977 - INFO - Logging to: logs\ssg_20251027_212023.log
+2025-10-27 21:20:27,840 - INFO - Selected airport: KPHX
+2025-10-27 21:20:27,840 - INFO - Loading GeoJSON data...
+2025-10-27 21:20:27,842 - INFO - Loaded 198 parking spots and 5 runways
+2025-10-27 21:20:29,627 - INFO - Fetched elevation for KPHX: 1135 ft MSL
+2025-10-27 21:20:29,628 - INFO - Field elevation for KPHX: 1135 ft MSL
+2025-10-27 21:20:29,628 - INFO - GeoJSON data loaded successfully
+2025-10-27 21:20:29,628 - INFO - Loading CIFP data...
+2025-10-27 21:20:29,895 - INFO - Loaded 63851 waypoints for KPHX
+2025-10-27 21:20:29,895 - INFO - Found 11 arrival procedures
+2025-10-27 21:20:29,895 - INFO - Found 0 approach FAF altitudes
+2025-10-27 21:20:29,895 - INFO - CIFP data loaded successfully
+2025-10-27 21:20:41,006 - INFO - Selected scenario type: ground_mixed
+2025-10-27 21:20:51,633 - INFO - Loaded configuration from config.json
+2025-10-27 21:20:51,634 - INFO - Difficulty assignment enabled: 15 Easy, 25 Medium, 30 Hard
+2025-10-27 21:20:51,634 - INFO - Generating 70 departures and 0 arrivals with spawn delays 0-0s
+2025-10-27 21:20:52,136 - INFO - Fetched flight plan KPHX -> KCMH: {'route': 'FORPE1 ABQ CIM HLC KP60C DSM CNOTA MZV FWA BRYEN DUBLN1', 'altitude': '35000', 'aircraft_type': 'A320/L', 'callsign': 'AAL2900'}
+2025-10-27 21:20:52,579 - INFO - Fetched flight plan KPHX -> KMSY: {'route': 'ECLPS1 PHASE ELP FST JCT IAH LCH AWDAD1', 'altitude': '35000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA1160'}
+2025-10-27 21:20:52,915 - INFO - Fetched flight plan KPHX -> KRSW: {'route': '', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': None}
+2025-10-27 21:20:53,247 - INFO - Fetched flight plan KPHX -> KPVD: {'route': 'FORPE1 ABQ J18 GCK J96 PIA PNT FWA DJB YTOWN SLT HNK WIPOR3', 'altitude': '35000', 'aircraft_type': 'LJ60/L', 'callsign': 'N79SC'}
+2025-10-27 21:20:53,772 - INFO - Fetched flight plan KPHX -> KLAS: {'route': 'ZEPER2 RRSTA ELLDA RKSTR4', 'altitude': '28000', 'aircraft_type': 'B38M/L', 'callsign': 'SWA284'}
+2025-10-27 21:20:54,139 - INFO - Fetched flight plan KPHX -> KDFW: {'route': 'BROAK1 MAXXO TXO TURKI VKTRY2', 'altitude': '31000', 'aircraft_type': 'B738/L', 'callsign': 'AAL2631'}
+2025-10-27 21:20:54,140 - WARNING - Parking spot B25 is already in use, skipping
+2025-10-27 21:20:54,480 - INFO - Fetched flight plan KPHX -> KMCO: {'route': 'BROAK1 MAXXO GANJA J72 SPS LIT J66 MEM MGMRY DEEDA GRNCH5', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA4132'}
+2025-10-27 21:20:54,844 - INFO - Fetched flight plan KPHX -> KBOS: {'route': 'FORPE1 ABQ KA39Y MORRR EUNIK STL MACES PSKUR OXMAN JHW Q82 PONCT JFUND2', 'altitude': '35000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL1450'}
+2025-10-27 21:20:55,225 - INFO - Fetched flight plan KPHX -> KDEN: {'route': 'MRBIL1 JARPA CRUDD TBARR4', 'altitude': '27000', 'aircraft_type': 'A21N/L', 'callsign': 'FFT1820'}
+2025-10-27 21:20:55,597 - INFO - Fetched flight plan KPHX -> KSFO: {'route': 'ZEPER2 RRSTA DOVEE BTY RUSME DYAMD5', 'altitude': '34000', 'aircraft_type': 'B737/L', 'callsign': 'SWA4247'}
+2025-10-27 21:20:55,598 - INFO - Creating GA aircraft for parking spot: GA2
+2025-10-27 21:20:55,907 - INFO - Fetched flight plan KPHX -> KFLL: {'route': 'ECLPS1 PHASE LEV Y290 OCHHO VNECK TEEKY3', 'altitude': '35000', 'aircraft_type': 'C750/L', 'callsign': 'N255FP'}
+2025-10-27 21:20:56,279 - INFO - Fetched flight plan KPHX -> KRDU: {'route': 'ECLPS1 PHASE ELP PHILS BGTOE SHLLY HERRI SWB WINAP STNGA BESTT IRQ PYRES DMSTR2', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'SWA3779'}
+2025-10-27 21:20:56,676 - INFO - Fetched flight plan KPHX -> KSNA: {'route': 'KEENS3 HRRBR EMLLD DSNEE6', 'altitude': '32000', 'aircraft_type': 'B737/L', 'callsign': 'SWA3088'}
+2025-10-27 21:20:56,982 - INFO - Fetched flight plan KPHX -> KAUS: {'route': 'ECLPS1 PHASE ELP FST DILLO LAIKS4', 'altitude': '39000', 'aircraft_type': 'B738/L', 'callsign': 'SCX3090'}
+2025-10-27 21:20:57,454 - INFO - Fetched flight plan KPHX -> KBWI: {'route': 'FORPE1 ABQ FTI KA36W KK42A BURDN KK45G TWRAY J98 FAM J78 IIU ZIEBR SITTR CJAAE RAVNN8', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA1586'}
+2025-10-27 21:20:57,803 - INFO - Fetched flight plan KPHX -> KCLE: {'route': 'MRBIL1 JARPA RSK GLD J146 LNK CID OBK DETMR BRWNZ4', 'altitude': '37000', 'aircraft_type': 'B737/L', 'callsign': 'SWA2916'}
+2025-10-27 21:20:58,133 - INFO - Fetched flight plan KPHX -> KIAH: {'route': 'ECLPS1 PHASE ELP Q4 FUSCO DIESL DRLLR5', 'altitude': '16000', 'aircraft_type': 'B739/L', 'callsign': 'UAL636'}
+2025-10-27 21:20:58,563 - INFO - Fetched flight plan KPHX -> KJFK: {'route': 'FORPE1 ABQ J18 SLN J24 MCI J80 SPI KOLTS WWODD RINTE KLYNE Q29 WWSHR JHW J70 LVZ LENDY8', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'AAL832'}
+2025-10-27 21:20:59,029 - INFO - Fetched flight plan KPHX -> KMSP: {'route': 'MRBIL1 YOOPR DVC PITMN TOMSN CHUWY HUTEP SSWAN TORGY3', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA541'}
+2025-10-27 21:20:59,363 - INFO - Fetched flight plan KPHX -> KLGA: {'route': 'MRBIL1 JARPA RSK TXC HCT J60 JOT J146 ETG MIP4', 'altitude': '35000', 'aircraft_type': 'C750/L', 'callsign': 'KOW301'}
+2025-10-27 21:20:59,702 - INFO - Fetched flight plan KPHX -> KMIA: {'route': 'ECLPS1 PHASE LINZY KH06Y KEMPL SAT PSX HOODO LEV Q102 BLVNS Y290 GAWKS FROGZ4', 'altitude': '35000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL2654'}
+2025-10-27 21:21:00,040 - INFO - Fetched flight plan KPHX -> KPDX: {'route': 'QUAKY1 GCN WINEN INGOL MAGPY DERMT J523 REO ILR JOTBA HHOOD5', 'altitude': '35000', 'aircraft_type': 'B737/L', 'callsign': 'SWA1601'}
+2025-10-27 21:21:00,382 - INFO - Fetched flight plan KPHX -> KBNA: {'route': 'BROAK1 MAXXO IRW KM33I LOPPY CHSNE3', 'altitude': '35000', 'aircraft_type': 'A319/L', 'callsign': 'AAL2580'}
+2025-10-27 21:21:00,703 - INFO - Fetched flight plan KPHX -> KEWR: {'route': 'MRBIL1 YOOPR HBU BFF ONL KP75C KATES KP75E VIGGR KG75I GIJ J146 PLAIN DORET J584 SLT FQM3', 'altitude': '35000', 'aircraft_type': 'A321/L', 'callsign': 'AAL2156'}
+2025-10-27 21:21:01,084 - INFO - Fetched flight plan KPHX -> KONT: {'route': 'KEENS3 HRRBR PHRED SCBBY2', 'altitude': '28000', 'aircraft_type': 'GLF4/L', 'callsign': 'N143LP'}
+2025-10-27 21:21:01,410 - INFO - Fetched flight plan KPHX -> KPBI: {'route': 'ECLPS1 PHASE ELP FST J2 JCT J86 LEV Q100 REMIS GAWKS VUUDU1', 'altitude': '35000', 'aircraft_type': 'C750/L', 'callsign': 'KOW102'}
+2025-10-27 21:21:01,749 - INFO - Fetched flight plan KPHX -> KSEA: {'route': 'ZEPER2 RRSTA DOVEE BTY WODIN MVA JENSA RUFUS LKV HAWKZ8', 'altitude': '38000', 'aircraft_type': 'B738/L', 'callsign': 'SWA2023'}
+2025-10-27 21:21:02,271 - INFO - Fetched flight plan KPHX -> KTPA: {'route': 'ECLPS1 PHASE ELP JCT MOLLR REDFN Y280 CHRGE RAYZZ2', 'altitude': '35000', 'aircraft_type': 'A321/L', 'callsign': 'AAL553'}
+2025-10-27 21:21:02,272 - WARNING - Parking spot E10 is already in use, skipping
+2025-10-27 21:21:02,272 - INFO - Creating GA aircraft for parking spot: GA1
+2025-10-27 21:21:02,272 - WARNING - Parking spot D6 is already in use, skipping
+2025-10-27 21:21:03,001 - INFO - Fetched flight plan KPHX -> KSAN: {'route': 'FYRBD1 MOHAK J2 HOGGZ LUCKI1', 'altitude': '30000', 'aircraft_type': 'B737/L', 'callsign': 'SWA191'}
+2025-10-27 21:21:03,349 - INFO - Fetched flight plan KPHX -> KMDW: {'route': 'FORPE1 ABQ J18 GCK J96 IRK ENDEE8', 'altitude': '35000', 'aircraft_type': 'F900/L', 'callsign': 'N900VP'}
+2025-10-27 21:21:03,655 - INFO - Fetched flight plan KPHX -> KBDL: {'route': 'FORPE1 ABQ FTI J18 SLN J24 MCI J80 SPI ROD EWC PSB J49 HNK STELA1', 'altitude': '37000', 'aircraft_type': 'BCS3/L', 'callsign': 'MXY517'}
+2025-10-27 21:21:04,004 - INFO - Fetched flight plan KPHX -> KOAK: {'route': 'KEENS3 HRRBR CURIV J212 DECAS PMD RGOOD EMZOH4', 'altitude': '35000', 'aircraft_type': 'B763/L', 'callsign': 'FDX1837'}
+2025-10-27 21:21:04,313 - INFO - Fetched flight plan KPHX -> KDCA: {'route': 'FORPE1 ABQ J6 PNH END SGF HESTN ENL KI54M VHP J80 AIR J34 BUCKO FRDMM6', 'altitude': '35000', 'aircraft_type': 'A21N/L', 'callsign': 'AAL1634'}
+2025-10-27 21:21:04,655 - INFO - Fetched flight plan KPHX -> KSMF: {'route': 'KEENS3 BLH J65 EHF NURAY SUUTR4', 'altitude': '35000', 'aircraft_type': 'B763/L', 'callsign': 'ATN3362'}
+2025-10-27 21:21:05,033 - INFO - Fetched flight plan KPHX -> KLAX: {'route': 'KEENS3 WLVRN ESTWD HLYWD1', 'altitude': '20000', 'aircraft_type': 'A321/L', 'callsign': 'AAL1331'}
+2025-10-27 21:21:05,410 - INFO - Fetched flight plan KPHX -> KBUR: {'route': 'KEENS3 HRRBR PHRED THRNE THRNE4', 'altitude': '35000', 'aircraft_type': 'E170/L', 'callsign': 'ENY3696'}
+2025-10-27 21:21:05,411 - WARNING - Parking spot F5 is already in use, skipping
+2025-10-27 21:21:05,411 - WARNING - Parking spot D7 is already in use, skipping
+2025-10-27 21:21:05,411 - WARNING - Parking spot F6 is already in use, skipping
+2025-10-27 21:21:05,928 - INFO - Fetched flight plan KPHX -> KSJC: {'route': 'KEENS3 HRRBR CURIV J212 DECAS PMD J6 AVE TROXX SILCN6', 'altitude': '35000', 'aircraft_type': 'C680/L', 'callsign': 'PXT680'}
+2025-10-27 21:21:06,260 - INFO - Fetched flight plan KPHX -> KDTW: {'route': 'FORPE1 ABQ KA39Y ICT KK51G STL CMI BVT SWAYD LECTR3', 'altitude': '35000', 'aircraft_type': 'B738/L', 'callsign': 'AAL3140'}
+2025-10-27 21:21:06,261 - INFO - Generated 70 total aircraft
+2025-10-27 21:21:06,261 - INFO - Generated .air file with 70 aircraft at KPHX_scenario.air
+2025-10-27 21:21:06,261 - INFO - Successfully generated 70 aircraft
+2025-10-27 21:21:06,262 - INFO - Saved to: KPHX_scenario.air
+2025-10-27 21:21:13,960 - INFO - Fetched coordinates for KPHX: 33.434269, -112.011002
+2025-10-27 21:21:13,968 - INFO - Airport KPHX is in ARTCC ZAB
+2025-10-27 21:21:13,968 - INFO - Auto-detected ARTCC: ZAB for airport KPHX
+2025-10-27 21:21:13,968 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL2750
+2025-10-27 21:21:13,968 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL7593
+2025-10-27 21:21:13,968 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL9299
+2025-10-27 21:21:13,968 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL3284
+2025-10-27 21:21:13,969 - INFO - Adding spawnDelay=0s to vNAS aircraft ACA4040
+2025-10-27 21:21:13,969 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL2631
+2025-10-27 21:21:13,969 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL3403
+2025-10-27 21:21:13,969 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA1400
+2025-10-27 21:21:13,969 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL4609
+2025-10-27 21:21:13,969 - INFO - Adding spawnDelay=0s to vNAS aircraft DAL8932
+2025-10-27 21:21:13,969 - INFO - Adding spawnDelay=0s to vNAS aircraft ASA2624
+2025-10-27 21:21:13,969 - INFO - Adding spawnDelay=0s to vNAS aircraft N848YT
+2025-10-27 21:21:13,969 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL5851
+2025-10-27 21:21:13,969 - INFO - Adding spawnDelay=0s to vNAS aircraft UAL8951
+2025-10-27 21:21:13,969 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL3105
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA3088
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA3207
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL7722
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft ASA4704
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA2916
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL2900
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL5977
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL8434
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft FFT6860
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft ASA3418
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA1321
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL2277
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA1601
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft ASA7714
+2025-10-27 21:21:13,970 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL2580
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA8847
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA6634
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft N143LP
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA1312
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft DAL772
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL3482
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft JBU3762
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL3957
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft N665TV
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft NKS7795
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL2508
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL1448
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA3137
+2025-10-27 21:21:13,971 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA4247
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA2359
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL1293
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA8259
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL6337
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA6973
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL1239
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA3012
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft JBU7607
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA7874
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL9897
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft FFT5554
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft ENY3696
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL1691
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft ACA1092
+2025-10-27 21:21:13,972 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA1800
+2025-10-27 21:21:13,973 - INFO - Adding spawnDelay=0s to vNAS aircraft UAL4394
+2025-10-27 21:21:13,973 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA6415
+2025-10-27 21:21:13,973 - INFO - Adding spawnDelay=0s to vNAS aircraft DAL4596
+2025-10-27 21:21:13,973 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL7879
+2025-10-27 21:21:13,973 - INFO - Adding spawnDelay=0s to vNAS aircraft FDX1837
+2025-10-27 21:21:13,973 - INFO - Adding spawnDelay=0s to vNAS aircraft SWA284
+2025-10-27 21:21:13,973 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL5834
+2025-10-27 21:21:13,973 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL9390
+2025-10-27 21:21:13,973 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL560
+2025-10-27 21:21:13,973 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL1289
+2025-10-27 21:21:13,973 - INFO - Adding spawnDelay=0s to vNAS aircraft AAL3005
+2025-10-27 21:21:13,973 - INFO - Created vNAS scenario with 70 aircraft
+2025-10-27 21:21:13,975 - INFO - Launching undetected Chrome browser for vNAS login...
+2025-10-27 21:21:14,628 - INFO - patching driver executable C:\Users\flyma\appdata\roaming\undetected_chromedriver\undetected_chromedriver.exe
+2025-10-27 21:21:16,139 - INFO - Navigating to https://data-admin.vnas.vatsim.net/training
+2025-10-27 21:21:16,632 - INFO - ============================================================
+2025-10-27 21:21:16,632 - INFO - BROWSER INSTRUCTIONS
+2025-10-27 21:21:16,632 - INFO - ============================================================
+2025-10-27 21:21:16,632 - INFO - 1. Log in to vNAS Data Admin
+2025-10-27 21:21:16,632 - INFO - 2. Navigate to the scenario you want to update
+2025-10-27 21:21:16,632 - INFO - 3. Scenario ID will be extracted automatically
+2025-10-27 21:21:16,632 - INFO - ============================================================
+2025-10-27 21:21:38,576 - INFO - Scenario page detected! URL: https://data-admin.vnas.vatsim.net/training/scenarios/01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 21:21:38,577 - INFO - Automatically extracted scenario ID: 01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 21:21:38,577 - INFO - Browser authenticated successfully. Ready to make API requests.
+2025-10-27 21:21:38,577 - INFO - Fetching existing scenario data...
+2025-10-27 21:21:38,577 - INFO - Fetching existing scenario: 01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 21:21:38,761 - INFO - Successfully fetched existing scenario
+2025-10-27 21:21:38,761 - INFO - Merging new aircraft with existing scenario...
+2025-10-27 21:21:38,761 - INFO - ============================================================
+2025-10-27 21:21:38,761 - INFO - PUSHING SCENARIO VIA BROWSER
+2025-10-27 21:21:38,761 - INFO - ============================================================
+2025-10-27 21:21:38,762 - INFO - Endpoint: https://data-api.vnas.vatsim.net/api/training/scenarios/01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 21:21:38,762 - INFO - Scenario ID: 01JWBNNWYCP0J3XTHGXT0GPQ1R
+2025-10-27 21:21:38,762 - INFO - Request body size: 34040 bytes
+2025-10-27 21:21:38,762 - INFO - DEBUG: First aircraft: AAL2750 - spawnDelay: 0
+2025-10-27 21:21:38,762 - INFO - ============================================================
+2025-10-27 21:21:38,762 - INFO - Executing PUT request through browser...
+2025-10-27 21:21:38,855 - INFO - ============================================================
+2025-10-27 21:21:38,855 - INFO - API RESPONSE DEBUG
+2025-10-27 21:21:38,855 - INFO - ============================================================
+2025-10-27 21:21:38,855 - INFO - Status Code: 204
+2025-10-27 21:21:38,855 - INFO - Status Text: 
+2025-10-27 21:21:38,855 - INFO - Response Body (first 500 chars): 
+2025-10-27 21:21:38,855 - INFO - ============================================================
+2025-10-27 21:21:38,856 - INFO - Successfully pushed scenario to vNAS (status 204)
+2025-10-27 21:21:38,856 - INFO - Closing browser...
+2025-10-27 21:21:39,000 - INFO - Browser closed successfully
+2025-10-27 21:23:59,767 - INFO - ensuring close
