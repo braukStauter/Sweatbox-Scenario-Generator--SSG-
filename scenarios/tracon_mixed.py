@@ -18,18 +18,21 @@ class TraconMixedScenario(BaseScenario):
     def generate(self, num_departures: int, num_arrivals: int, arrival_waypoints: List[str],
                  altitude_range: Tuple[int, int] = (7000, 18000),
                  delay_range: Tuple[int, int] = (4, 7),
-                 spawn_delay_range: str = "0-0", difficulty_config=None) -> List[Aircraft]:
+                 spawn_delay_range: str = "0-0", difficulty_config=None, active_runways: List[str] = None) -> List[Aircraft]:
         """
         Generate TRACON mixed scenario
 
         Args:
             num_departures: Number of departure aircraft
             num_arrivals: Number of arrival aircraft
-            arrival_waypoints: List of arrival waypoint names
-            altitude_range: Tuple of (min, max) altitude in feet for arrivals
+            arrival_waypoints: List of STAR waypoints in format "WAYPOINT.STAR"
+                              Can be ANY waypoint along the STAR, not just transitions
+                              (e.g., "EAGUL.JESSE3", "PINNG.PINNG1", "HOTTT.PINNG1")
+            altitude_range: Tuple of (min, max) altitude in feet for arrivals (used as fallback only)
             delay_range: Tuple of (min, max) spawn delay in minutes between aircraft
             spawn_delay_range: Spawn delay range in minutes (format: "min-max", e.g., "0-0" or "1-5")
             difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
+            active_runways: List of active runway designators
 
         Returns:
             List of Aircraft objects
@@ -75,30 +78,33 @@ class TraconMixedScenario(BaseScenario):
 
             attempts += 1
 
-        # Calculate spawn delay in seconds (random within range, then applied cumulatively)
-        delay_seconds = random.randint(delay_range[0] * 60, delay_range[1] * 60)
+        # Parse STAR waypoints from input
+        star_transitions = self._parse_star_transitions(arrival_waypoints)
+
+        if not star_transitions:
+            logger.error("No valid STAR waypoints provided for arrivals")
+            return self.aircraft
 
         # Generate arrivals at waypoints
         for i in range(num_arrivals):
-            waypoint_name = arrival_waypoints[i % len(arrival_waypoints)]
+            waypoint_name, star_name = star_transitions[i % len(star_transitions)]
 
-            # Get waypoint data
-            waypoint = self.cifp_parser.get_waypoint(waypoint_name)
+            # Get waypoint for this STAR
+            waypoint = self.cifp_parser.get_transition_waypoint(waypoint_name, star_name)
 
             if not waypoint:
-                logger.warning(f"Waypoint {waypoint_name} not found in CIFP data")
+                logger.warning(f"Waypoint {waypoint_name}.{star_name} not found in CIFP data")
                 continue
 
             # Check if waypoint has valid coordinates
             if waypoint.latitude == 0.0 and waypoint.longitude == 0.0:
-                logger.warning(f"Waypoint {waypoint_name} has no coordinate data")
+                logger.warning(f"Waypoint {waypoint.name} has no coordinate data")
                 continue
 
-            # Calculate cumulative delay for this aircraft
-            # First aircraft has 0 delay, subsequent aircraft increment
-            cumulative_delay = i * delay_seconds
+            # Each aircraft gets a random spawn delay within the range
+            spawn_delay_seconds = random.randint(min_delay, max_delay) * 60
 
-            aircraft = self._create_arrival_at_waypoint(waypoint, altitude_range, cumulative_delay)
+            aircraft = self._create_arrival_at_waypoint(waypoint, altitude_range, spawn_delay_seconds, active_runways)
             aircraft.spawn_delay = random.randint(min_delay, max_delay)
             difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
             self.aircraft.append(aircraft)
@@ -106,76 +112,76 @@ class TraconMixedScenario(BaseScenario):
         logger.info(f"Generated {len(self.aircraft)} total aircraft")
         return self.aircraft
 
-    def _create_arrival_at_waypoint(self, waypoint, altitude_range: Tuple[int, int], delay_seconds: int = 0) -> Aircraft:
+    def _create_arrival_at_waypoint(self, waypoint, altitude_range: Tuple[int, int], delay_seconds: int = 0, active_runways: List[str] = None) -> Aircraft:
         """
         Create an arrival aircraft at a waypoint
 
         Args:
             waypoint: Waypoint object
-            altitude_range: Tuple of (min, max) altitude
+            altitude_range: Tuple of (min, max) altitude (used as fallback only)
             delay_seconds: Spawn delay in seconds
+            active_runways: List of active runway designators
 
         Returns:
             Aircraft object
         """
-        # Get random departure airport and flight plan
-        departure = self._get_random_destination(exclude=self.airport_icao)
-        flight_plan = self.api_client.get_random_flight_plan(departure, self.airport_icao)
+        # Import here to avoid circular dependency
+        from scenarios.tracon_arrivals import TraconArrivalsScenario
 
-        # Use callsign from API if available, otherwise generate
-        callsign = flight_plan.get('callsign') or self._generate_callsign()
-
-        # Ensure callsign is unique - if it's already used, generate a new one
-        if callsign in self.used_callsigns:
-            callsign = self._generate_callsign()
-
-        # Add callsign to used set
-        self.used_callsigns.add(callsign)
-
-        # Determine altitude
-        if waypoint.min_altitude and waypoint.max_altitude:
-            altitude = random.randint(waypoint.min_altitude, waypoint.max_altitude)
-        elif waypoint.min_altitude:
-            altitude = waypoint.min_altitude
-        elif waypoint.max_altitude:
-            altitude = waypoint.max_altitude
-        else:
-            altitude = random.randint(altitude_range[0], altitude_range[1])
-
-        # Calculate heading towards airport center
-        airport_lat, airport_lon = self.geojson_parser.get_airport_center()
-
-        heading = calculate_bearing(waypoint.latitude, waypoint.longitude, airport_lat, airport_lon)
-
-        # Ground speed based on altitude
-        if altitude > 10000:
-            ground_speed = random.randint(280, 320)
-        else:
-            ground_speed = random.randint(220, 260)
-
-        # Use the route from the flight plan
-        # Note: The route from the API typically already includes a STAR
-        # We don't append the waypoint's arrival_name to avoid duplicates
-        route = flight_plan['route']
-
-        # Create delay remark if delay is greater than 0
-        remarks = f"DELAY THIS A/C BY {delay_seconds} SECONDS" if delay_seconds > 0 else ""
-
-        aircraft = Aircraft(
-            callsign=callsign,
-            aircraft_type=flight_plan['aircraft_type'],
-            latitude=waypoint.latitude,
-            longitude=waypoint.longitude,
-            altitude=altitude,
-            heading=heading,
-            ground_speed=ground_speed,
-            departure=departure,
-            arrival=self.airport_icao,
-            route=route,
-            cruise_altitude=flight_plan['altitude'],
-            flight_rules="I",
-            engine_type="J",
-            remarks=remarks
+        # Create a temporary TraconArrivalsScenario to use its enhanced methods
+        temp_scenario = TraconArrivalsScenario(
+            self.airport_icao,
+            self.geojson_parser,
+            self.cifp_parser,
+            self.api_client
         )
 
+        # Copy over the used callsigns to maintain uniqueness
+        temp_scenario.used_callsigns = self.used_callsigns
+
+        # Use the enhanced arrival creation from TraconArrivalsScenario
+        aircraft = temp_scenario._create_arrival_at_waypoint(waypoint, altitude_range, delay_seconds, active_runways)
+
+        # Update our used callsigns with any new ones
+        self.used_callsigns.update(temp_scenario.used_callsigns)
+
         return aircraft
+
+    def _parse_star_transitions(self, arrival_waypoints: List[str]) -> List[Tuple[str, str]]:
+        """
+        Parse STAR waypoint input format
+
+        Users can specify ANY waypoint along a STAR procedure, not just transition points.
+
+        Args:
+            arrival_waypoints: List of strings in format "WAYPOINT.STAR"
+                              (e.g., "EAGUL.JESSE3", "PINNG.PINNG1", "HOTTT.PINNG1")
+
+        Returns:
+            List of (waypoint_name, star_name) tuples
+        """
+        star_transitions = []
+
+        for entry in arrival_waypoints:
+            entry = entry.strip()
+
+            # Check if it's in WAYPOINT.STAR format
+            if '.' in entry:
+                parts = entry.split('.')
+                if len(parts) == 2:
+                    waypoint_name = parts[0].strip()
+                    star_name = parts[1].strip()
+                    star_transitions.append((waypoint_name, star_name))
+                    logger.debug(f"Parsed STAR waypoint: {waypoint_name}.{star_name}")
+                else:
+                    logger.warning(f"Invalid STAR waypoint format: {entry} (expected WAYPOINT.STAR)")
+            else:
+                # Legacy support: treat as waypoint name, try to infer STAR
+                waypoint = self.cifp_parser.get_waypoint(entry)
+                if waypoint and waypoint.arrival_name:
+                    star_transitions.append((entry, waypoint.arrival_name))
+                    logger.warning(f"Legacy format detected: {entry} - inferred as {entry}.{waypoint.arrival_name}")
+                else:
+                    logger.warning(f"Cannot parse entry: {entry} (use WAYPOINT.STAR format)")
+
+        return star_transitions

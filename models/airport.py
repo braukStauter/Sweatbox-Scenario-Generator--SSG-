@@ -66,3 +66,16 @@ class Waypoint:
     arrival_name: str = None
     min_altitude: int = None
     max_altitude: int = None
+    inbound_course: int = None  # Magnetic course inbound to this waypoint
+
+    # Enhanced ARINC 424 fields
+    sequence_number: int = None  # Order in the procedure
+    leg_type: str = None  # Path terminator (TF, CF, IF, RF, etc.)
+    altitude_descriptor: str = None  # @, +, -, B (at, at-or-above, at-or-below, between)
+    speed_limit: int = None  # Speed restriction in knots
+    turn_direction: str = None  # L, R, E (left, right, either)
+    transition_name: str = None  # Transition identifier
+    magnetic_variation: float = None  # Magnetic variation at waypoint
+    distance_time: float = None  # Distance or time constraint
+    recommended_navaid: str = None  # Recommended NAVAID identifier
+    route_type: str = None  # Route type classification

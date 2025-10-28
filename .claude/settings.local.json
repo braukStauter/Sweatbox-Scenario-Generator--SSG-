@@ -6,7 +6,10 @@
       "WebFetch(domain:github.com)",
       "Bash(dir \"C:\\Users\\flyma\\Desktop\\Creative Shrimp\\Sweatbox Scenario Generator (SSG)\\airport_data\")",
       "Bash(move main.py main_cli_legacy.py)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(head:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []

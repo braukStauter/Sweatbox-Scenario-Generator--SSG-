@@ -70,7 +70,7 @@ class ScenarioConfigScreen(tk.Frame):
             self._add_arrivals_config()
 
         # Active runways
-        if scenario_type in ['ground_mixed', 'tower_mixed', 'tracon_departures']:
+        if scenario_type in ['ground_mixed', 'tower_mixed', 'tracon_departures', 'tracon_arrivals', 'tracon_mixed']:
             self._add_runway_config()
 
         # Separation range for tower
@@ -158,16 +158,16 @@ class ScenarioConfigScreen(tk.Frame):
         card = Card(self.config_container, title="TRACON Arrivals Configuration")
         card.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
 
-        # Waypoints
-        label = ThemedLabel(card, text="Arrival Waypoints (comma separated):")
+        # STAR Waypoint Selection
+        label = ThemedLabel(card, text="STAR Waypoints (comma separated):")
         label.configure(bg=DarkTheme.BG_SECONDARY)
         label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
-        desc = ThemedLabel(card, text="Example: EAGUL, CHILY", fg=DarkTheme.FG_DISABLED)
+        desc = ThemedLabel(card, text="Aircraft spawn 10NM from specified waypoint. Format: WAYPOINT.STAR (e.g., EAGUL.JESSE3, PINNG.PINNG1). Use any waypoint along the STAR, not just transitions.", fg=DarkTheme.FG_DISABLED, wraplength=600)
         desc.configure(bg=DarkTheme.BG_SECONDARY, font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
         desc.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
-        waypoints_entry = ThemedEntry(card, placeholder="e.g., EAGUL, CHILY")
+        waypoints_entry = ThemedEntry(card, placeholder="e.g., EAGUL.JESSE3, PINNG.PINNG1, HOTTT.PINNG1")
         waypoints_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_MEDIUM))
         self.inputs['arrival_waypoints'] = waypoints_entry
 
@@ -176,7 +176,7 @@ class ScenarioConfigScreen(tk.Frame):
         label2.configure(bg=DarkTheme.BG_SECONDARY)
         label2.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
-        desc2 = ThemedLabel(card, text="Example: 7000-18000 (default)", fg=DarkTheme.FG_DISABLED)
+        desc2 = ThemedLabel(card, text="Fallback range when CIFP data lacks altitude constraints. Example: 7000-18000", fg=DarkTheme.FG_DISABLED, wraplength=600)
         desc2.configure(bg=DarkTheme.BG_SECONDARY, font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
         desc2.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
@@ -184,29 +184,17 @@ class ScenarioConfigScreen(tk.Frame):
         altitude_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_MEDIUM))
         self.inputs['altitude_range'] = altitude_entry
 
-        # Delay range
-        label3 = ThemedLabel(card, text="Spawn Delay Min-Max (minutes):")
-        label3.configure(bg=DarkTheme.BG_SECONDARY)
-        label3.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
-
-        desc3 = ThemedLabel(card, text="Example: 4-7 (default)", fg=DarkTheme.FG_DISABLED)
-        desc3.configure(bg=DarkTheme.BG_SECONDARY, font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
-        desc3.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
-
-        delay_entry = ThemedEntry(card, placeholder="4-7")
-        delay_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
-        self.inputs['delay_range'] = delay_entry
-
     def _add_spawn_delay_config(self):
         """Add spawn delay configuration"""
         card = Card(self.config_container, title="Spawn Timing")
         card.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
 
-        label = ThemedLabel(card, text="Spawn Delay Range (min-max in minutes):")
+        # Unified spawn delay
+        label = ThemedLabel(card, text="Spawn Delay Range (minutes):")
         label.configure(bg=DarkTheme.BG_SECONDARY)
         label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
-        desc = ThemedLabel(card, text="Aircraft will spawn at random intervals within this range. Use 0-0 for all aircraft to spawn at once (default)", fg=DarkTheme.FG_DISABLED)
+        desc = ThemedLabel(card, text="Each aircraft gets a random spawn delay within this range. Use 0-0 for all aircraft to spawn immediately, or 2-5 for random 2-5 minute delays.", fg=DarkTheme.FG_DISABLED, wraplength=600)
         desc.configure(bg=DarkTheme.BG_SECONDARY, font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
         desc.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
@@ -363,10 +351,11 @@ class ScenarioConfigScreen(tk.Frame):
         # Get scenario type from app controller
         scenario_type = self.app_controller.scenario_type
 
-        # Validate runways - ONLY required for scenarios with arrivals or runway-based departures
-        # ground_departures uses parking spots only, so runways not required
+        # Validate runways - required for scenarios with arrivals or TRACON (for STAR routing)
+        # ground_departures doesn't need runways (uses parking spots only)
         active_runways = config.get('active_runways', '').strip()
-        if not active_runways and scenario_type != 'ground_departures':
+        scenarios_requiring_runways = ['ground_mixed', 'tower_mixed', 'tracon_arrivals', 'tracon_mixed']
+        if not active_runways and scenario_type in scenarios_requiring_runways:
             errors.append("Active runways are required")
 
         # Check if difficulty levels are enabled

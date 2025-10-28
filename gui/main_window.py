@@ -338,9 +338,9 @@ class MainWindow(tk.Tk):
         elif self.scenario_type == 'tracon_departures':
             return scenario.generate(num_departures, active_runways, spawn_delay_range, difficulty_config)
         elif self.scenario_type == 'tracon_arrivals':
-            return scenario.generate(num_arrivals, arrival_waypoints, altitude_range, delay_range, spawn_delay_range, difficulty_config)
+            return scenario.generate(num_arrivals, arrival_waypoints, altitude_range, delay_range, spawn_delay_range, difficulty_config, active_runways)
         elif self.scenario_type == 'tracon_mixed':
-            return scenario.generate(num_departures, num_arrivals, arrival_waypoints, altitude_range, delay_range, spawn_delay_range, difficulty_config)
+            return scenario.generate(num_departures, num_arrivals, arrival_waypoints, altitude_range, delay_range, spawn_delay_range, difficulty_config, active_runways)
         else:
             raise ValueError(f"Unknown scenario type: {self.scenario_type}")
 

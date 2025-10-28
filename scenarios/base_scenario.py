@@ -102,6 +102,36 @@ class BaseScenario(ABC):
             return difficulty_index + 1
         return difficulty_index
 
+    def _get_runways_for_arrival(self, arrival_name: str, active_runways: list = None) -> list:
+        """
+        Get runways that this arrival/STAR can feed
+
+        Args:
+            arrival_name: Name of the arrival/STAR (e.g., "HYDRR1")
+            active_runways: Optional list of active runways to filter by
+
+        Returns:
+            List of runway designators (e.g., ['25L', '25R'])
+        """
+        # Use CIFP data to get runways for this STAR
+        if self.cifp_parser:
+            runways = self.cifp_parser.get_runways_for_arrival(arrival_name)
+        else:
+            # Fallback: get all runways if CIFP not available
+            runways_objs = self.geojson_parser.get_runways()
+            runways = []
+            for runway in runways_objs:
+                if hasattr(runway, 'runway1_name'):
+                    runways.append(runway.runway1_name)
+                if hasattr(runway, 'runway2_name'):
+                    runways.append(runway.runway2_name)
+
+        # Filter by active runways if provided
+        if active_runways and runways:
+            runways = [rwy for rwy in runways if rwy in active_runways]
+
+        return runways if runways else []
+
     def _parse_spawn_delay_range(self, spawn_delay_range: str) -> tuple:
         """
         Parse spawn delay range string into min/max values in seconds
