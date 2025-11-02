@@ -1,8 +1,9 @@
-/.claude
-/__pychache__
-/logs
-/build
-/dist
+.claude/
+__pycache__/
+logs/
+build/
+dist/
 
 *.air
 *.spec
+version.py
