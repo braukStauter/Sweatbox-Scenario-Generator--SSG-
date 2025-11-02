@@ -19,7 +19,7 @@ class SplashScreen(tk.Toplevel):
 
         # Set size and center on screen
         width = 600
-        height = 320
+        height = 360
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         x = (screen_width - width) // 2
