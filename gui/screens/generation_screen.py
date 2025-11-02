@@ -127,7 +127,9 @@ class GenerationScreen(tk.Frame):
         self.progress.pack(expand=True)
         self.progress.start(message)
 
+        # Hide all buttons during generation
         self.new_scenario_button.pack_forget()
+        self.push_vnas_button.pack_forget()
         self.exit_button.pack_forget()
 
     def show_success(self, aircraft_count, filename, aircraft_list=None, airport_icao=None):
@@ -153,9 +155,11 @@ class GenerationScreen(tk.Frame):
         self.result_details['fg'] = DarkTheme.ACCENT_PRIMARY
 
         self.result_frame.pack(expand=True)
+
+        # Show buttons in consistent order: Exit (left), Push to vNAS (right-middle), New Scenario (right)
+        self.exit_button.pack(side='left')
         self.new_scenario_button.pack(side='right')
         self.push_vnas_button.pack(side='right', padx=(0, DarkTheme.PADDING_MEDIUM))
-        self.exit_button.pack(side='left')
 
     def _open_output_folder(self, event=None):
         """Open the folder containing the output file"""
@@ -186,8 +190,11 @@ class GenerationScreen(tk.Frame):
         self.result_details['text'] = f"Error: {error_message}"
 
         self.result_frame.pack(expand=True)
-        self.new_scenario_button.pack(side='right')
+
+        # Show buttons in consistent order: Exit (left), New Scenario (right)
+        # Note: Don't show Push to vNAS on error since generation failed
         self.exit_button.pack(side='left')
+        self.new_scenario_button.pack(side='right')
 
     def on_new_scenario(self):
         """Handle new scenario button click"""
