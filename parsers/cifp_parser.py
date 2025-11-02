@@ -801,6 +801,52 @@ class CIFPParser:
 
         return None
 
+    def get_previous_waypoint_in_star(self, star_name: str, current_sequence: int) -> Optional[Waypoint]:
+        """
+        Get the previous waypoint in a STAR sequence
+
+        Args:
+            star_name: STAR name (e.g., "BRRTO1")
+            current_sequence: Current waypoint sequence number
+
+        Returns:
+            Previous Waypoint object if found, None otherwise
+        """
+        if star_name not in self.star_waypoints:
+            return None
+
+        # Find waypoint with previous sequence number
+        prev_sequence = current_sequence - 10  # CIFP sequences typically increment by 10
+        for waypoint_name, waypoint in self.star_waypoints[star_name].items():
+            if waypoint.sequence_number == prev_sequence:
+                # Get coordinates from global waypoints if needed
+                if waypoint.latitude == 0.0 and waypoint.longitude == 0.0:
+                    if waypoint_name in self.waypoints:
+                        waypoint.latitude = self.waypoints[waypoint_name].latitude
+                        waypoint.longitude = self.waypoints[waypoint_name].longitude
+                return waypoint
+
+        # If exact sequence not found, find the next lower sequence number
+        prev_waypoints = []
+        for waypoint_name, waypoint in self.star_waypoints[star_name].items():
+            if waypoint.sequence_number and waypoint.sequence_number < current_sequence:
+                prev_waypoints.append((waypoint.sequence_number, waypoint_name, waypoint))
+
+        if prev_waypoints:
+            # Sort by sequence number and get the last one (highest below current)
+            prev_waypoints.sort(key=lambda x: x[0], reverse=True)
+            _, waypoint_name, waypoint = prev_waypoints[0]
+
+            # Get coordinates from global waypoints if needed
+            if waypoint.latitude == 0.0 and waypoint.longitude == 0.0:
+                if waypoint_name in self.waypoints:
+                    waypoint.latitude = self.waypoints[waypoint_name].latitude
+                    waypoint.longitude = self.waypoints[waypoint_name].longitude
+
+            return waypoint
+
+        return None
+
     def get_available_transitions(self, star_name: str) -> List[str]:
         """
         Get list of available transitions for a STAR

@@ -163,29 +163,45 @@ class TraconArrivalsScenario(BaseScenario):
         # Determine altitude - STRICTLY ENFORCE CIFP CONSTRAINTS
         altitude = self._get_altitude_from_cifp(waypoint, altitude_range)
 
-        # Use inbound course from CIFP if available, otherwise calculate bearing to next fix
+        # Determine inbound course to the waypoint
+        from utils.geo_utils import calculate_bearing
+
+        inbound_course = None
+        prev_waypoint = None
+
+        # Try to get inbound course from CIFP first
         if waypoint.inbound_course:
-            heading = waypoint.inbound_course
-            logger.debug(f"Using CIFP inbound course {heading}° for {waypoint.name}")
+            inbound_course = waypoint.inbound_course
+            logger.debug(f"Using CIFP inbound course {inbound_course}° for {waypoint.name}")
         else:
-            # Fallback: calculate heading to next waypoint in STAR sequence
+            # Calculate from previous waypoint in STAR sequence
             # Note: TF (Track to Fix) and IF (Initial Fix) legs don't have explicit courses in CIFP
-            from utils.geo_utils import calculate_bearing
-
-            next_waypoint = None
             if star_name and waypoint.sequence_number:
-                # Get next waypoint in sequence
-                next_waypoint = self.cifp_parser.get_next_waypoint_in_star(star_name, waypoint.sequence_number)
+                prev_waypoint = self.cifp_parser.get_previous_waypoint_in_star(star_name, waypoint.sequence_number)
 
-            if next_waypoint and next_waypoint.latitude != 0.0 and next_waypoint.longitude != 0.0:
-                heading = calculate_bearing(waypoint.latitude, waypoint.longitude, next_waypoint.latitude, next_waypoint.longitude)
-                logger.debug(f"{waypoint.name} -> {next_waypoint.name}: calculated bearing {heading}°")
+            if prev_waypoint and prev_waypoint.latitude != 0.0 and prev_waypoint.longitude != 0.0:
+                inbound_course = calculate_bearing(prev_waypoint.latitude, prev_waypoint.longitude, waypoint.latitude, waypoint.longitude)
+                logger.debug(f"{prev_waypoint.name} -> {waypoint.name}: calculated inbound course {inbound_course}°")
             else:
-                # Final fallback: use bearing to airport
-                airport_lat, airport_lon = self.geojson_parser.get_airport_center()
-                heading = calculate_bearing(waypoint.latitude, waypoint.longitude, airport_lat, airport_lon)
-                leg_type = waypoint.leg_type if hasattr(waypoint, 'leg_type') and waypoint.leg_type else "unknown"
-                logger.debug(f"{waypoint.name} has no next waypoint, using bearing to airport: {heading}°")
+                # No previous waypoint - use next waypoint to determine lateral course
+                next_waypoint = None
+                if star_name and waypoint.sequence_number:
+                    next_waypoint = self.cifp_parser.get_next_waypoint_in_star(star_name, waypoint.sequence_number)
+
+                if next_waypoint and next_waypoint.latitude != 0.0 and next_waypoint.longitude != 0.0:
+                    # Calculate the outbound course and use its reciprocal as inbound
+                    outbound_course = calculate_bearing(waypoint.latitude, waypoint.longitude, next_waypoint.latitude, next_waypoint.longitude)
+                    from utils.geo_utils import get_reciprocal_heading
+                    inbound_course = get_reciprocal_heading(outbound_course)
+                    logger.debug(f"{waypoint.name} is first waypoint, using reciprocal of outbound course to {next_waypoint.name}: {inbound_course}°")
+                else:
+                    # Final fallback: use bearing to airport
+                    airport_lat, airport_lon = self.geojson_parser.get_airport_center()
+                    inbound_course = calculate_bearing(waypoint.latitude, waypoint.longitude, airport_lat, airport_lon)
+                    logger.debug(f"{waypoint.name} has no previous/next waypoint, using bearing to airport: {inbound_course}°")
+
+        # Set heading (direction aircraft is flying) to the inbound course
+        heading = inbound_course
 
         # Ground speed - STRICTLY ENFORCE CIFP SPEED RESTRICTIONS
         ground_speed = self._get_speed_from_cifp(waypoint, altitude)
@@ -208,12 +224,12 @@ class TraconArrivalsScenario(BaseScenario):
         else:
             logger.warning(f"Waypoint {waypoint.name} has no arrival procedure associated")
 
-        # Calculate actual spawn position 10NM BEFORE the waypoint
-        # This fixes the position bug - aircraft now spawn on approach TO the waypoint
+        # Calculate actual spawn position 2NM BEFORE the waypoint along the inbound course
+        # Aircraft spawn on approach TO the specified waypoint
         from utils.geo_utils import calculate_destination, get_reciprocal_heading
 
         reciprocal_heading = get_reciprocal_heading(heading)
-        spawn_distance = 10  # nautical miles
+        spawn_distance = 2  # nautical miles
         spawn_lat, spawn_lon = calculate_destination(
             waypoint.latitude,
             waypoint.longitude,
@@ -221,14 +237,14 @@ class TraconArrivalsScenario(BaseScenario):
             spawn_distance
         )
 
-        logger.debug(f"Spawn position: 10NM from {waypoint.name} on {reciprocal_heading}° radial")
+        logger.debug(f"Spawn position: {spawn_distance}NM from {waypoint.name} on {reciprocal_heading}° radial (inbound course: {heading}°)")
         logger.debug(f"  Waypoint: {waypoint.latitude:.6f}, {waypoint.longitude:.6f}")
         logger.debug(f"  Spawn: {spawn_lat:.6f}, {spawn_lon:.6f}")
 
         # Set Fix/Radial/Distance navigation path
-        # Format: FIXNAME + RADIAL (reciprocal + 180) + DISTANCE (10NM)
-        # Example: PINNG112010 means "10NM from PINNG on the 112 radial"
-        navigation_path = f"{waypoint.name}{reciprocal_heading:03d}{spawn_distance:03d}"
+        # Format: FIXNAME + RADIAL (reciprocal of inbound course) + DISTANCE (2NM)
+        # Example: XMRKS232002 means "2NM from XMRKS on the 232 radial"
+        navigation_path = f"{waypoint.name}{reciprocal_heading:03d}{int(spawn_distance):03d}"
 
         aircraft = Aircraft(
             callsign=callsign,

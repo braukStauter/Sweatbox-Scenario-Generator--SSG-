@@ -59,8 +59,10 @@ class ScenarioConfigScreen(tk.Frame):
         self.inputs.clear()
 
         # Clear stored widget references (they're about to be destroyed/recreated)
-        if hasattr(self, '_first_section_after_aircraft_counts'):
-            delattr(self, '_first_section_after_aircraft_counts')
+        if hasattr(self, '_first_widget_after_aircraft_counts'):
+            delattr(self, '_first_widget_after_aircraft_counts')
+        if hasattr(self, '_aircraft_counts_divider'):
+            delattr(self, '_aircraft_counts_divider')
         if hasattr(self, '_output_grid'):
             delattr(self, '_output_grid')
         if hasattr(self, '_aircraft_counts_pack_info'):
@@ -83,28 +85,30 @@ class ScenarioConfigScreen(tk.Frame):
         if has_departures or has_arrivals:
             self._add_aircraft_counts_section(has_departures, has_arrivals)
             self._add_divider()
+            # Store reference to divider that comes right after aircraft counts
+            self._aircraft_counts_divider = self.config_container.winfo_children()[-1]
 
         # Runway and separation config - compact inline
         if has_runways or is_tower:
             self._add_runway_and_separation_section(has_runways, is_tower)
-            # Store reference to first section after aircraft counts (for repositioning)
-            if not hasattr(self, '_first_section_after_aircraft_counts'):
-                self._first_section_after_aircraft_counts = self.config_container.winfo_children()[-1]
+            # Store reference to first widget after aircraft counts section (for repositioning)
+            if not hasattr(self, '_first_widget_after_aircraft_counts'):
+                self._first_widget_after_aircraft_counts = self.config_container.winfo_children()[-1]
             self._add_divider()
 
         # TRACON arrivals specific - compact
         if is_tracon_arrivals:
             self._add_tracon_arrivals_config()
-            # Store reference if this is the first section after aircraft counts
-            if not hasattr(self, '_first_section_after_aircraft_counts'):
-                self._first_section_after_aircraft_counts = self.config_container.winfo_children()[-1]
+            # Store reference if this is the first widget after aircraft counts
+            if not hasattr(self, '_first_widget_after_aircraft_counts'):
+                self._first_widget_after_aircraft_counts = self.config_container.winfo_children()[-1]
             self._add_divider()
 
         # Spawn delay and output - compact inline
         self._add_spawn_and_output_section()
-        # Store reference if this is the first section after aircraft counts
-        if not hasattr(self, '_first_section_after_aircraft_counts'):
-            self._first_section_after_aircraft_counts = self.config_container.winfo_children()[-1]
+        # Store reference if this is the first widget after aircraft counts
+        if not hasattr(self, '_first_widget_after_aircraft_counts'):
+            self._first_widget_after_aircraft_counts = self.config_container.winfo_children()[-1]
 
     def _add_divider(self):
         """Add a subtle divider line between sections"""
@@ -492,9 +496,11 @@ class ScenarioConfigScreen(tk.Frame):
             frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
             toggle_label.config(text="▼")
 
-            # Hide manual aircraft count section
+            # Hide manual aircraft count section and its divider
             if hasattr(self, 'aircraft_counts_section'):
                 self.aircraft_counts_section.pack_forget()
+            if hasattr(self, '_aircraft_counts_divider'):
+                self._aircraft_counts_divider.pack_forget()
         else:
             # Hide difficulty inputs
             frame.pack_forget()
@@ -502,17 +508,24 @@ class ScenarioConfigScreen(tk.Frame):
 
             # Restore manual aircraft count section to its original position
             if hasattr(self, 'aircraft_counts_section'):
-                # Use stored pack info and position before the next section
+                # Use stored pack info and position before the next widget
                 pack_options = self._aircraft_counts_pack_info.copy() if hasattr(self, '_aircraft_counts_pack_info') else {
                     'fill': 'x',
                     'pady': (DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL)
                 }
 
-                # Position before the next section to maintain order
-                if hasattr(self, '_first_section_after_aircraft_counts'):
-                    pack_options['before'] = self._first_section_after_aircraft_counts
+                # Position before the next widget to maintain order
+                if hasattr(self, '_first_widget_after_aircraft_counts'):
+                    pack_options['before'] = self._first_widget_after_aircraft_counts
 
                 self.aircraft_counts_section.pack(**pack_options)
+
+                # Restore divider right after aircraft counts section
+                if hasattr(self, '_aircraft_counts_divider'):
+                    divider_pack_options = {'fill': 'x', 'pady': DarkTheme.PADDING_MEDIUM}
+                    if hasattr(self, '_first_widget_after_aircraft_counts'):
+                        divider_pack_options['before'] = self._first_widget_after_aircraft_counts
+                    self._aircraft_counts_divider.pack(**divider_pack_options)
 
     def _toggle_spawn_delay_inputs(self, enabled):
         """Show/hide spawn delay configuration based on checkbox state"""
