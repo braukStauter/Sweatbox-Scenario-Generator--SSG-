@@ -23,8 +23,8 @@ A standalone desktop application with a modern graphical interface for generatin
 
 4. **Launch SSG.exe** and follow the GUI workflow:
    - Select airport → Choose scenario → Configure → Generate!
-   [!WARNING]
-   When pushing a scenario to vNAS Data Admin, be *very* cautious you don't override any existing scenario. This is unrecoverable.
+> [!WARNING]
+> When pushing a scenario to vNAS Data Admin, be *very* cautious you don't override any existing scenario. This is unrecoverable.
 
 ## Features
 
