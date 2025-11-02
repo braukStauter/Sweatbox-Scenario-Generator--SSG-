@@ -84,18 +84,12 @@ class GroundMixedScenario(BaseScenario):
             attempts += 1
 
         # Generate arrivals
-        # If spawn delay > 2 minutes, all aircraft spawn at 5 NM (no spacing needed since they spawn sequentially)
-        # Otherwise, use progressive spacing (6 NM intervals) since they all spawn at once
-        use_fixed_distance = max_delay > 120  # 2 minutes in seconds
-
+        # With new spawn delay system, spacing is controlled by spawn delays
+        # Use fixed 5 NM final approach position for all arrivals
+        # (spawn delays handle the timing, so no need for distance-based spacing)
         for i in range(num_arrivals):
             runway_name = active_runways[i % len(active_runways)]
-
-            if use_fixed_distance:
-                distance_nm = 5  # Fixed 5 NM final approach position
-            else:
-                distance_nm = 6 + (i // len(active_runways)) * 6  # 6 NM intervals
-
+            distance_nm = 5  # Fixed 5 NM final approach position
             aircraft = self._create_arrival_aircraft(runway_name, distance_nm)
             # Legacy mode: apply random spawn delay
             if spawn_delay_range and not delay_value:
