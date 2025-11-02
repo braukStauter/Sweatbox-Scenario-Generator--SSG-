@@ -7,3 +7,4 @@ dist/
 *.air
 *.spec
 version.py
+build_distribution.py
