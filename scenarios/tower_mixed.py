@@ -110,17 +110,21 @@ class TowerMixedScenario(BaseScenario):
 
                 attempts += 1
 
-        # Generate arrivals with random separation
-        # With new spawn delay system, spacing is controlled by spawn delays
-        # Use progressive spacing based on separation_range for visual variety
+        # Generate arrivals with separation
+        # With spawn delay system, spacing is controlled by spawn delays
+        # When no spawn delay is used (NONE mode), stagger by distance instead
         for i in range(num_arrivals):
             runway_name = active_runways[i % len(active_runways)]
 
-            # Random separation within specified range
-            base_distance = 6
-            separation = random.randint(separation_range[0], separation_range[1])
-            # Calculate cumulative distance
-            distance_nm = base_distance + (i // len(active_runways)) * separation
+            # If no spawn delay mode, stagger arrivals by distance
+            if spawn_delay_mode == SpawnDelayMode.NONE and not spawn_delay_range:
+                # Use separation_range for distance spacing
+                base_distance = 6
+                separation = random.randint(separation_range[0], separation_range[1])
+                distance_nm = base_distance + (i // len(active_runways)) * separation
+            else:
+                # With spawn delays, use fixed 6 NM final approach position
+                distance_nm = 6
 
             aircraft = self._create_arrival_aircraft(runway_name, distance_nm)
             # Legacy mode: apply random spawn delay
