@@ -42,9 +42,9 @@ A standalone desktop application with a modern graphical interface for generatin
 
 1. **Ground (Departures)**: Generate departure aircraft at parking spots
 2. **Ground (Departures/Arrivals)**: Mix of ground departures and arriving aircraft on final approach
-3. **Tower (Departures/Arrivals)**: Tower operations with departures, including GA traffic, and arrivals with customizable spacing
-4. **TRACON (Departures)**: Departure aircraft at parking ready for tower handoff
-5. **TRACON (Arrivals)**: Arrival aircraft spawned at designated waypoints with altitude restrictions
+3. **Tower (Departures/Arrivals)**: Tower operations with departures, including GA traffic, and arrivals
+4. **TRACON (Departures)**: Departure aircraft at parking.
+5. **TRACON (Arrivals)**: Arrival aircraft spawned at designated waypoints; handles specified arrival routing
 6. **TRACON (Departures/Arrivals)**: Combined TRACON operations with both departures and arrivals
 
 ## Installation
