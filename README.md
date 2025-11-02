@@ -12,7 +12,7 @@ A standalone desktop application with a modern graphical interface for generatin
 
 ## Quick Start
 
-1. **Download the latest release** from [the releases page]([url](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases))
+1. **Download the latest release** from [the releases page](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases)
 
 2. **Extract the distribution folder** to any location on your computer
 
