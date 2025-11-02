@@ -3,12 +3,12 @@
 
 A standalone desktop application with a modern graphical interface for generating realistic air traffic control simulation scenarios for vNAS Data Admin Sweatbox files.
 
-## System Requirements
+## Requirements
 
 - Windows 10/11 (64-bit)
 - Google Chrome (for vNAS support)
 - Internet connection (for flight plan API and auto-updates)
-- Airport GeoJSON data
+- Access to vNAS Data Admin (for GeoJSON, scenario, and pushing data)
 - CIFP file (required for TRACON arrival scenarios)
 
 ## Quick Start
@@ -19,7 +19,7 @@ A standalone desktop application with a modern graphical interface for generatin
 
 3. **Add your airport data** to the `airport_data/` folder:
    - `[AIRPORT].geojson` (e.g., KPHX.geojson)
-   - FAA CIFP File (can be downloaded [here](url).)
+   - FAA CIFP File (can be downloaded [here](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/cifp/download/)
 
 4. **Launch SSG.exe** and follow the GUI workflow:
    - Select airport → Choose scenario → Configure → Generate!
