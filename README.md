@@ -2,9 +2,17 @@
 
 A standalone desktop application with a modern graphical interface for generating realistic air traffic control simulation scenarios for vNAS Data Admin Sweatbox files.
 
+## System Requirements
+
+- Windows 10/11 (64-bit)
+- Google Chrome (for vNAS support)
+- Internet connection (for flight plan API and auto-updates)
+- Airport GeoJSON data
+- CIFP file (required for TRACON arrival scenarios)
+
 ## Quick Start
 
-1. **Download the latest release** from the releases page
+1. **Download the latest release** from [the releases page](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases)
 
 2. **Extract the distribution folder** to any location on your computer
 
@@ -14,8 +22,6 @@ A standalone desktop application with a modern graphical interface for generatin
 
 4. **Launch SSG.exe** and follow the GUI workflow:
    - Select airport → Choose scenario → Configure → Generate!
-
-> **No Python installation required!** The application comes as a standalone executable.
 
 ## Features
 
@@ -93,15 +99,6 @@ Parking spots with "GA" in the name automatically:
 ### GeoJSON File Structure
 
 This file is exported directly from vNAS Data Admin from the training airports section.
-
-## System Requirements
-
-- Windows 10/11 (64-bit)
-- No Python installation required
-- **Chrome browser** (required for vNAS integration)
-- Internet connection (for flight plan API and auto-updates)
-- Airport GeoJSON data
-- CIFP file (required for TRACON arrival scenarios)
 
 ## Logging
 

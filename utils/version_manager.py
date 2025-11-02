@@ -3,10 +3,14 @@ Version management and tracking utilities
 """
 import subprocess
 import logging
+import sys
 from pathlib import Path
 from typing import Tuple, Optional
 
 logger = logging.getLogger(__name__)
+
+# Windows-specific flag to hide console windows
+CREATE_NO_WINDOW = 0x08000000 if sys.platform == 'win32' else 0
 
 
 class VersionManager:
@@ -45,7 +49,8 @@ class VersionManager:
                 ["git", "describe", "--tags", "--abbrev=0"],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                creationflags=CREATE_NO_WINDOW
             )
 
             if result.returncode == 0:
@@ -71,7 +76,8 @@ class VersionManager:
                 ["git", "rev-parse", "--short", "HEAD"],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                creationflags=CREATE_NO_WINDOW
             )
 
             if result.returncode == 0:
@@ -95,7 +101,8 @@ class VersionManager:
                 ["git", "rev-list", "--count", "HEAD"],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                creationflags=CREATE_NO_WINDOW
             )
 
             if result.returncode == 0:
@@ -178,7 +185,8 @@ class VersionManager:
                 ["git", "show", f"{old_commit}:version.py"],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                creationflags=CREATE_NO_WINDOW
             )
 
             old_version = "unknown"
@@ -214,7 +222,8 @@ class VersionManager:
                 ["git", "log", f"v{old_version}..HEAD", "--oneline", "--no-merges"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                creationflags=CREATE_NO_WINDOW
             )
 
             if result.returncode == 0:
@@ -242,7 +251,8 @@ class VersionManager:
                 ["git", "log", f"-{count}", "--oneline", "--no-merges"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                creationflags=CREATE_NO_WINDOW
             )
 
             if result.returncode == 0:

@@ -9,6 +9,9 @@ from utils.version_manager import VersionManager
 
 logger = logging.getLogger(__name__)
 
+# Windows-specific flag to hide console windows
+CREATE_NO_WINDOW = 0x08000000 if sys.platform == 'win32' else 0
+
 
 def is_standalone_executable():
     """Check if running as a compiled executable (not in a git repo)"""
@@ -33,7 +36,8 @@ class AutoUpdater:
                 ["git", "rev-parse", "--is-inside-work-tree"],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                creationflags=CREATE_NO_WINDOW
             )
             return result.returncode == 0
         except Exception as e:
@@ -65,7 +69,8 @@ class AutoUpdater:
                 ["git", "fetch", "origin", self.branch],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                creationflags=CREATE_NO_WINDOW
             )
 
             if result.returncode != 0:
@@ -88,14 +93,16 @@ class AutoUpdater:
                 ["git", "rev-parse", "HEAD"],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                creationflags=CREATE_NO_WINDOW
             ).stdout.strip()
 
             remote_commit = subprocess.run(
                 ["git", "rev-parse", f"origin/{self.branch}"],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                creationflags=CREATE_NO_WINDOW
             ).stdout.strip()
 
             if local_commit == remote_commit:
@@ -145,7 +152,8 @@ class AutoUpdater:
                 ["git", "status", "--porcelain"],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
+                creationflags=CREATE_NO_WINDOW
             )
 
             if status_result.stdout.strip():
@@ -160,7 +168,8 @@ class AutoUpdater:
                     ["git", "stash", "push", "-m", "Auto-stash before update"],
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=10,
+                    creationflags=CREATE_NO_WINDOW
                 )
 
                 if stash_result.returncode != 0:
@@ -177,7 +186,8 @@ class AutoUpdater:
                 ["git", "pull", "origin", self.branch, "--ff-only"],
                 capture_output=True,
                 text=True,
-                timeout=30
+                timeout=30,
+                creationflags=CREATE_NO_WINDOW
             )
 
             if pull_result.returncode != 0:
