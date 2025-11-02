@@ -8,7 +8,6 @@ from typing import List
 from scenarios.base_scenario import BaseScenario
 from models.aircraft import Aircraft
 from models.spawn_delay_mode import SpawnDelayMode
-from utils.geo_utils import calculate_destination, get_reciprocal_heading
 
 logger = logging.getLogger(__name__)
 
@@ -117,20 +116,6 @@ class GroundMixedScenario(BaseScenario):
         Returns:
             Aircraft object
         """
-        # Get runway data
-        runway = self.geojson_parser.get_runway_by_name(runway_name)
-        threshold_lat, threshold_lon = runway.get_threshold_position(runway_name)
-
-        # Get actual runway centerline heading (calculated from coordinates)
-        runway_heading = runway.get_runway_heading(runway_name)
-        logger.debug(f"Runway {runway_name} centerline heading: {runway_heading:.1f}°")
-
-        # Calculate position on final approach (use reciprocal for inbound heading)
-        approach_heading = get_reciprocal_heading(runway_heading)
-
-        # Calculate position distance_nm away from threshold
-        lat, lon = calculate_destination(threshold_lat, threshold_lon, approach_heading, distance_nm)
-
         # Get flight plan from API (includes callsign)
         departure = self._get_random_destination(exclude=self.airport_icao)
         flight_plan = self.api_client.get_random_flight_plan(departure, self.airport_icao)
@@ -145,59 +130,19 @@ class GroundMixedScenario(BaseScenario):
         # Add callsign to used set
         self.used_callsigns.add(callsign)
 
-        # Calculate altitude based on FAF altitude + 1000 ft, with 3-degree glideslope
-        field_elevation = self.geojson_parser.field_elevation
-
-        # Try to get FAF altitude from CIFP data
-        faf_altitude = None
-        if self.cifp_parser:
-            faf_altitude = self.cifp_parser.get_faf_altitude(runway_name)
-
-        if faf_altitude:
-            # Use FAF altitude + 1000 ft as the baseline starting altitude
-            baseline_altitude = faf_altitude + 1000
-
-            # FAF is typically around 5 NM from threshold
-            # If aircraft is beyond FAF distance, use baseline altitude
-            # If within FAF distance, descend on glideslope toward field elevation
-            faf_distance_nm = 5.0  # Typical FAF distance
-
-            if distance_nm >= faf_distance_nm:
-                # Beyond FAF - use baseline altitude
-                altitude = baseline_altitude
-            else:
-                # Within FAF - descend on 3-degree glideslope
-                # Calculate altitude on glideslope from field elevation
-                glideslope_altitude = field_elevation + int(distance_nm * 300)
-                # Use the higher of glideslope or a reasonable minimum
-                altitude = max(glideslope_altitude, baseline_altitude - int((faf_distance_nm - distance_nm) * 200))
-
-            logger.debug(f"Runway {runway_name}: FAF alt {faf_altitude}, baseline {baseline_altitude}, final {altitude} ft at {distance_nm:.1f} NM")
-        else:
-            # No FAF data - fall back to glideslope from field elevation
-            altitude_agl = int(distance_nm * 300)
-            altitude = field_elevation + altitude_agl
-
-            # Ensure minimum altitude for aircraft beyond 8 NM
-            if distance_nm > 8:
-                min_altitude = field_elevation + 2400  # 8 NM * 300 ft/NM
-                altitude = max(altitude, min_altitude)
-
-            logger.debug(f"Final approach (no FAF data): {distance_nm:.1f} NM out, altitude: {altitude} ft")
-
-        # Ground speed on approach
-        ground_speed = 140  # Typical approach speed
-
-        logger.info(f"Creating arrival: {callsign} at {distance_nm:.1f} NM, alt {altitude} ft, hdg {int(runway_heading)}°, spd {ground_speed} kts")
+        # Use vNAS "On Final" starting condition - vNAS automatically positions aircraft
+        # We only need to set arrival_runway and arrival_distance_nm
+        # vNAS handles altitude, position, heading, and speed based on the runway and distance
+        logger.info(f"Creating arrival: {callsign} on final {runway_name}, {distance_nm:.1f} NM out")
 
         aircraft = Aircraft(
             callsign=callsign,
             aircraft_type=flight_plan['aircraft_type'],
-            latitude=lat,
-            longitude=lon,
-            altitude=altitude,
-            heading=int(runway_heading),
-            ground_speed=ground_speed,
+            latitude=0.0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
+            longitude=0.0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
+            altitude=0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
+            heading=0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
+            ground_speed=0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
             departure=departure,
             arrival=self.airport_icao,
             route=flight_plan['route'],
