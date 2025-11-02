@@ -6,6 +6,14 @@ A standalone desktop application with a modern graphical interface for generatin
 
 **Current Version:** Check the [latest release](../../releases/latest) for version information.
 
+## System Requirements
+
+- Windows 10/11 (64-bit)
+- Google Chrome (for vNAS support)
+- Internet connection (for flight plan API and auto-updates)
+- Airport GeoJSON data
+- CIFP file (required for TRACON arrival scenarios)
+
 ## Quick Start
 
 1. **Download the latest release** from the releases page
@@ -18,8 +26,6 @@ A standalone desktop application with a modern graphical interface for generatin
 
 4. **Launch SSG.exe** and follow the GUI workflow:
    - Select airport → Choose scenario → Configure → Generate!
-
-> **No Python installation required!** The application comes as a standalone executable.
 
 ## Features
 
@@ -97,14 +103,6 @@ Parking spots with "GA" in the name automatically:
 ### GeoJSON File Structure
 
 This file is exported directly from vNAS Data Admin from the training airports section.
-
-## System Requirements
-
-- Windows 10/11 (64-bit)
-- No Python installation required
-- Internet connection (for flight plan API and auto-updates)
-- Airport GeoJSON data
-- CIFP file (required for TRACON arrival scenarios)
 
 ## Logging
 
