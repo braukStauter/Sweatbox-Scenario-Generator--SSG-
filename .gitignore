@@ -5,6 +5,7 @@ build/
 dist/
 temp_update/
 
+*pyc
 *.air
 *.spec
 version.py
