@@ -131,9 +131,28 @@ class VersionManager:
         Returns:
             Formatted version string (e.g., "v1.0.0 (build 123)")
         """
-        version, commit_hash, build_number = self.get_version_info()
+        # First try to get version from version.py (for compiled exe)
+        try:
+            if self.version_file.exists():
+                import version
+                import importlib
+                importlib.reload(version)
 
-        parts = [f"v{version}"]
+                parts = [f"v{version.__version__}"]
+
+                if hasattr(version, '__build__') and version.__build__ and version.__build__ != "0":
+                    parts.append(f"(build {version.__build__})")
+                elif hasattr(version, '__commit__') and version.__commit__ and version.__commit__ != "unknown":
+                    parts.append(f"({version.__commit__})")
+
+                return " ".join(parts)
+        except Exception as e:
+            logger.debug(f"Could not read from version.py: {e}")
+
+        # Fallback to git-based version info
+        version_str, commit_hash, build_number = self.get_version_info()
+
+        parts = [f"v{version_str}"]
 
         if build_number:
             parts.append(f"(build {build_number})")

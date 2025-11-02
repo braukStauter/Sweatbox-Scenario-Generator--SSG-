@@ -3,10 +3,16 @@ Auto-updater module for checking and applying updates from GitHub
 """
 import subprocess
 import logging
+import sys
 from pathlib import Path
 from utils.version_manager import VersionManager
 
 logger = logging.getLogger(__name__)
+
+
+def is_standalone_executable():
+    """Check if running as a compiled executable (not in a git repo)"""
+    return not Path('.git').exists()
 
 
 class AutoUpdater:
@@ -225,6 +231,31 @@ class AutoUpdater:
         Returns:
             tuple: (updated: bool, message: str)
         """
+        # Check if running as standalone executable
+        if is_standalone_executable():
+            logger.info("Running as standalone executable, using release-based updates")
+            try:
+                from utils.release_updater import ReleaseUpdater
+                release_updater = ReleaseUpdater()
+                updated, message, requires_restart = release_updater.update_if_available(
+                    progress_callback, progress_value_callback
+                )
+
+                if requires_restart:
+                    # The app will be restarted by the updater
+                    logger.info("Update will be applied on restart")
+
+                return updated, message
+
+            except Exception as e:
+                logger.error(f"Release-based update failed: {e}")
+                if progress_callback:
+                    progress_callback("Ready!")
+                if progress_value_callback:
+                    progress_value_callback(75)
+                return False, f"Update check failed: {str(e)}"
+
+        # Git-based updates for development environment
         if not self.is_git_repo:
             logger.info("Not a git repository, skipping update check")
             if progress_callback:

@@ -98,6 +98,7 @@ This file is exported directly from vNAS Data Admin from the training airports s
 
 - Windows 10/11 (64-bit)
 - No Python installation required
+- **Chrome browser** (required for vNAS integration)
 - Internet connection (for flight plan API and auto-updates)
 - Airport GeoJSON data
 - CIFP file (required for TRACON arrival scenarios)
