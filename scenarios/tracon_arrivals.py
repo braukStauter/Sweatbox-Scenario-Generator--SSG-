@@ -78,7 +78,7 @@ class TraconArrivalsScenario(BaseScenario):
                 logger.warning(f"Waypoint {waypoint.name} has no coordinate data")
                 continue
 
-            aircraft = self._create_arrival_at_waypoint(waypoint, altitude_range, 0, active_runways)
+            aircraft = self._create_arrival_at_waypoint(waypoint, altitude_range, 0, active_runways, star_name)
             # Legacy mode: apply random spawn delay
             if spawn_delay_range and not delay_value:
                 aircraft.spawn_delay = random.randint(min_delay, max_delay)
@@ -132,7 +132,7 @@ class TraconArrivalsScenario(BaseScenario):
 
         return star_transitions
 
-    def _create_arrival_at_waypoint(self, waypoint, altitude_range: Tuple[int, int], delay_seconds: int = 0, active_runways: List[str] = None) -> Aircraft:
+    def _create_arrival_at_waypoint(self, waypoint, altitude_range: Tuple[int, int], delay_seconds: int = 0, active_runways: List[str] = None, star_name: str = None) -> Aircraft:
         """
         Create an arrival aircraft at a waypoint
 
@@ -141,6 +141,7 @@ class TraconArrivalsScenario(BaseScenario):
             altitude_range: Tuple of (min, max) altitude (used as fallback only)
             delay_seconds: Spawn delay in seconds
             active_runways: List of active runway designators
+            star_name: STAR name for looking up next waypoint
 
         Returns:
             Aircraft object
@@ -162,16 +163,29 @@ class TraconArrivalsScenario(BaseScenario):
         # Determine altitude - STRICTLY ENFORCE CIFP CONSTRAINTS
         altitude = self._get_altitude_from_cifp(waypoint, altitude_range)
 
-        # Use inbound course from CIFP if available, otherwise calculate bearing to airport
+        # Use inbound course from CIFP if available, otherwise calculate bearing to next fix
         if waypoint.inbound_course:
             heading = waypoint.inbound_course
             logger.debug(f"Using CIFP inbound course {heading}° for {waypoint.name}")
         else:
-            # Fallback: calculate heading towards airport center
+            # Fallback: calculate heading to next waypoint in STAR sequence
+            # Note: TF (Track to Fix) and IF (Initial Fix) legs don't have explicit courses in CIFP
             from utils.geo_utils import calculate_bearing
-            airport_lat, airport_lon = self.geojson_parser.get_airport_center()
-            heading = calculate_bearing(waypoint.latitude, waypoint.longitude, airport_lat, airport_lon)
-            logger.warning(f"No inbound course in CIFP for {waypoint.name}, using bearing to airport: {heading}°")
+
+            next_waypoint = None
+            if star_name and waypoint.sequence_number:
+                # Get next waypoint in sequence
+                next_waypoint = self.cifp_parser.get_next_waypoint_in_star(star_name, waypoint.sequence_number)
+
+            if next_waypoint and next_waypoint.latitude != 0.0 and next_waypoint.longitude != 0.0:
+                heading = calculate_bearing(waypoint.latitude, waypoint.longitude, next_waypoint.latitude, next_waypoint.longitude)
+                logger.debug(f"{waypoint.name} -> {next_waypoint.name}: calculated bearing {heading}°")
+            else:
+                # Final fallback: use bearing to airport
+                airport_lat, airport_lon = self.geojson_parser.get_airport_center()
+                heading = calculate_bearing(waypoint.latitude, waypoint.longitude, airport_lat, airport_lon)
+                leg_type = waypoint.leg_type if hasattr(waypoint, 'leg_type') and waypoint.leg_type else "unknown"
+                logger.debug(f"{waypoint.name} has no next waypoint, using bearing to airport: {heading}°")
 
         # Ground speed - STRICTLY ENFORCE CIFP SPEED RESTRICTIONS
         ground_speed = self._get_speed_from_cifp(waypoint, altitude)

@@ -112,7 +112,7 @@ class TraconMixedScenario(BaseScenario):
                 logger.warning(f"Waypoint {waypoint.name} has no coordinate data")
                 continue
 
-            aircraft = self._create_arrival_at_waypoint(waypoint, altitude_range, 0, active_runways)
+            aircraft = self._create_arrival_at_waypoint(waypoint, altitude_range, 0, active_runways, star_name)
             # Legacy mode: apply random spawn delay
             if spawn_delay_range and not delay_value:
                 aircraft.spawn_delay = random.randint(min_delay, max_delay)
@@ -127,7 +127,7 @@ class TraconMixedScenario(BaseScenario):
         logger.info(f"Generated {len(self.aircraft)} total aircraft")
         return self.aircraft
 
-    def _create_arrival_at_waypoint(self, waypoint, altitude_range: Tuple[int, int], delay_seconds: int = 0, active_runways: List[str] = None) -> Aircraft:
+    def _create_arrival_at_waypoint(self, waypoint, altitude_range: Tuple[int, int], delay_seconds: int = 0, active_runways: List[str] = None, star_name: str = None) -> Aircraft:
         """
         Create an arrival aircraft at a waypoint
 
@@ -136,6 +136,7 @@ class TraconMixedScenario(BaseScenario):
             altitude_range: Tuple of (min, max) altitude (used as fallback only)
             delay_seconds: Spawn delay in seconds
             active_runways: List of active runway designators
+            star_name: STAR name for looking up next waypoint
 
         Returns:
             Aircraft object
@@ -155,7 +156,7 @@ class TraconMixedScenario(BaseScenario):
         temp_scenario.used_callsigns = self.used_callsigns
 
         # Use the enhanced arrival creation from TraconArrivalsScenario
-        aircraft = temp_scenario._create_arrival_at_waypoint(waypoint, altitude_range, delay_seconds, active_runways)
+        aircraft = temp_scenario._create_arrival_at_waypoint(waypoint, altitude_range, delay_seconds, active_runways, star_name)
 
         # Update our used callsigns with any new ones
         self.used_callsigns.update(temp_scenario.used_callsigns)

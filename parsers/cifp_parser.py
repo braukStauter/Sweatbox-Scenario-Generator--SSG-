@@ -64,7 +64,6 @@ class CIFPParser:
         self.waypoints: Dict[str, Waypoint] = {}
         self.arrivals: Dict[str, List[str]] = {}
         self.arrival_runways: Dict[str, List[str]] = {}  # Maps STAR name to runways it feeds
-        self.approach_faf_altitudes: Dict[str, int] = {}
         # Store waypoint data per STAR to preserve procedure-specific constraints
         self.star_waypoints: Dict[str, Dict[str, Waypoint]] = {}  # {STAR_name: {waypoint_name: Waypoint}}
         self._load_data()
@@ -235,7 +234,6 @@ class CIFPParser:
             logger.info(f"Loaded {len(self.waypoints)} waypoints for {self.airport_icao}")
             logger.info(f"Found {len(self.arrivals)} arrival procedures")
             logger.info(f"Mapped {len(self.arrival_runways)} STARs to runways")
-            logger.info(f"Found {len(self.approach_faf_altitudes)} approach FAF altitudes")
 
         except Exception as e:
             logger.error(f"Error loading CIFP: {e}")
@@ -271,8 +269,6 @@ class CIFPParser:
                 self._parse_arrival_waypoint(line)
             elif subsection == 'D':
                 self._parse_departure_waypoint(line)
-            elif subsection == 'F':
-                self._parse_approach_procedure(line)
             elif subsection == 'A' and record_type != 'SUSAE':
                 self._parse_airport_waypoint(line)
 
@@ -326,27 +322,21 @@ class CIFPParser:
 
             # Extract inbound course from position 70-74 (ARINC 424 standard)
             # This is the magnetic course TO the waypoint for all leg types
-            if leg_type in ['TF', 'CF', 'IF', 'RF']:
-                # TF (Track to Fix), CF (Course to Fix), IF (Initial Fix), RF (Radius to Fix)
-                # Course is in columns 70-74 (magnetic track to the waypoint)
-                course_str = line[70:74].strip()
-                if course_str and course_str.isdigit():
-                    inbound_course = int(course_str)
-                    logger.debug(f"Extracted inbound course {inbound_course}° for {waypoint_name} (leg type: {leg_type})")
-            elif leg_type in ['DF']:
-                # DF (Direct to Fix) - no specific inbound course, aircraft flies direct
-                # Still try to extract course if available in CIFP
-                course_str = line[70:74].strip()
-                if course_str and course_str.isdigit():
-                    inbound_course = int(course_str)
-                    logger.debug(f"Extracted inbound course {inbound_course}° for {waypoint_name} (DF leg)")
-
-            # Fallback: try to extract from position 70-74 regardless of leg type
-            if inbound_course is None:
-                course_str = line[70:74].strip()
-                if course_str and course_str.isdigit():
-                    inbound_course = int(course_str)
-                    logger.debug(f"Extracted inbound course {inbound_course}° for {waypoint_name} (fallback, leg type: {leg_type})")
+            # Course may have "T" suffix for True heading (vs Magnetic)
+            course_str = line[70:74].strip()
+            if course_str:
+                try:
+                    # Check if it ends with 'T' for True heading
+                    if course_str.endswith('T'):
+                        # True heading - remove T and convert
+                        inbound_course = int(course_str[:-1])
+                        logger.debug(f"Extracted TRUE course {inbound_course}° for {waypoint_name} (leg type: {leg_type})")
+                    elif course_str.isdigit():
+                        # Magnetic heading
+                        inbound_course = int(course_str)
+                        logger.debug(f"Extracted MAGNETIC course {inbound_course}° for {waypoint_name} (leg type: {leg_type})")
+                except (ValueError, IndexError):
+                    pass
 
             # Extract altitude constraints from multiple positions
             # Primary altitude is at position 84-89 (Altitude 1)
@@ -589,118 +579,6 @@ class CIFPParser:
         except Exception as e:
             logger.debug(f"Error parsing departure waypoint: {e}")
 
-    def _parse_approach_procedure(self, line: str):
-        """Parse approach procedure line (subsection F) to extract FAF altitudes and waypoints"""
-        try:
-            if len(line) < 90:
-                return
-
-            # Extract runway from procedure identifier (position 13-19)
-            # Format examples: "I07L  " (ILS 07L), "R25R  " (RNAV 25R), "V07L  " (VOR 07L)
-            procedure = line[13:19].strip()
-
-            # Extract runway designator (last 2-3 chars of procedure, e.g., "07L", "25R", "08C")
-            runway = None
-            import re
-            # Match patterns like 07L, 25R, 08C, 18
-            runway_match = re.search(r'(\d{2}[LRC]?)$', procedure)
-            if runway_match:
-                runway = runway_match.group(1)
-                logger.debug(f"Extracted runway {runway} from procedure {procedure}")
-
-            if not runway:
-                logger.debug(f"Could not extract runway from procedure: {procedure}")
-                return
-
-            # Get waypoint name
-            waypoint_name = line[29:34].strip()
-
-            # Check for FAF indicator at position 42 (waypoint characteristic)
-            # 'F' = Final Approach Fix
-            waypoint_characteristic = line[42] if len(line) > 42 else ''
-            is_faf = waypoint_characteristic == 'F'
-
-            # Parse altitude
-            altitude_str = line[84:89].strip() if len(line) > 88 else ''
-            altitude = None
-
-            if altitude_str:
-                try:
-                    if altitude_str.startswith('FL'):
-                        altitude = int(altitude_str[2:]) * 100
-                    else:
-                        altitude = int(altitude_str)
-
-                    if is_faf:
-                        if runway not in self.approach_faf_altitudes or altitude > self.approach_faf_altitudes[runway]:
-                            self.approach_faf_altitudes[runway] = altitude
-                            logger.debug(f"FAF altitude for runway {runway}: {altitude} ft MSL (waypoint: {waypoint_name})")
-
-                except ValueError:
-                    pass
-
-            # Parse enhanced ARINC 424 fields for approach waypoints
-            if waypoint_name:
-                sequence_number = self._parse_sequence_number(line)
-                leg_type = self._parse_leg_type(line)
-                altitude_descriptor = self._parse_altitude_descriptor(line)
-                speed_limit = self._parse_speed_limit(line)
-                turn_direction = self._parse_turn_direction(line)
-                transition_name = self._parse_transition_identifier(line)
-                magnetic_variation = self._parse_magnetic_variation(line)
-                distance_time = self._parse_distance_time(line)
-                recommended_navaid = self._parse_recommended_navaid(line)
-                route_type = self._parse_route_type(line, 'F')
-
-                # Create or update waypoint
-                if waypoint_name not in self.waypoints:
-                    waypoint = Waypoint(
-                        name=waypoint_name,
-                        latitude=0.0,
-                        longitude=0.0,
-                        min_altitude=altitude,
-                        max_altitude=altitude,
-                        sequence_number=sequence_number,
-                        leg_type=leg_type,
-                        altitude_descriptor=altitude_descriptor,
-                        speed_limit=speed_limit,
-                        turn_direction=turn_direction,
-                        transition_name=transition_name,
-                        magnetic_variation=magnetic_variation,
-                        distance_time=distance_time,
-                        recommended_navaid=recommended_navaid,
-                        route_type=route_type
-                    )
-                    self.waypoints[waypoint_name] = waypoint
-                else:
-                    # Update existing waypoint with approach-specific data
-                    if altitude:
-                        self.waypoints[waypoint_name].min_altitude = altitude
-                        self.waypoints[waypoint_name].max_altitude = altitude
-                    if sequence_number:
-                        self.waypoints[waypoint_name].sequence_number = sequence_number
-                    if leg_type:
-                        self.waypoints[waypoint_name].leg_type = leg_type
-                    if altitude_descriptor:
-                        self.waypoints[waypoint_name].altitude_descriptor = altitude_descriptor
-                    if speed_limit:
-                        self.waypoints[waypoint_name].speed_limit = speed_limit
-                    if turn_direction:
-                        self.waypoints[waypoint_name].turn_direction = turn_direction
-                    if transition_name:
-                        self.waypoints[waypoint_name].transition_name = transition_name
-                    if magnetic_variation:
-                        self.waypoints[waypoint_name].magnetic_variation = magnetic_variation
-                    if distance_time:
-                        self.waypoints[waypoint_name].distance_time = distance_time
-                    if recommended_navaid:
-                        self.waypoints[waypoint_name].recommended_navaid = recommended_navaid
-                    if route_type:
-                        self.waypoints[waypoint_name].route_type = route_type
-
-        except Exception as e:
-            logger.debug(f"Error parsing approach procedure: {e}")
-
     def _parse_airport_waypoint(self, line: str):
         """Parse airport reference point or terminal area waypoint"""
         try:
@@ -774,32 +652,39 @@ class CIFPParser:
         """Get all waypoints"""
         return list(self.waypoints.values())
 
-    def get_faf_altitude(self, runway_name: str) -> Optional[int]:
-        """Get the Final Approach Fix altitude for a runway"""
-        return self.approach_faf_altitudes.get(runway_name)
-
     def _map_arrivals_to_runways(self):
-        """Map each STAR to the runways it can feed based on approach procedures"""
-        # For each approach procedure (runway), we can infer which STARs feed it
-        # by looking at which STARs have transitions or connections to that runway
+        """Map each STAR to the runways it can feed based on runway-specific transitions"""
+        import re
 
-        # Get all runways from approach procedures
-        all_runways = list(self.approach_faf_altitudes.keys())
+        # Extract runways from STAR waypoint data
+        # STARs often have runway-specific transitions like "BRRTO16RW03", "BRRTO16RW08", etc.
+        for arrival_name, waypoint_names in self.arrivals.items():
+            runways_for_this_star = set()
 
-        # For now, use a simple heuristic:
-        # If a STAR name contains digits, those might indicate specific runways
-        # Otherwise, map all STARs to all runways (conservative approach)
-        for arrival_name in self.arrivals.keys():
-            runways_for_this_star = []
+            # Check if any waypoints in star_waypoints have runway-specific suffixes
+            if arrival_name in self.star_waypoints:
+                for waypoint_name, waypoint in self.star_waypoints[arrival_name].items():
+                    # Check transition_name field for runway patterns (e.g., "RW03", "RW08")
+                    if waypoint.transition_name:
+                        rwy_match = re.search(r'RW(\d{2}[LCR]?)', waypoint.transition_name)
+                        if rwy_match:
+                            runway = rwy_match.group(1)
+                            runways_for_this_star.add(runway)
 
-            # Check if STAR name has runway-specific variants
-            # e.g., "HYDRR1" might feed different runways than "HYDRR2"
-            # For now, map to all available runways
-            runways_for_this_star = all_runways.copy()
+            # Also check the arrivals dictionary keys themselves for runway patterns
+            # Some CIFP data encodes runways in the arrival name (e.g., "BRRTO16RW03")
+            for key in self.arrivals.keys():
+                if key.startswith(arrival_name):
+                    rwy_match = re.search(r'RW(\d{2}[LCR]?)', key)
+                    if rwy_match:
+                        runway = rwy_match.group(1)
+                        runways_for_this_star.add(runway)
 
             if runways_for_this_star:
-                self.arrival_runways[arrival_name] = runways_for_this_star
-                logger.debug(f"Mapped STAR {arrival_name} to runways: {', '.join(runways_for_this_star)}")
+                self.arrival_runways[arrival_name] = sorted(list(runways_for_this_star))
+                logger.debug(f"Mapped STAR {arrival_name} to runways: {', '.join(sorted(runways_for_this_star))}")
+            else:
+                logger.warning(f"No runways found for STAR {arrival_name}")
 
     def get_runways_for_arrival(self, arrival_name: str) -> List[str]:
         """
@@ -868,6 +753,52 @@ class CIFPParser:
 
         logger.warning(f"Waypoint {waypoint_name} not found on STAR {star_name}")
         logger.debug(f"Available waypoints for {star_name}: {', '.join(arrival_waypoints[:10])}")
+        return None
+
+    def get_next_waypoint_in_star(self, star_name: str, current_sequence: int) -> Optional[Waypoint]:
+        """
+        Get the next waypoint in a STAR sequence
+
+        Args:
+            star_name: STAR name (e.g., "BRRTO1")
+            current_sequence: Current waypoint sequence number
+
+        Returns:
+            Next Waypoint object if found, None otherwise
+        """
+        if star_name not in self.star_waypoints:
+            return None
+
+        # Find waypoint with next sequence number
+        next_sequence = current_sequence + 10  # CIFP sequences typically increment by 10
+        for waypoint_name, waypoint in self.star_waypoints[star_name].items():
+            if waypoint.sequence_number == next_sequence:
+                # Get coordinates from global waypoints if needed
+                if waypoint.latitude == 0.0 and waypoint.longitude == 0.0:
+                    if waypoint_name in self.waypoints:
+                        waypoint.latitude = self.waypoints[waypoint_name].latitude
+                        waypoint.longitude = self.waypoints[waypoint_name].longitude
+                return waypoint
+
+        # If exact sequence not found, find the next higher sequence number
+        next_waypoints = []
+        for waypoint_name, waypoint in self.star_waypoints[star_name].items():
+            if waypoint.sequence_number and waypoint.sequence_number > current_sequence:
+                next_waypoints.append((waypoint.sequence_number, waypoint_name, waypoint))
+
+        if next_waypoints:
+            # Sort by sequence number and get the first one
+            next_waypoints.sort(key=lambda x: x[0])
+            _, waypoint_name, waypoint = next_waypoints[0]
+
+            # Get coordinates from global waypoints if needed
+            if waypoint.latitude == 0.0 and waypoint.longitude == 0.0:
+                if waypoint_name in self.waypoints:
+                    waypoint.latitude = self.waypoints[waypoint_name].latitude
+                    waypoint.longitude = self.waypoints[waypoint_name].longitude
+
+            return waypoint
+
         return None
 
     def get_available_transitions(self, star_name: str) -> List[str]:

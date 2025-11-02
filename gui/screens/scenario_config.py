@@ -77,15 +77,24 @@ class ScenarioConfigScreen(tk.Frame):
         # Runway and separation config - compact inline
         if has_runways or is_tower:
             self._add_runway_and_separation_section(has_runways, is_tower)
+            # Store reference to first section after aircraft counts (for repositioning)
+            if not hasattr(self, '_first_section_after_aircraft_counts'):
+                self._first_section_after_aircraft_counts = self.config_container.winfo_children()[-1]
             self._add_divider()
 
         # TRACON arrivals specific - compact
         if is_tracon_arrivals:
             self._add_tracon_arrivals_config()
+            # Store reference if this is the first section after aircraft counts
+            if not hasattr(self, '_first_section_after_aircraft_counts'):
+                self._first_section_after_aircraft_counts = self.config_container.winfo_children()[-1]
             self._add_divider()
 
         # Spawn delay and output - compact inline
         self._add_spawn_and_output_section()
+        # Store reference if this is the first section after aircraft counts
+        if not hasattr(self, '_first_section_after_aircraft_counts'):
+            self._first_section_after_aircraft_counts = self.config_container.winfo_children()[-1]
 
     def _add_divider(self):
         """Add a subtle divider line between sections"""
@@ -373,6 +382,8 @@ class ScenarioConfigScreen(tk.Frame):
         # Output filename (always visible)
         output_grid = ThemedFrame(section)
         output_grid.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, 0))
+        # Store reference for spawn delay positioning
+        self._output_grid = output_grid
 
         output_label = ThemedLabel(output_grid, text="Output Filename:")
         output_label.grid(row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
@@ -481,26 +492,38 @@ class ScenarioConfigScreen(tk.Frame):
 
             # Restore manual aircraft count section to its original position
             if hasattr(self, 'aircraft_counts_section'):
-                if hasattr(self, '_aircraft_counts_pack_info'):
-                    # Use stored pack info to restore exact position
-                    self.aircraft_counts_section.pack(**self._aircraft_counts_pack_info)
-                else:
-                    # Fallback if pack info wasn't stored
-                    self.aircraft_counts_section.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL))
+                # Use stored pack info and position before the next section
+                pack_options = self._aircraft_counts_pack_info.copy() if hasattr(self, '_aircraft_counts_pack_info') else {
+                    'fill': 'x',
+                    'pady': (DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL)
+                }
+
+                # Position before the next section to maintain order
+                if hasattr(self, '_first_section_after_aircraft_counts'):
+                    pack_options['before'] = self._first_section_after_aircraft_counts
+
+                self.aircraft_counts_section.pack(**pack_options)
 
     def _toggle_spawn_delay_inputs(self, enabled):
         """Show/hide spawn delay configuration based on checkbox state"""
         if enabled:
-            # Store pack info before showing if not already stored
+            # Use stored pack info or defaults, and position before output grid
+            pack_options = self._spawn_delay_pack_info.copy() if hasattr(self, '_spawn_delay_pack_info') else {
+                'fill': 'x',
+                'pady': (DarkTheme.PADDING_SMALL, DarkTheme.PADDING_SMALL)
+            }
+
+            # Position before output grid to maintain order
+            if hasattr(self, '_output_grid'):
+                pack_options['before'] = self._output_grid
+
+            self.spawn_delay_frame.pack(**pack_options)
+
+            # Store pack info after first show
             if not hasattr(self, '_spawn_delay_pack_info'):
-                # Since this is the first show, use default pack options
-                self.spawn_delay_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, DarkTheme.PADDING_SMALL))
                 self._spawn_delay_pack_info = self.spawn_delay_frame.pack_info()
-            else:
-                # Restore to exact original position using stored pack info
-                self.spawn_delay_frame.pack(**self._spawn_delay_pack_info)
         else:
-            # Store pack info before hiding
+            # Store pack info before hiding if not already stored
             if not hasattr(self, '_spawn_delay_pack_info'):
                 self._spawn_delay_pack_info = self.spawn_delay_frame.pack_info()
             self.spawn_delay_frame.pack_forget()
