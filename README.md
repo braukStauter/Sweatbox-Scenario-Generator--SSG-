@@ -9,7 +9,7 @@ A standalone desktop application with a modern graphical interface for generatin
 - Google Chrome (for vNAS support)
 - Internet connection (for flight plan API and auto-updates)
 - Access to vNAS Data Admin (for GeoJSON, scenario, and pushing data)
-- CIFP file (required for TRACON arrival scenarios)
+- [CIFP file](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/cifp/download/) (required for TRACON arrival scenarios)
 
 ## Quick Start
 
@@ -19,7 +19,7 @@ A standalone desktop application with a modern graphical interface for generatin
 
 3. **Add your airport data** to the `airport_data/` folder:
    - `[AIRPORT].geojson` (e.g., KPHX.geojson)
-   - FAA CIFP File (can be downloaded [here](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/cifp/download/)
+   - FAA CIFP File (can be downloaded [here](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/cifp/download/))
 
 4. **Launch SSG.exe** and follow the GUI workflow:
    - Select airport → Choose scenario → Configure → Generate!
