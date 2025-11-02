@@ -2,10 +2,6 @@
 
 A standalone desktop application with a modern graphical interface for generating realistic air traffic control simulation scenarios for vNAS Data Admin Sweatbox files.
 
-## Version
-
-**Current Version:** Check the [latest release](../../releases/latest) for version information.
-
 ## System Requirements
 
 - Windows 10/11 (64-bit)
