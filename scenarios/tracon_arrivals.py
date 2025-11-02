@@ -202,7 +202,7 @@ class TraconArrivalsScenario(BaseScenario):
         # Set Fix/Radial/Distance navigation path
         # Format: FIXNAME + RADIAL (reciprocal + 180) + DISTANCE (10NM)
         # Example: PINNG112010 means "10NM from PINNG on the 112 radial"
-        navigation_path = f"{waypoint.name}{reciprocal_heading:03d}10"
+        navigation_path = f"{waypoint.name}{reciprocal_heading:03d}{spawn_distance:03d}"
 
         aircraft = Aircraft(
             callsign=callsign,
