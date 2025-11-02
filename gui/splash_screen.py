@@ -3,8 +3,6 @@ Splash screen for application startup
 """
 import tkinter as tk
 from tkinter import ttk
-from pathlib import Path
-from PIL import Image, ImageTk
 from gui.theme import DarkTheme
 from utils.version_manager import VersionManager
 
@@ -21,7 +19,7 @@ class SplashScreen(tk.Toplevel):
 
         # Set size and center on screen
         width = 600
-        height = 400  # Increased from 320 to fit all elements including version
+        height = 320
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         x = (screen_width - width) // 2
@@ -35,24 +33,6 @@ class SplashScreen(tk.Toplevel):
         content = tk.Frame(self, bg=DarkTheme.BG_PRIMARY)
         content.pack(expand=True, fill='both', padx=DarkTheme.PADDING_XLARGE, pady=DarkTheme.PADDING_XLARGE)
 
-        # Load and display logo
-        try:
-            logo_path = Path("utils") / "Creative Shrimp.png"
-            if logo_path.exists():
-                logo_image = Image.open(logo_path)
-                # Resize logo to fit nicely (max 100 pixels height)
-                logo_height = 100
-                aspect_ratio = logo_image.width / logo_image.height
-                logo_width = int(logo_height * aspect_ratio)
-                logo_image = logo_image.resize((logo_width, logo_height), Image.Resampling.LANCZOS)
-
-                self.logo_photo = ImageTk.PhotoImage(logo_image)
-                logo_label = tk.Label(content, image=self.logo_photo, bg=DarkTheme.BG_PRIMARY)
-                logo_label.pack(pady=(DarkTheme.PADDING_SMALL, 4))
-        except Exception as e:
-            # If logo can't be loaded, just skip it
-            pass
-
         # App title
         title = tk.Label(
             content,
@@ -62,7 +42,7 @@ class SplashScreen(tk.Toplevel):
             bg=DarkTheme.BG_PRIMARY,
             wraplength=550  # Wrap text if needed
         )
-        title.pack(pady=(0, 2))
+        title.pack(pady=(DarkTheme.PADDING_LARGE, 2))
 
         # App subtitle (SSG)
         subtitle = tk.Label(
