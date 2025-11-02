@@ -5,7 +5,7 @@ A standalone desktop application with a modern graphical interface for generatin
 ## System Requirements
 
 - Windows 10/11 (64-bit)
-- Google Chrome (for vNAS support)
+- Google Chrome (for vNAS support) required if using the Lite version. (Portable chrome is included in the full version.)
 - Internet connection (for flight plan API and auto-updates)
 - Airport GeoJSON data
 - CIFP file (required for TRACON arrival scenarios)
