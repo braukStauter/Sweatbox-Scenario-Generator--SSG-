@@ -3,7 +3,10 @@ __pycache__/
 logs/
 build/
 dist/
+temp_update/
 
 *.air
 *.spec
 version.py
+build_distribution.py
+updater.py
