@@ -1,3 +1,4 @@
+![Version Image](https://img.shields.io/badge/Stable_Version-1.0.4-Green) ![Build Image](https://img.shields.io/badge/Build-32-blue)
 # vNAS Sweatbox Scenario Generator
 
 A standalone desktop application with a modern graphical interface for generating realistic air traffic control simulation scenarios for vNAS Data Admin Sweatbox files.
