@@ -58,6 +58,16 @@ class ScenarioConfigScreen(tk.Frame):
             widget.destroy()
         self.inputs.clear()
 
+        # Clear stored widget references (they're about to be destroyed/recreated)
+        if hasattr(self, '_first_section_after_aircraft_counts'):
+            delattr(self, '_first_section_after_aircraft_counts')
+        if hasattr(self, '_output_grid'):
+            delattr(self, '_output_grid')
+        if hasattr(self, '_aircraft_counts_pack_info'):
+            delattr(self, '_aircraft_counts_pack_info')
+        if hasattr(self, '_spawn_delay_pack_info'):
+            delattr(self, '_spawn_delay_pack_info')
+
         # Store scenario type flags for later use
         has_departures = scenario_type in ['ground_departures', 'ground_mixed', 'tower_mixed', 'tracon_departures', 'tracon_mixed']
         has_arrivals = scenario_type in ['ground_mixed', 'tower_mixed', 'tracon_arrivals', 'tracon_mixed']
