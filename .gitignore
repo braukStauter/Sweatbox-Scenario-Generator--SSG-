@@ -1,0 +1,8 @@
+.claude/
+__pychache__/
+logs/
+build/
+dist/
+
+*.air
+*.spec

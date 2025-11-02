@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c:*)",
+      "Bash(pip install:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(dir \"C:\\Users\\flyma\\Desktop\\Creative Shrimp\\Sweatbox Scenario Generator (SSG)\\airport_data\")",
+      "Bash(move main.py main_cli_legacy.py)",
+      "Bash(python:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(head:*)",
+      "Bash(ls:*)",
+      "Bash(dir \"C:\\Users\\flyma\\Desktop\\Creative Shrimp\\Sweatbox Scenario Generator (SSG)\")",
+      "Bash(git remote:*)",
+      "Bash(dir gui:*)",
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(copy \"dist\\SSG.exe\" \"dist\\SSG_Distribution\\SSG.exe\")",
+      "Bash(copy config.json \"dist\\SSG_Distribution\\config.json\")",
+      "Bash(xcopy:*)",
+      "Bash(cmd /c:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
