@@ -92,10 +92,10 @@ class CIFPParser:
         return None
 
     def _parse_altitude_descriptor(self, line: str) -> Optional[str]:
-        """Parse altitude descriptor from position 83 (@, +, -, B)"""
+        """Parse altitude descriptor from position 82 (@, +, -, B) per ARINC 424"""
         try:
-            if len(line) >= 84:
-                descriptor = line[83]
+            if len(line) >= 83:
+                descriptor = line[82]
                 if descriptor in ALTITUDE_DESCRIPTORS and descriptor != ' ':
                     return descriptor
         except Exception as e:
@@ -103,10 +103,10 @@ class CIFPParser:
         return None
 
     def _parse_speed_limit(self, line: str) -> Optional[int]:
-        """Parse speed limit from position 100-103"""
+        """Parse speed limit from position 99-102 per ARINC 424"""
         try:
-            if len(line) >= 103:
-                speed_str = line[100:103].strip()
+            if len(line) >= 102:
+                speed_str = line[99:102].strip()
                 if speed_str and speed_str.isdigit():
                     return int(speed_str)
         except Exception as e:
@@ -319,43 +319,102 @@ class CIFPParser:
             waypoint_name = line[29:34].strip()
 
             # Extract inbound course (magnetic track) to this waypoint
-            # For TF (Track to Fix) legs, the course is in columns 69-72
-            course_str = line[69:73].strip()
-            inbound_course = None
-            if course_str and course_str.isdigit():
-                inbound_course = int(course_str)
+            # Parse leg type first to determine how to extract course
+            leg_type = self._parse_leg_type(line)
 
-            altitude_section = line[66:84]
+            inbound_course = None
+
+            # Extract inbound course from position 70-74 (ARINC 424 standard)
+            # This is the magnetic course TO the waypoint for all leg types
+            if leg_type in ['TF', 'CF', 'IF', 'RF']:
+                # TF (Track to Fix), CF (Course to Fix), IF (Initial Fix), RF (Radius to Fix)
+                # Course is in columns 70-74 (magnetic track to the waypoint)
+                course_str = line[70:74].strip()
+                if course_str and course_str.isdigit():
+                    inbound_course = int(course_str)
+                    logger.debug(f"Extracted inbound course {inbound_course}° for {waypoint_name} (leg type: {leg_type})")
+            elif leg_type in ['DF']:
+                # DF (Direct to Fix) - no specific inbound course, aircraft flies direct
+                # Still try to extract course if available in CIFP
+                course_str = line[70:74].strip()
+                if course_str and course_str.isdigit():
+                    inbound_course = int(course_str)
+                    logger.debug(f"Extracted inbound course {inbound_course}° for {waypoint_name} (DF leg)")
+
+            # Fallback: try to extract from position 70-74 regardless of leg type
+            if inbound_course is None:
+                course_str = line[70:74].strip()
+                if course_str and course_str.isdigit():
+                    inbound_course = int(course_str)
+                    logger.debug(f"Extracted inbound course {inbound_course}° for {waypoint_name} (fallback, leg type: {leg_type})")
+
+            # Extract altitude constraints from multiple positions
+            # Primary altitude is at position 84-89 (Altitude 1)
+            # Secondary altitude is at position 89-94 (Altitude 2)
+            altitude_section = line[66:94] if len(line) >= 94 else line[66:]
 
             min_alt = None
             max_alt = None
 
-            alt_match = re.search(r'(FL)?(\d{3,5})(FL)?(\d{3,5})?', altitude_section)
-            if alt_match:
-                alt1 = alt_match.group(2)
-                alt2 = alt_match.group(4)
-
-                if alt1:
-                    if len(alt1) == 3:
-                        alt1_feet = int(alt1) * 100
+            # Try to extract from position 84-89 (primary altitude)
+            if len(line) >= 89:
+                alt1_str = line[84:89].strip()
+                if alt1_str and alt1_str.isdigit():
+                    if len(alt1_str) == 3:
+                        min_alt = int(alt1_str) * 100
                     else:
-                        alt1_feet = int(alt1)
+                        min_alt = int(alt1_str)
+                    max_alt = min_alt  # Default max to min
 
-                    if alt2:
-                        if len(alt2) == 3:
-                            alt2_feet = int(alt2) * 100
+            # Try to extract from position 89-94 (secondary altitude for ranges)
+            if len(line) >= 94:
+                alt2_str = line[89:94].strip()
+                if alt2_str and alt2_str.isdigit():
+                    if len(alt2_str) == 3:
+                        alt2_val = int(alt2_str) * 100
+                    else:
+                        alt2_val = int(alt2_str)
+
+                    if min_alt:
+                        # We have both altitudes - it's a range
+                        max_alt = max(min_alt, alt2_val)
+                        min_alt = min(min_alt, alt2_val)
+                    else:
+                        # Only secondary altitude found
+                        min_alt = alt2_val
+                        max_alt = alt2_val
+
+            # Fallback: try legacy regex pattern on full altitude section
+            if min_alt is None and max_alt is None:
+                alt_match = re.search(r'(FL)?(\d{3,5})(FL)?(\d{3,5})?', altitude_section)
+                if alt_match:
+                    alt1 = alt_match.group(2)
+                    alt2 = alt_match.group(4)
+
+                    if alt1:
+                        if len(alt1) == 3:
+                            alt1_feet = int(alt1) * 100
                         else:
-                            alt2_feet = int(alt2)
+                            alt1_feet = int(alt1)
 
-                        min_alt = min(alt1_feet, alt2_feet)
-                        max_alt = max(alt1_feet, alt2_feet)
-                    else:
-                        min_alt = alt1_feet
-                        max_alt = alt1_feet
+                        if alt2:
+                            if len(alt2) == 3:
+                                alt2_feet = int(alt2) * 100
+                            else:
+                                alt2_feet = int(alt2)
 
-            # Parse enhanced ARINC 424 fields
+                            min_alt = min(alt1_feet, alt2_feet)
+                            max_alt = max(alt1_feet, alt2_feet)
+                        else:
+                            min_alt = alt1_feet
+                            max_alt = alt1_feet
+
+            if min_alt or max_alt:
+                logger.debug(f"Parsed altitude for {waypoint_name}: min={min_alt}, max={max_alt}")
+
+            # Parse enhanced ARINC 424 fields (leg_type already parsed above for inbound course)
             sequence_number = self._parse_sequence_number(line)
-            leg_type = self._parse_leg_type(line)
+            # leg_type already parsed above - don't parse again
             altitude_descriptor = self._parse_altitude_descriptor(line)
             speed_limit = self._parse_speed_limit(line)
             turn_direction = self._parse_turn_direction(line)

@@ -7,6 +7,7 @@ from typing import List, Tuple
 
 from scenarios.base_scenario import BaseScenario
 from models.aircraft import Aircraft
+from models.spawn_delay_mode import SpawnDelayMode
 from utils.geo_utils import calculate_bearing
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,9 @@ class TraconMixedScenario(BaseScenario):
     def generate(self, num_departures: int, num_arrivals: int, arrival_waypoints: List[str],
                  altitude_range: Tuple[int, int] = (7000, 18000),
                  delay_range: Tuple[int, int] = (4, 7),
-                 spawn_delay_range: str = "0-0", difficulty_config=None, active_runways: List[str] = None) -> List[Aircraft]:
+                 spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
+                 delay_value: str = None, total_session_minutes: int = None,
+                 spawn_delay_range: str = None, difficulty_config=None, active_runways: List[str] = None) -> List[Aircraft]:
         """
         Generate TRACON mixed scenario
 
@@ -30,7 +33,10 @@ class TraconMixedScenario(BaseScenario):
                               (e.g., "EAGUL.JESSE3", "PINNG.PINNG1", "HOTTT.PINNG1")
             altitude_range: Tuple of (min, max) altitude in feet for arrivals (used as fallback only)
             delay_range: Tuple of (min, max) spawn delay in minutes between aircraft
-            spawn_delay_range: Spawn delay range in minutes (format: "min-max", e.g., "0-0" or "1-5")
+            spawn_delay_mode: SpawnDelayMode enum (NONE, INCREMENTAL, or TOTAL)
+            delay_value: For INCREMENTAL mode: delay range/value in minutes (e.g., "2-5" or "3")
+            total_session_minutes: For TOTAL mode: total session length in minutes
+            spawn_delay_range: LEGACY parameter - kept for backward compatibility
             difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
             active_runways: List of active runway designators
 
@@ -43,8 +49,10 @@ class TraconMixedScenario(BaseScenario):
         # Setup difficulty assignment
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
 
-        # Parse spawn delay range
-        min_delay, max_delay = self._parse_spawn_delay_range(spawn_delay_range)
+        # Handle legacy spawn_delay_range parameter
+        if spawn_delay_range and not delay_value:
+            logger.warning("Using legacy spawn_delay_range parameter. Consider upgrading to spawn_delay_mode.")
+            min_delay, max_delay = self._parse_spawn_delay_range(spawn_delay_range)
 
         parking_spots = self.geojson_parser.get_parking_spots()
 
@@ -72,7 +80,10 @@ class TraconMixedScenario(BaseScenario):
                 aircraft = self._create_departure_aircraft(spot)
 
             if aircraft is not None:
-                aircraft.spawn_delay = random.randint(min_delay, max_delay)
+                # Legacy mode: apply random spawn delay
+                if spawn_delay_range and not delay_value:
+                    aircraft.spawn_delay = random.randint(min_delay, max_delay)
+                    logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
                 difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
                 self.aircraft.append(aircraft)
 
@@ -101,13 +112,17 @@ class TraconMixedScenario(BaseScenario):
                 logger.warning(f"Waypoint {waypoint.name} has no coordinate data")
                 continue
 
-            # Each aircraft gets a random spawn delay within the range
-            spawn_delay_seconds = random.randint(min_delay, max_delay) * 60
-
-            aircraft = self._create_arrival_at_waypoint(waypoint, altitude_range, spawn_delay_seconds, active_runways)
-            aircraft.spawn_delay = random.randint(min_delay, max_delay)
+            aircraft = self._create_arrival_at_waypoint(waypoint, altitude_range, 0, active_runways)
+            # Legacy mode: apply random spawn delay
+            if spawn_delay_range and not delay_value:
+                aircraft.spawn_delay = random.randint(min_delay, max_delay)
+                logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
             difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
             self.aircraft.append(aircraft)
+
+        # Apply new spawn delay system
+        if not spawn_delay_range:
+            self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
 
         logger.info(f"Generated {len(self.aircraft)} total aircraft")
         return self.aircraft

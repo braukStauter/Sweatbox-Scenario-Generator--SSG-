@@ -58,7 +58,12 @@ class Aircraft:
     auto_track_cleared_altitude: Optional[str] = None
 
     def to_air_line(self) -> str:
-        """Convert aircraft to .air file format"""
+        """
+        Convert aircraft to .air file format
+
+        vNAS .air format supports spawn delays as the 17th field (index 16).
+        If spawn_delay is set, it will be appended to the standard 16 fields.
+        """
         crz_alt = self.cruise_altitude if self.cruise_altitude else ""
         route = self.route if self.route else ""
         dep = self.departure if self.departure else ""
@@ -82,5 +87,9 @@ class Aircraft:
             str(self.ground_speed),
             str(self.heading)
         ]
+
+        # Add spawn_delay if set (vNAS extended format)
+        if self.spawn_delay is not None and self.spawn_delay > 0:
+            parts.append(str(self.spawn_delay))
 
         return ":".join(parts)

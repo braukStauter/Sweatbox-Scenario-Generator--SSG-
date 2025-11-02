@@ -133,6 +133,11 @@ class ScenarioConfigScreen(tk.Frame):
         # Store references for hiding/showing
         self.aircraft_counts_section = section
 
+        # Store the pack info immediately after packing for the first time
+        # This ensures we can restore it to this exact position later
+        self.config_container.update_idletasks()  # Force layout to complete
+        self._aircraft_counts_pack_info = section.pack_info()
+
     def _add_runway_and_separation_section(self, has_runways, is_tower):
         """Add runway and separation config in compact inline layout"""
         section = ThemedFrame(self.config_container)
@@ -214,7 +219,7 @@ class ScenarioConfigScreen(tk.Frame):
         grid_frame.columnconfigure(1, weight=1)
 
     def _add_spawn_and_output_section(self):
-        """Add spawn delay and output filename in compact inline layout"""
+        """Add spawn delay configuration and output filename"""
         section = ThemedFrame(self.config_container)
         section.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL))
 
@@ -222,34 +227,164 @@ class ScenarioConfigScreen(tk.Frame):
         title = ThemedLabel(section, text="Timing & Output", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'))
         title.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
-        # Grid container
-        grid_frame = ThemedFrame(section)
-        grid_frame.pack(fill='x')
+        # Spawn delay checkbox
+        spawn_header_frame = ThemedFrame(section)
+        spawn_header_frame.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
 
-        # Spawn delay
-        spawn_label = ThemedLabel(grid_frame, text="Spawn Delay (min):")
-        spawn_label.grid(row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
+        enable_spawn_var = tk.BooleanVar(value=False)
 
-        spawn_entry = ThemedEntry(grid_frame, placeholder="0-0")
-        spawn_entry.grid(row=0, column=1, sticky='ew', pady=(0, DarkTheme.PADDING_SMALL))
-        self.inputs['spawn_delay_range'] = spawn_entry
+        enable_spawn_checkbox = tk.Checkbutton(
+            spawn_header_frame,
+            text="Enable spawn time delays",
+            variable=enable_spawn_var,
+            bg=DarkTheme.BG_PRIMARY,
+            fg=DarkTheme.FG_PRIMARY,
+            selectcolor=DarkTheme.BG_TERTIARY,
+            activebackground=DarkTheme.BG_PRIMARY,
+            activeforeground=DarkTheme.FG_PRIMARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            cursor='hand2',
+            command=lambda: self._toggle_spawn_delay_inputs(enable_spawn_var.get())
+        )
+        enable_spawn_checkbox.pack(side='left')
+        self.inputs['enable_spawn_delays'] = enable_spawn_var
 
-        spawn_hint = ThemedLabel(grid_frame, text="(min-max, e.g., 0-0 or 2-5)", fg=DarkTheme.FG_DISABLED, font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
-        spawn_hint.grid(row=0, column=2, sticky='w', padx=(DarkTheme.PADDING_SMALL, 0))
+        # Hint text
+        spawn_checkbox_hint = ThemedLabel(
+            spawn_header_frame,
+            text="(all aircraft spawn at once if unchecked)",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        spawn_checkbox_hint.pack(side='left', padx=(DarkTheme.PADDING_SMALL, 0))
 
-        # Output filename
-        output_label = ThemedLabel(grid_frame, text="Output Filename:")
-        output_label.grid(row=1, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
+        # Container for spawn delay options (hidden by default)
+        self.spawn_delay_frame = ThemedFrame(section)
+        self.spawn_delay_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, DarkTheme.PADDING_SMALL))
+        self.spawn_delay_frame.pack_forget()  # Hide initially
 
-        output_entry = ThemedEntry(grid_frame, placeholder="scenario.air")
-        output_entry.grid(row=1, column=1, sticky='ew')
+        # Radio buttons for spawn delay mode
+        mode_frame = ThemedFrame(self.spawn_delay_frame)
+        mode_frame.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        spawn_mode_label = ThemedLabel(mode_frame, text="Spawn delay mode:")
+        spawn_mode_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        spawn_mode_var = tk.StringVar(value="incremental")
+        self.inputs['spawn_delay_mode'] = spawn_mode_var
+
+        # Incremental mode radio
+        incremental_radio = tk.Radiobutton(
+            mode_frame,
+            text="Incremental",
+            variable=spawn_mode_var,
+            value="incremental",
+            bg=DarkTheme.BG_PRIMARY,
+            fg=DarkTheme.FG_PRIMARY,
+            selectcolor=DarkTheme.BG_TERTIARY,
+            activebackground=DarkTheme.BG_PRIMARY,
+            activeforeground=DarkTheme.FG_PRIMARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            cursor='hand2',
+            command=lambda: self._update_spawn_delay_mode_inputs("incremental")
+        )
+        incremental_radio.pack(anchor='w', padx=(DarkTheme.PADDING_MEDIUM, 0))
+
+        incremental_hint = ThemedLabel(
+            mode_frame,
+            text="Delays accumulate between each aircraft (e.g., a/c1: 0s, a/c2: 180s, a/c3: 360s...)",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        incremental_hint.pack(anchor='w', padx=(DarkTheme.PADDING_XLARGE, 0), pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Total mode radio
+        total_radio = tk.Radiobutton(
+            mode_frame,
+            text="Total (Realistic)",
+            variable=spawn_mode_var,
+            value="total",
+            bg=DarkTheme.BG_PRIMARY,
+            fg=DarkTheme.FG_PRIMARY,
+            selectcolor=DarkTheme.BG_TERTIARY,
+            activebackground=DarkTheme.BG_PRIMARY,
+            activeforeground=DarkTheme.FG_PRIMARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            cursor='hand2',
+            command=lambda: self._update_spawn_delay_mode_inputs("total")
+        )
+        total_radio.pack(anchor='w', padx=(DarkTheme.PADDING_MEDIUM, 0))
+
+        total_hint = ThemedLabel(
+            mode_frame,
+            text="Random spawn times distributed across total session length for realistic traffic",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        total_hint.pack(anchor='w', padx=(DarkTheme.PADDING_XLARGE, 0))
+
+        # Input fields (shown/hidden based on mode)
+        inputs_grid = ThemedFrame(self.spawn_delay_frame)
+        inputs_grid.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, DarkTheme.PADDING_SMALL))
+
+        # Incremental mode input
+        self.incremental_input_frame = ThemedFrame(inputs_grid)
+        self.incremental_input_frame.pack(fill='x')
+
+        incremental_label = ThemedLabel(self.incremental_input_frame, text="Delay between aircraft (min):")
+        incremental_label.grid(row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
+
+        incremental_entry = ThemedEntry(self.incremental_input_frame, placeholder="2-5 or 3")
+        incremental_entry.grid(row=0, column=1, sticky='ew')
+        self.inputs['incremental_delay_value'] = incremental_entry
+
+        incremental_input_hint = ThemedLabel(
+            self.incremental_input_frame,
+            text="(range or fixed value in minutes)",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        incremental_input_hint.grid(row=0, column=2, sticky='w', padx=(DarkTheme.PADDING_SMALL, 0))
+
+        self.incremental_input_frame.columnconfigure(1, weight=1)
+
+        # Total mode input
+        self.total_input_frame = ThemedFrame(inputs_grid)
+        self.total_input_frame.pack(fill='x')
+        self.total_input_frame.pack_forget()  # Hide initially
+
+        total_label = ThemedLabel(self.total_input_frame, text="Total session length (min):")
+        total_label.grid(row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
+
+        total_entry = ThemedEntry(self.total_input_frame, placeholder="30")
+        total_entry.grid(row=0, column=1, sticky='ew')
+        self.inputs['total_session_minutes'] = total_entry
+
+        total_input_hint = ThemedLabel(
+            self.total_input_frame,
+            text="(desired training session length)",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        total_input_hint.grid(row=0, column=2, sticky='w', padx=(DarkTheme.PADDING_SMALL, 0))
+
+        self.total_input_frame.columnconfigure(1, weight=1)
+
+        # Output filename (always visible)
+        output_grid = ThemedFrame(section)
+        output_grid.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, 0))
+
+        output_label = ThemedLabel(output_grid, text="Output Filename:")
+        output_label.grid(row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
+
+        output_entry = ThemedEntry(output_grid, placeholder="scenario.air")
+        output_entry.grid(row=0, column=1, sticky='ew')
         self.inputs['output_filename'] = output_entry
 
-        output_hint = ThemedLabel(grid_frame, text="(optional, auto-generated if empty)", fg=DarkTheme.FG_DISABLED, font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
-        output_hint.grid(row=1, column=2, sticky='w', padx=(DarkTheme.PADDING_SMALL, 0))
+        output_hint = ThemedLabel(output_grid, text="(optional, auto-generated if empty)", fg=DarkTheme.FG_DISABLED, font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
+        output_hint.grid(row=0, column=2, sticky='w', padx=(DarkTheme.PADDING_SMALL, 0))
 
-        # Make entry column expand
-        grid_frame.columnconfigure(1, weight=1)
+        output_grid.columnconfigure(1, weight=1)
 
     def _add_difficulty_config(self):
         """Add difficulty level configuration (collapsible)"""
@@ -344,9 +479,57 @@ class ScenarioConfigScreen(tk.Frame):
             frame.pack_forget()
             toggle_label.config(text="▶")
 
-            # Show manual aircraft count section
+            # Restore manual aircraft count section to its original position
             if hasattr(self, 'aircraft_counts_section'):
-                self.aircraft_counts_section.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL))
+                if hasattr(self, '_aircraft_counts_pack_info'):
+                    # Use stored pack info to restore exact position
+                    self.aircraft_counts_section.pack(**self._aircraft_counts_pack_info)
+                else:
+                    # Fallback if pack info wasn't stored
+                    self.aircraft_counts_section.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL))
+
+    def _toggle_spawn_delay_inputs(self, enabled):
+        """Show/hide spawn delay configuration based on checkbox state"""
+        if enabled:
+            # Store pack info before showing if not already stored
+            if not hasattr(self, '_spawn_delay_pack_info'):
+                # Since this is the first show, use default pack options
+                self.spawn_delay_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, DarkTheme.PADDING_SMALL))
+                self._spawn_delay_pack_info = self.spawn_delay_frame.pack_info()
+            else:
+                # Restore to exact original position using stored pack info
+                self.spawn_delay_frame.pack(**self._spawn_delay_pack_info)
+        else:
+            # Store pack info before hiding
+            if not hasattr(self, '_spawn_delay_pack_info'):
+                self._spawn_delay_pack_info = self.spawn_delay_frame.pack_info()
+            self.spawn_delay_frame.pack_forget()
+
+    def _update_spawn_delay_mode_inputs(self, mode):
+        """Show/hide spawn delay inputs based on selected mode"""
+        if mode == "incremental":
+            # Show incremental frame, hide total frame
+            if not hasattr(self, '_incremental_pack_info'):
+                self.incremental_input_frame.pack(fill='x')
+                self._incremental_pack_info = self.incremental_input_frame.pack_info()
+            else:
+                self.incremental_input_frame.pack(**self._incremental_pack_info)
+
+            if not hasattr(self, '_total_pack_info'):
+                self._total_pack_info = self.total_input_frame.pack_info()
+            self.total_input_frame.pack_forget()
+
+        elif mode == "total":
+            # Show total frame, hide incremental frame
+            if not hasattr(self, '_total_pack_info'):
+                self.total_input_frame.pack(fill='x')
+                self._total_pack_info = self.total_input_frame.pack_info()
+            else:
+                self.total_input_frame.pack(**self._total_pack_info)
+
+            if not hasattr(self, '_incremental_pack_info'):
+                self._incremental_pack_info = self.incremental_input_frame.pack_info()
+            self.incremental_input_frame.pack_forget()
 
     def get_config_values(self):
         """Get all configuration values from inputs"""
@@ -355,6 +538,8 @@ class ScenarioConfigScreen(tk.Frame):
             if isinstance(widget, ThemedEntry):
                 values[key] = widget.get_value()
             elif isinstance(widget, tk.BooleanVar):
+                values[key] = widget.get()
+            elif isinstance(widget, tk.StringVar):
                 values[key] = widget.get()
         return values
 

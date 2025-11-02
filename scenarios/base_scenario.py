@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from models.aircraft import Aircraft
+from models.spawn_delay_mode import SpawnDelayMode
 from parsers.geojson_parser import GeoJSONParser
 from parsers.cifp_parser import CIFPParser
 from utils.api_client import FlightPlanAPIClient
@@ -157,6 +158,98 @@ class BaseScenario(ABC):
         max_delay_seconds = max_delay_minutes * 60
 
         return min_delay_seconds, max_delay_seconds
+
+    def apply_spawn_delays(self, aircraft_list: List[Aircraft],
+                          spawn_delay_mode: SpawnDelayMode,
+                          delay_value: str = None,
+                          total_session_minutes: int = None):
+        """
+        Apply spawn delays to a list of aircraft based on the selected mode
+
+        Args:
+            aircraft_list: List of Aircraft objects to apply delays to
+            spawn_delay_mode: The SpawnDelayMode enum value (NONE, INCREMENTAL, or TOTAL)
+            delay_value: For INCREMENTAL mode: "min-max" range in minutes (e.g., "2-5")
+                        or single value (e.g., "3") for fixed increments
+            total_session_minutes: For TOTAL mode: total training session length in minutes
+
+        Notes:
+            - NONE: All aircraft spawn at 0 seconds (simultaneous)
+            - INCREMENTAL: Delays accumulate between each aircraft
+                          Example: delay=3 min → a/c1: 0s, a/c2: 180s, a/c3: 360s, etc.
+            - TOTAL: Random spawn times distributed across session length
+                     Example: 30 min session → random spawns between 0 and 1800s
+        """
+        if spawn_delay_mode == SpawnDelayMode.NONE:
+            # All aircraft spawn immediately
+            for aircraft in aircraft_list:
+                aircraft.spawn_delay = 0
+            logger.info(f"Applied NONE spawn delays: all {len(aircraft_list)} aircraft spawn at 0s")
+
+        elif spawn_delay_mode == SpawnDelayMode.INCREMENTAL:
+            # Parse delay value (can be range or single value)
+            min_delay_minutes, max_delay_minutes = self._parse_delay_value(delay_value)
+
+            # Apply cumulative delays
+            cumulative_delay = 0
+            for i, aircraft in enumerate(aircraft_list):
+                aircraft.spawn_delay = cumulative_delay
+
+                # Generate next increment
+                increment_minutes = random.randint(min_delay_minutes, max_delay_minutes)
+                increment_seconds = increment_minutes * 60
+                cumulative_delay += increment_seconds
+
+            logger.info(f"Applied INCREMENTAL spawn delays: {len(aircraft_list)} aircraft, "
+                       f"delay range {min_delay_minutes}-{max_delay_minutes} min, "
+                       f"final spawn at {cumulative_delay}s")
+
+        elif spawn_delay_mode == SpawnDelayMode.TOTAL:
+            # Validate total session minutes
+            if not total_session_minutes or total_session_minutes <= 0:
+                logger.warning("Invalid total_session_minutes for TOTAL mode, defaulting to 30")
+                total_session_minutes = 30
+
+            # Convert to seconds
+            max_delay_seconds = total_session_minutes * 60
+
+            # Assign random spawn times within the session window
+            for aircraft in aircraft_list:
+                aircraft.spawn_delay = random.randint(0, max_delay_seconds)
+
+            # Sort aircraft by spawn_delay for logical ordering
+            aircraft_list.sort(key=lambda a: a.spawn_delay)
+
+            logger.info(f"Applied TOTAL spawn delays: {len(aircraft_list)} aircraft "
+                       f"distributed across {total_session_minutes} minutes (0-{max_delay_seconds}s)")
+
+    def _parse_delay_value(self, delay_value: str) -> tuple:
+        """
+        Parse delay value into min/max range in minutes
+
+        Args:
+            delay_value: String in format "min-max" (e.g., "2-5") or single value (e.g., "3")
+
+        Returns:
+            Tuple of (min_delay_minutes, max_delay_minutes)
+        """
+        if not delay_value:
+            return 0, 0
+
+        try:
+            if '-' in delay_value:
+                # Range format: "min-max"
+                parts = delay_value.split('-')
+                min_val = int(parts[0])
+                max_val = int(parts[1])
+                return min_val, max_val
+            else:
+                # Single value: use same for min and max
+                val = int(delay_value)
+                return val, val
+        except (ValueError, IndexError):
+            logger.warning(f"Invalid delay value: {delay_value}, using default (0-0)")
+            return 0, 0
 
     def _load_config(self) -> Dict:
         """

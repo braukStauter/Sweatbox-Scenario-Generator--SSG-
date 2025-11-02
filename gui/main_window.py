@@ -22,6 +22,7 @@ from scenarios.tower_mixed import TowerMixedScenario
 from scenarios.tracon_departures import TraconDeparturesScenario
 from scenarios.tracon_arrivals import TraconArrivalsScenario
 from scenarios.tracon_mixed import TraconMixedScenario
+from models.spawn_delay_mode import SpawnDelayMode
 
 logger = logging.getLogger(__name__)
 
@@ -232,10 +233,23 @@ class MainWindow(tk.Tk):
                 except:
                     pass
 
-            # Parse spawn delay range
-            spawn_delay_range = "0-0"  # default - all aircraft spawn at once
-            if config.get('spawn_delay_range'):
-                spawn_delay_range = config['spawn_delay_range']
+            # Parse spawn delay configuration
+            spawn_delay_mode = SpawnDelayMode.NONE  # default - all aircraft spawn at once
+            delay_value = None
+            total_session_minutes = None
+
+            if config.get('enable_spawn_delays', False):
+                mode_str = config.get('spawn_delay_mode', 'incremental')
+                if mode_str == 'incremental':
+                    spawn_delay_mode = SpawnDelayMode.INCREMENTAL
+                    delay_value = config.get('incremental_delay_value', '2-5')
+                elif mode_str == 'total':
+                    spawn_delay_mode = SpawnDelayMode.TOTAL
+                    total_minutes_str = config.get('total_session_minutes', '30')
+                    try:
+                        total_session_minutes = int(total_minutes_str)
+                    except ValueError:
+                        total_session_minutes = 30
 
             # Parse waypoints
             arrival_waypoints = []
@@ -260,7 +274,9 @@ class MainWindow(tk.Tk):
                 altitude_range,
                 delay_range,
                 arrival_waypoints,
-                spawn_delay_range,
+                spawn_delay_mode,
+                delay_value,
+                total_session_minutes,
                 difficulty_config
             )
 
@@ -327,20 +343,32 @@ class MainWindow(tk.Tk):
 
     def _generate_aircraft(self, scenario, num_departures, num_arrivals,
                           active_runways, separation_range, altitude_range,
-                          delay_range, arrival_waypoints, spawn_delay_range, difficulty_config=None):
+                          delay_range, arrival_waypoints, spawn_delay_mode,
+                          delay_value, total_session_minutes, difficulty_config=None):
         """Generate aircraft based on scenario type"""
         if self.scenario_type == 'ground_departures':
-            return scenario.generate(num_departures, spawn_delay_range, difficulty_config)
+            return scenario.generate(num_departures, spawn_delay_mode, delay_value,
+                                    total_session_minutes, None, difficulty_config)
         elif self.scenario_type == 'ground_mixed':
-            return scenario.generate(num_departures, num_arrivals, active_runways, spawn_delay_range, difficulty_config)
+            return scenario.generate(num_departures, num_arrivals, active_runways,
+                                    spawn_delay_mode, delay_value, total_session_minutes,
+                                    None, difficulty_config)
         elif self.scenario_type == 'tower_mixed':
-            return scenario.generate(num_departures, num_arrivals, active_runways, separation_range, spawn_delay_range, difficulty_config)
+            return scenario.generate(num_departures, num_arrivals, active_runways,
+                                    separation_range, spawn_delay_mode, delay_value,
+                                    total_session_minutes, None, difficulty_config)
         elif self.scenario_type == 'tracon_departures':
-            return scenario.generate(num_departures, active_runways, spawn_delay_range, difficulty_config)
+            return scenario.generate(num_departures, active_runways, spawn_delay_mode,
+                                    delay_value, total_session_minutes, None, difficulty_config)
         elif self.scenario_type == 'tracon_arrivals':
-            return scenario.generate(num_arrivals, arrival_waypoints, altitude_range, delay_range, spawn_delay_range, difficulty_config, active_runways)
+            return scenario.generate(num_arrivals, arrival_waypoints, altitude_range,
+                                    delay_range, spawn_delay_mode, delay_value,
+                                    total_session_minutes, None, difficulty_config, active_runways)
         elif self.scenario_type == 'tracon_mixed':
-            return scenario.generate(num_departures, num_arrivals, arrival_waypoints, altitude_range, delay_range, spawn_delay_range, difficulty_config, active_runways)
+            return scenario.generate(num_departures, num_arrivals, arrival_waypoints,
+                                    altitude_range, delay_range, spawn_delay_mode,
+                                    delay_value, total_session_minutes, None,
+                                    difficulty_config, active_runways)
         else:
             raise ValueError(f"Unknown scenario type: {self.scenario_type}")
 
