@@ -137,10 +137,13 @@ class GroundMixedScenario(BaseScenario):
         # Add callsign to used set
         self.used_callsigns.add(callsign)
 
+        # Calculate appropriate final approach speed based on aircraft type
+        ground_speed = self._get_final_approach_speed(flight_plan['aircraft_type'])
+
         # Use vNAS "On Final" starting condition - vNAS automatically positions aircraft
         # We only need to set arrival_runway and arrival_distance_nm
-        # vNAS handles altitude, position, heading, and speed based on the runway and distance
-        logger.info(f"Creating arrival: {callsign} on final {runway_name}, {distance_nm:.1f} NM out")
+        # vNAS handles altitude, position, and heading based on the runway and distance
+        logger.info(f"Creating arrival: {callsign} on final {runway_name}, {distance_nm:.1f} NM out at {ground_speed} knots")
 
         aircraft = Aircraft(
             callsign=callsign,
@@ -149,7 +152,7 @@ class GroundMixedScenario(BaseScenario):
             longitude=0.0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
             altitude=0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
             heading=0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
-            ground_speed=0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
+            ground_speed=ground_speed,
             departure=departure,
             arrival=self.airport_icao,
             route=flight_plan['route'],
@@ -161,3 +164,30 @@ class GroundMixedScenario(BaseScenario):
         )
 
         return aircraft
+
+    def _get_final_approach_speed(self, aircraft_type: str) -> int:
+        """
+        Calculate appropriate final approach speed based on aircraft type
+
+        Args:
+            aircraft_type: Aircraft type code (e.g., 'B738', 'C172')
+
+        Returns:
+            Ground speed in knots appropriate for final approach
+        """
+        from utils.constants import COMMON_GA_AIRCRAFT
+
+        # Extract base aircraft type (remove suffix like /L)
+        base_type = aircraft_type.split('/')[0]
+
+        # GA aircraft fly slower approach speeds (70-90 knots)
+        if base_type in COMMON_GA_AIRCRAFT:
+            return random.randint(70, 90)
+
+        # Heavy jets (B744, B77W, B788, etc.) fly faster approaches (145-160 knots)
+        heavy_jets = ['B744', 'B77W', 'B788', 'B789', 'A359', 'B763', 'A333', 'A332', 'B772']
+        if base_type in heavy_jets:
+            return random.randint(145, 160)
+
+        # Standard jets (B738, A320, etc.) fly medium approach speeds (135-150 knots)
+        return random.randint(135, 150)
