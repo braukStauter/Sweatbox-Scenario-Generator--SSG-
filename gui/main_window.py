@@ -286,14 +286,8 @@ class MainWindow(tk.Tk):
             # Update progress
             self._update_progress("Saving backup scenario file...")
 
-            # Save backup scenario text file
-            output_filename = config.get('output_filename') or f"{self.airport_icao}_scenario_backup.txt"
-            # Ensure filename ends with .txt
-            if not output_filename.endswith('.txt'):
-                # Remove .air extension if present (for backward compatibility)
-                if output_filename.endswith('.air'):
-                    output_filename = output_filename[:-4]
-                output_filename += '_backup.txt'
+            # Auto-generate backup scenario filename based on airport
+            output_filename = f"{self.airport_icao}_scenario_backup.txt"
 
             generator = BackupScenarioGenerator(output_filename)
             generator.add_aircraft_list(aircraft)

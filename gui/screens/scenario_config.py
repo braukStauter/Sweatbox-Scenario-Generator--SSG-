@@ -63,8 +63,6 @@ class ScenarioConfigScreen(tk.Frame):
             delattr(self, '_first_widget_after_aircraft_counts')
         if hasattr(self, '_aircraft_counts_divider'):
             delattr(self, '_aircraft_counts_divider')
-        if hasattr(self, '_output_grid'):
-            delattr(self, '_output_grid')
         if hasattr(self, '_aircraft_counts_pack_info'):
             delattr(self, '_aircraft_counts_pack_info')
         if hasattr(self, '_spawn_delay_pack_info'):
@@ -393,24 +391,6 @@ class ScenarioConfigScreen(tk.Frame):
 
         self.total_input_frame.columnconfigure(1, weight=1)
 
-        # Output filename (always visible)
-        output_grid = ThemedFrame(section)
-        output_grid.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, 0))
-        # Store reference for spawn delay positioning
-        self._output_grid = output_grid
-
-        output_label = ThemedLabel(output_grid, text="Output Filename:")
-        output_label.grid(row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
-
-        output_entry = ThemedEntry(output_grid, placeholder="scenario.air")
-        output_entry.grid(row=0, column=1, sticky='ew')
-        self.inputs['output_filename'] = output_entry
-
-        output_hint = ThemedLabel(output_grid, text="(optional, auto-generated if empty)", fg=DarkTheme.FG_DISABLED, font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
-        output_hint.grid(row=0, column=2, sticky='w', padx=(DarkTheme.PADDING_SMALL, 0))
-
-        output_grid.columnconfigure(1, weight=1)
-
     def _add_difficulty_config(self):
         """Add difficulty level configuration (collapsible)"""
         section = ThemedFrame(self.config_container)
@@ -530,15 +510,11 @@ class ScenarioConfigScreen(tk.Frame):
     def _toggle_spawn_delay_inputs(self, enabled):
         """Show/hide spawn delay configuration based on checkbox state"""
         if enabled:
-            # Use stored pack info or defaults, and position before output grid
+            # Use stored pack info or defaults
             pack_options = self._spawn_delay_pack_info.copy() if hasattr(self, '_spawn_delay_pack_info') else {
                 'fill': 'x',
                 'pady': (DarkTheme.PADDING_SMALL, DarkTheme.PADDING_SMALL)
             }
-
-            # Position before output grid to maintain order
-            if hasattr(self, '_output_grid'):
-                pack_options['before'] = self._output_grid
 
             self.spawn_delay_frame.pack(**pack_options)
 
