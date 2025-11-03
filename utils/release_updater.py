@@ -259,8 +259,10 @@ class ReleaseUpdater:
 
             # Launch updater script and exit
             logger.info("Launching updater script")
+            # Use CREATE_NO_WINDOW to prevent console window from appearing
+            CREATE_NO_WINDOW = 0x08000000 if sys.platform == 'win32' else 0
             subprocess.Popen([sys.executable, str(updater_script)],
-                           creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
+                           creationflags=CREATE_NO_WINDOW)
 
             return True, "Update will be applied on restart"
 
@@ -281,7 +283,8 @@ import os
 from pathlib import Path
 
 # Wait for main app to exit
-time.sleep(2)
+# Give it extra time to ensure all processes have fully terminated
+time.sleep(3)
 
 try:
     # Source directory (extracted update)
@@ -297,38 +300,56 @@ try:
         input("Press Enter to exit...")
         sys.exit(1)
 
-    # Copy updated files
-    if source.exists():
-        for item in source.iterdir():
-            dest = target / item.name
+    # Backup airport_data directory if it exists (preserve user data)
+    airport_data_backup = None
+    airport_data_path = target / "airport_data"
+    if airport_data_path.exists():
+        airport_data_backup = target / "airport_data_backup_temp"
+        if airport_data_backup.exists():
+            shutil.rmtree(airport_data_backup)
+        shutil.copytree(airport_data_path, airport_data_backup)
+        print("Backed up airport_data directory")
+
+    # Replace ALL files from the distribution (including version.py)
+    print("Installing update...")
+    for item in source.iterdir():
+        dest = target / item.name
+        try:
+            # Remove existing file/directory
+            if dest.exists():
+                if dest.is_file():
+                    dest.unlink()
+                elif dest.is_dir() and item.name != "airport_data":
+                    shutil.rmtree(dest)
+
+            # Copy new file/directory
             if item.is_file():
                 shutil.copy2(item, dest)
+                print(f"Updated: {{item.name}}")
             elif item.is_dir() and item.name != "airport_data":
-                # Don't overwrite airport_data
-                shutil.copytree(item, dest, dirs_exist_ok=True)
+                shutil.copytree(item, dest)
+                print(f"Updated directory: {{item.name}}")
+        except Exception as e:
+            print(f"Warning: Could not update {{item.name}}: {{e}}")
 
-        # Create version.py with the updated version
-        # This is necessary because version.py is gitignored and won't be in the distribution
-        version_file = target / "version.py"
-        version_content = """\\"""
-Auto-generated version file
-Generated during update process
-\\"""
+    # Restore airport_data if we backed it up
+    if airport_data_backup and airport_data_backup.exists():
+        if airport_data_path.exists():
+            shutil.rmtree(airport_data_path)
+        shutil.copytree(airport_data_backup, airport_data_path)
+        shutil.rmtree(airport_data_backup)
+        print("Restored airport_data directory")
 
-__version__ = "{latest_version}"
-__commit__ = "release"
-__build__ = "0"
-"""
-        with open(version_file, 'w') as f:
-            f.write(version_content.format(latest_version="{latest_version}"))
-
-        # Cleanup
-        shutil.rmtree(source.parent)
+    # Cleanup temp files
+    shutil.rmtree(source.parent)
+    print("Update installed successfully!")
 
     # Restart application
     import subprocess
     exe_path = target / "SSG.exe"
     if exe_path.exists():
+        # Wait a bit more to ensure all file handles are closed
+        time.sleep(1)
         subprocess.Popen([str(exe_path)])
     else:
         print("ERROR: SSG.exe not found after update!")

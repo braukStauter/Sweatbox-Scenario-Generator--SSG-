@@ -266,7 +266,9 @@ class AutoUpdater:
 
                 if requires_restart:
                     # The app will be restarted by the updater
-                    logger.info("Update will be applied on restart")
+                    logger.info("Update will be applied on restart - exiting now")
+                    import sys
+                    sys.exit(0)
 
                 return updated, message
 
