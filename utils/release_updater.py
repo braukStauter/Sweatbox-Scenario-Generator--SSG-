@@ -20,7 +20,9 @@ class ReleaseUpdater:
     def __init__(self, repo_owner="braukStauter", repo_name="Sweatbox-Scenario-Generator--SSG-"):
         self.repo_owner = repo_owner
         self.repo_name = repo_name
-        self.api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+        # Changed to /releases to get all releases (including pre-releases)
+        # /releases/latest excludes pre-releases by default
+        self.api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases"
 
         # Cleanup old temp files on startup
         self._cleanup_old_temp_files()
@@ -70,7 +72,7 @@ class ReleaseUpdater:
             if progress_value_callback:
                 progress_value_callback(20)
 
-            # Fetch latest release info from GitHub
+            # Fetch all releases from GitHub (including pre-releases)
             logger.info(f"Checking for updates at {self.api_url}")
             response = requests.get(self.api_url, timeout=10)
 
@@ -82,7 +84,17 @@ class ReleaseUpdater:
                 logger.error(f"GitHub API returned status {response.status_code}")
                 return False, f"Failed to check for updates (HTTP {response.status_code})", None
 
-            release_data = response.json()
+            releases = response.json()
+
+            # Filter out draft releases and get the latest release (including pre-releases)
+            valid_releases = [r for r in releases if not r.get('draft', False)]
+
+            if not valid_releases:
+                logger.info("No releases found on GitHub")
+                return False, "No releases available", None
+
+            # Get the most recent release (first in the list, sorted by date)
+            release_data = valid_releases[0]
             latest_version = release_data.get('tag_name', '').lstrip('v')
 
             if not latest_version:
@@ -141,7 +153,14 @@ class ReleaseUpdater:
             if response.status_code != 200:
                 return False, None, "Failed to fetch release information"
 
-            release_data = response.json()
+            releases = response.json()
+
+            # Filter out draft releases and get the latest release
+            valid_releases = [r for r in releases if not r.get('draft', False)]
+            if not valid_releases:
+                return False, None, "No releases available"
+
+            release_data = valid_releases[0]
             assets = release_data.get('assets', [])
 
             # Find the distribution ZIP file
@@ -204,12 +223,13 @@ class ReleaseUpdater:
                 logger.warning(f"Failed to cleanup partial download: {cleanup_error}")
             return False, None, f"Download error: {str(e)}"
 
-    def apply_update(self, zip_path, progress_callback=None, progress_value_callback=None):
+    def apply_update(self, zip_path, latest_version, progress_callback=None, progress_value_callback=None):
         """
         Apply the downloaded update by launching an updater script
 
         Args:
             zip_path: Path to downloaded update ZIP
+            latest_version: Version string of the update
             progress_callback: Optional callback for status messages
             progress_value_callback: Optional callback for progress bar
 
@@ -230,7 +250,7 @@ class ReleaseUpdater:
                 zip_ref.extractall(extract_dir)
 
             # Create updater script
-            updater_script = self._create_updater_script(extract_dir)
+            updater_script = self._create_updater_script(extract_dir, latest_version)
 
             if progress_callback:
                 progress_callback("Restarting to apply update...")
@@ -248,7 +268,7 @@ class ReleaseUpdater:
             logger.error(f"Error applying update: {e}")
             return False, f"Update failed: {str(e)}"
 
-    def _create_updater_script(self, extract_dir):
+    def _create_updater_script(self, extract_dir, latest_version):
         """Create a script to replace files after the app exits"""
         import uuid
         updater_path = Path(f'updater_{uuid.uuid4().hex[:8]}.py')
@@ -286,6 +306,21 @@ try:
             elif item.is_dir() and item.name != "airport_data":
                 # Don't overwrite airport_data
                 shutil.copytree(item, dest, dirs_exist_ok=True)
+
+        # Create version.py with the updated version
+        # This is necessary because version.py is gitignored and won't be in the distribution
+        version_file = target / "version.py"
+        version_content = """\\"""
+Auto-generated version file
+Generated during update process
+\\"""
+
+__version__ = "{latest_version}"
+__commit__ = "release"
+__build__ = "0"
+"""
+        with open(version_file, 'w') as f:
+            f.write(version_content.format(latest_version="{latest_version}"))
 
         # Cleanup
         shutil.rmtree(source.parent)
@@ -359,7 +394,7 @@ except:
 
             # Apply update
             success, apply_message = self.apply_update(
-                zip_path, progress_callback, progress_value_callback
+                zip_path, latest_version, progress_callback, progress_value_callback
             )
 
             return success, apply_message, success
