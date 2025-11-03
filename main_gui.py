@@ -45,34 +45,19 @@ def perform_startup_tasks(root, splash):
             # Initialize updater
             updater = AutoUpdater()
 
-            def progress_callback(message):
-                # Update splash screen from background thread
-                root.after(0, lambda m=message: splash.update_status(m))
-
-            def progress_value_callback(value):
-                # Update progress bar from background thread
-                root.after(0, lambda v=value: splash.set_progress(v))
-
             # Set initial progress
             root.after(0, lambda: splash.update_status("Checking for updates...", 10))
 
-            # Check and apply updates
-            updated, message = updater.update_if_available(progress_callback, progress_value_callback)
+            # Check for updates (but don't download/install automatically)
+            has_update, latest_version = updater.check_for_update_notification()
 
-            if updated:
-                logger.info("Application updated successfully")
-                # Get version change info
-                old_version, new_version = updater.get_version_change()
-
-                if old_version and new_version and old_version != new_version:
-                    logger.info(f"Version changed: {old_version} → {new_version}")
-                    root.after(0, lambda: splash.show_version_change(old_version, new_version))
-                    root.after(0, lambda: splash.update_status(f"Updated to v{new_version}!", 80))
-                else:
-                    root.after(0, lambda: splash.update_status("Updated successfully!", 80))
-                    root.after(0, lambda: splash.update_version_display())
+            if has_update and latest_version:
+                logger.info(f"Update available: {latest_version}")
+                root.after(0, lambda: splash.update_status("Update available!", 80))
+                # Schedule the update notification to show after main window launches
+                root.after(2000, lambda: show_update_notification(latest_version))
             else:
-                logger.info(f"Update check complete: {message}")
+                logger.info("Application is up to date")
                 root.after(0, lambda: splash.update_status("Application is up to date", 80))
 
             # Finish loading
@@ -82,7 +67,7 @@ def perform_startup_tasks(root, splash):
 
         except Exception as e:
             logger.error(f"Error during startup: {e}")
-            # Continue even if update fails
+            # Continue even if update check fails
             root.after(0, lambda: splash.update_status("Starting application...", 80))
             root.after(500, lambda: splash.update_status("Ready!", 100))
             root.after(1000, lambda: launch_main_window(root, splash))
@@ -90,6 +75,27 @@ def perform_startup_tasks(root, splash):
     # Start update task in background thread
     update_thread = threading.Thread(target=update_task, daemon=True)
     update_thread.start()
+
+
+def show_update_notification(latest_version):
+    """
+    Show a popup notification when an update is available
+
+    Args:
+        latest_version: The version string of the available update
+    """
+    import tkinter.messagebox as messagebox
+    import webbrowser
+
+    response = messagebox.askquestion(
+        "Update Available",
+        f"A new version (v{latest_version}) is available!\n\n"
+        f"Would you like to download it from GitHub?",
+        icon='info'
+    )
+
+    if response == 'yes':
+        webbrowser.open("https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases/latest")
 
 
 def main():

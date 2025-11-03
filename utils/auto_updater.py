@@ -1,16 +1,12 @@
 """
-Auto-updater module for checking and applying updates from GitHub
+Update checker module for checking updates from GitHub
 """
-import subprocess
+import requests
 import logging
-import sys
 from pathlib import Path
-from utils.version_manager import VersionManager
+from packaging import version as version_parser
 
 logger = logging.getLogger(__name__)
-
-# Windows-specific flag to hide console windows
-CREATE_NO_WINDOW = 0x08000000 if sys.platform == 'win32' else 0
 
 
 def is_standalone_executable():
@@ -19,296 +15,89 @@ def is_standalone_executable():
 
 
 class AutoUpdater:
-    """Handles automatic updates from GitHub repository"""
+    """Handles update checking from GitHub releases"""
 
-    def __init__(self, repo_url="https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-.git", branch="main"):
-        self.repo_url = repo_url
-        self.branch = branch
-        self.is_git_repo = self._check_git_repo()
-        self.version_manager = VersionManager()
-        self.old_version = None
-        self.new_version = None
+    def __init__(self, repo_owner="braukStauter", repo_name="Sweatbox-Scenario-Generator--SSG-"):
+        self.repo_owner = repo_owner
+        self.repo_name = repo_name
+        self.api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases"
 
-    def _check_git_repo(self):
-        """Check if current directory is a git repository"""
+    def get_current_version(self):
+        """Get the current installed version"""
         try:
-            result = subprocess.run(
-                ["git", "rev-parse", "--is-inside-work-tree"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                creationflags=CREATE_NO_WINDOW
-            )
-            return result.returncode == 0
-        except Exception as e:
-            logger.warning(f"Failed to check git repository status: {e}")
-            return False
+            import version
+            return version.__version__
+        except:
+            return "0.0.0"
 
-    def check_for_updates(self, progress_callback=None, progress_value_callback=None):
+    def check_for_update_notification(self):
         """
-        Check if updates are available from remote repository
-
-        Args:
-            progress_callback: Optional callback function(message: str) for progress updates
-            progress_value_callback: Optional callback function(value: int) for progress bar
+        Simple check for updates to show notification only (no automatic download/install)
 
         Returns:
-            tuple: (has_updates: bool, message: str)
-        """
-        if not self.is_git_repo:
-            return False, "Not a git repository"
-
-        try:
-            if progress_callback:
-                progress_callback("Fetching latest updates...")
-            if progress_value_callback:
-                progress_value_callback(20)
-
-            # Fetch latest changes from remote
-            result = subprocess.run(
-                ["git", "fetch", "origin", self.branch],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                creationflags=CREATE_NO_WINDOW
-            )
-
-            if result.returncode != 0:
-                # Check if it's an authentication error
-                stderr = result.stderr.lower()
-                if "authentication" in stderr or "permission denied" in stderr or "403" in stderr or "401" in stderr:
-                    logger.info("Unable to fetch updates - repository requires authentication")
-                    return False, "Authentication required"
-                else:
-                    logger.error(f"Git fetch failed: {result.stderr}")
-                    return False, f"Failed to fetch updates: {result.stderr}"
-
-            if progress_callback:
-                progress_callback("Checking for changes...")
-            if progress_value_callback:
-                progress_value_callback(40)
-
-            # Compare local and remote commits
-            local_commit = subprocess.run(
-                ["git", "rev-parse", "HEAD"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                creationflags=CREATE_NO_WINDOW
-            ).stdout.strip()
-
-            remote_commit = subprocess.run(
-                ["git", "rev-parse", f"origin/{self.branch}"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                creationflags=CREATE_NO_WINDOW
-            ).stdout.strip()
-
-            if local_commit == remote_commit:
-                logger.info("Application is up to date")
-                if progress_value_callback:
-                    progress_value_callback(50)
-                return False, "Up to date"
-            else:
-                logger.info(f"Updates available: {local_commit[:7]} -> {remote_commit[:7]}")
-                if progress_value_callback:
-                    progress_value_callback(50)
-                return True, "Updates available"
-
-        except subprocess.TimeoutExpired:
-            logger.error("Update check timed out")
-            return False, "Check timed out"
-        except Exception as e:
-            logger.error(f"Error checking for updates: {e}")
-            return False, f"Error: {str(e)}"
-
-    def apply_updates(self, progress_callback=None, progress_value_callback=None):
-        """
-        Apply updates from remote repository
-
-        Args:
-            progress_callback: Optional callback function(message: str) for progress updates
-            progress_value_callback: Optional callback function(value: int) for progress bar
-
-        Returns:
-            tuple: (success: bool, message: str)
-        """
-        if not self.is_git_repo:
-            return False, "Not a git repository"
-
-        try:
-            # Store current version before update
-            self.old_version = self.version_manager.get_current_version()
-            logger.info(f"Current version before update: {self.old_version}")
-
-            if progress_callback:
-                progress_callback("Checking working tree status...")
-            if progress_value_callback:
-                progress_value_callback(55)
-
-            # Check for local changes
-            status_result = subprocess.run(
-                ["git", "status", "--porcelain"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                creationflags=CREATE_NO_WINDOW
-            )
-
-            if status_result.stdout.strip():
-                # There are local changes - stash them
-                logger.info("Local changes detected, stashing...")
-                if progress_callback:
-                    progress_callback("Saving local changes...")
-                if progress_value_callback:
-                    progress_value_callback(60)
-
-                stash_result = subprocess.run(
-                    ["git", "stash", "push", "-m", "Auto-stash before update"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    creationflags=CREATE_NO_WINDOW
-                )
-
-                if stash_result.returncode != 0:
-                    logger.error(f"Failed to stash changes: {stash_result.stderr}")
-                    return False, "Failed to save local changes"
-
-            if progress_callback:
-                progress_callback("Applying updates...")
-            if progress_value_callback:
-                progress_value_callback(65)
-
-            # Pull latest changes
-            pull_result = subprocess.run(
-                ["git", "pull", "origin", self.branch, "--ff-only"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                creationflags=CREATE_NO_WINDOW
-            )
-
-            if pull_result.returncode != 0:
-                logger.error(f"Git pull failed: {pull_result.stderr}")
-                return False, f"Failed to apply updates: {pull_result.stderr}"
-
-            # Get new version after update
-            # Need to reload the module to get updated version
-            try:
-                import importlib
-                import version as version_module
-                importlib.reload(version_module)
-                self.new_version = version_module.__version__
-            except Exception as e:
-                logger.warning(f"Failed to read new version after update: {e}")
-                self.new_version = "unknown"
-
-            logger.info(f"Updates applied successfully: {self.old_version} → {self.new_version}")
-
-            if progress_callback:
-                if self.old_version != self.new_version:
-                    progress_callback(f"Updated to v{self.new_version}!")
-                else:
-                    progress_callback("Updates applied successfully!")
-
-            if progress_value_callback:
-                progress_value_callback(75)
-
-            return True, "Updates applied successfully"
-
-        except subprocess.TimeoutExpired:
-            logger.error("Update application timed out")
-            return False, "Update timed out"
-        except Exception as e:
-            logger.error(f"Error applying updates: {e}")
-            return False, f"Error: {str(e)}"
-
-    def get_version_change(self):
-        """
-        Get version change information from last update
-
-        Returns:
-            tuple: (old_version, new_version) or (None, None) if no update occurred
-        """
-        return self.old_version, self.new_version
-
-    def update_if_available(self, progress_callback=None, progress_value_callback=None):
-        """
-        Check for and apply updates if available
-
-        Args:
-            progress_callback: Optional callback function(message: str) for progress updates
-            progress_value_callback: Optional callback function(value: int) for progress bar
-
-        Returns:
-            tuple: (updated: bool, message: str)
+            tuple: (has_update: bool, latest_version: str or None)
         """
         # Check if updates are disabled via flag file
         if Path('.no_auto_update').exists():
-            logger.info("Auto-update disabled via .no_auto_update flag file")
-            if progress_callback:
-                progress_callback("Auto-update disabled")
-            if progress_value_callback:
-                progress_value_callback(75)
-            return False, "Auto-update disabled"
+            logger.info("Update check disabled via .no_auto_update flag file")
+            return False, None
 
-        # Check if running as standalone executable
-        if is_standalone_executable():
-            logger.info("Running as standalone executable, using release-based updates")
-            try:
-                from utils.release_updater import ReleaseUpdater
-                release_updater = ReleaseUpdater()
-                updated, message, requires_restart = release_updater.update_if_available(
-                    progress_callback, progress_value_callback
-                )
-
-                if requires_restart:
-                    # The app will be restarted by the updater
-                    logger.info("Update will be applied on restart - exiting now")
-                    import sys
-                    sys.exit(0)
-
-                return updated, message
-
-            except Exception as e:
-                logger.error(f"Release-based update failed: {e}")
-                if progress_callback:
-                    progress_callback("Ready!")
-                if progress_value_callback:
-                    progress_value_callback(75)
-                return False, f"Update check failed: {str(e)}"
-
-        # Git-based updates for development environment
-        if not self.is_git_repo:
-            logger.info("Not a git repository, skipping update check")
-            if progress_callback:
-                progress_callback("Ready!")
-            if progress_value_callback:
-                progress_value_callback(75)
-            return False, "Not a git repository"
+        # Only check for release updates when running as standalone
+        if not is_standalone_executable():
+            logger.info("Running in development mode, skipping update check")
+            return False, None
 
         try:
-            # Check for updates
-            has_updates, check_message = self.check_for_updates(progress_callback, progress_value_callback)
+            logger.info(f"Checking for updates at {self.api_url}")
+            response = requests.get(self.api_url, timeout=10)
 
-            if not has_updates:
-                if progress_callback:
-                    progress_callback("Application is up to date")
-                if progress_value_callback:
-                    progress_value_callback(75)
-                return False, check_message
+            if response.status_code == 404:
+                logger.info("No releases found on GitHub")
+                return False, None
 
-            # Apply updates
-            success, update_message = self.apply_updates(progress_callback, progress_value_callback)
+            if response.status_code != 200:
+                logger.error(f"GitHub API returned status {response.status_code}")
+                return False, None
 
-            return success, update_message
+            releases = response.json()
 
+            # Filter out draft releases and get the latest release
+            valid_releases = [r for r in releases if not r.get('draft', False)]
+
+            if not valid_releases:
+                logger.info("No releases found on GitHub")
+                return False, None
+
+            # Get the most recent release
+            release_data = valid_releases[0]
+            latest_version = release_data.get('tag_name', '').lstrip('v')
+
+            if not latest_version:
+                logger.warning("No version tag found in release")
+                return False, None
+
+            current_version = self.get_current_version()
+
+            logger.info(f"Current version: {current_version}, Latest version: {latest_version}")
+
+            # Compare versions
+            try:
+                if version_parser.parse(latest_version) > version_parser.parse(current_version):
+                    logger.info(f"Update available: v{current_version} → v{latest_version}")
+                    return True, latest_version
+                else:
+                    logger.info("Application is up to date")
+                    return False, None
+            except Exception as e:
+                logger.error(f"Version comparison failed: {e}")
+                return False, None
+
+        except requests.Timeout:
+            logger.error("Update check timed out")
+            return False, None
+        except requests.RequestException as e:
+            logger.error(f"Network error during update check: {e}")
+            return False, None
         except Exception as e:
-            logger.error(f"Error during auto-update: {e}")
-            if progress_callback:
-                progress_callback("Update failed, continuing...")
-            if progress_value_callback:
-                progress_value_callback(75)
-            return False, f"Error: {str(e)}"
+            logger.error(f"Error checking for updates: {e}")
+            return False, None
