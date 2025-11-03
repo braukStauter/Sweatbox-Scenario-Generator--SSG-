@@ -410,6 +410,7 @@ class BaseScenario(ABC):
             arrival=destination,
             route=flight_plan['route'],
             cruise_altitude=flight_plan['altitude'],
+            cruise_speed=flight_plan.get('cruise_speed'),
             flight_rules="I",
             engine_type="J",
             parking_spot_name=parking_spot.name
@@ -442,6 +443,9 @@ class BaseScenario(ABC):
         cruise_altitude = random.randint(3000, 8000)
         route = f"DCT"
 
+        # Calculate cruise speed based on aircraft type
+        cruise_speed = self.api_client._calculate_cruise_speed(aircraft_type)
+
         aircraft = Aircraft(
             callsign=callsign,
             aircraft_type=aircraft_type,
@@ -454,6 +458,7 @@ class BaseScenario(ABC):
             arrival=destination,
             route=route,
             cruise_altitude=str(cruise_altitude),
+            cruise_speed=cruise_speed,
             flight_rules="I",
             engine_type="P",
             parking_spot_name=parking_spot.name
