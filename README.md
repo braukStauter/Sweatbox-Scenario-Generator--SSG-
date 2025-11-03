@@ -115,8 +115,7 @@ The application includes comprehensive logging. Logs are saved to the `logs/` fo
 ## Notes
 
 - Aircraft altitudes are specified in MSL (Mean Sea Level), including ground aircraft
-- Ground aircraft have ground_speed set to 0
-- Arrival aircraft are positioned with realistic spacing and altitude profiles
+- Arrival aircraft are positioned along their specified route of flight and automatically add the runway assignment.
 - TRACON arrival aircraft respect waypoint altitude restrictions when available
 - Callsigns can include number suffixes for easy grouping (e.g., AAL**25**66, DAL**25**89 both spawn over the same waypoint)
 
