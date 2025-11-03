@@ -241,6 +241,15 @@ class AutoUpdater:
         Returns:
             tuple: (updated: bool, message: str)
         """
+        # Check if updates are disabled via flag file
+        if Path('.no_auto_update').exists():
+            logger.info("Auto-update disabled via .no_auto_update flag file")
+            if progress_callback:
+                progress_callback("Auto-update disabled")
+            if progress_value_callback:
+                progress_value_callback(75)
+            return False, "Auto-update disabled"
+
         # Check if running as standalone executable
         if is_standalone_executable():
             logger.info("Running as standalone executable, using release-based updates")
