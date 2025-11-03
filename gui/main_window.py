@@ -14,7 +14,7 @@ from gui.screens.generation_screen import GenerationScreen
 from parsers.geojson_parser import GeoJSONParser
 from parsers.cifp_parser import CIFPParser
 from utils.api_client import FlightPlanAPIClient
-from generators.air_file_generator import AirFileGenerator
+from generators.backup_scenario_generator import BackupScenarioGenerator
 
 from scenarios.ground_departures import GroundDeparturesScenario
 from scenarios.ground_mixed import GroundMixedScenario
@@ -284,19 +284,17 @@ class MainWindow(tk.Tk):
                 raise Exception("No aircraft generated")
 
             # Update progress
-            self._update_progress("Saving to file...")
+            self._update_progress("Saving backup scenario file...")
 
-            # Save to file
-            output_filename = config.get('output_filename') or f"{self.airport_icao}_scenario.air"
-            if not output_filename.endswith('.air'):
-                output_filename += '.air'
+            # Auto-generate backup scenario filename based on airport
+            output_filename = f"{self.airport_icao}_scenario_backup.txt"
 
-            generator = AirFileGenerator(output_filename)
+            generator = BackupScenarioGenerator(output_filename)
             generator.add_aircraft_list(aircraft)
             generator.generate()
 
             logger.info(f"Successfully generated {len(aircraft)} aircraft")
-            logger.info(f"Saved to: {output_filename}")
+            logger.info(f"Saved backup scenario to: {output_filename}")
 
             # Show success (thread-safe)
             self.after(0, lambda: self.screens['generation'].show_success(

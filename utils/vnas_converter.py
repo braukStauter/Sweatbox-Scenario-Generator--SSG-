@@ -102,7 +102,7 @@ class VNASConverter:
                 "cruiseSpeed": aircraft.cruise_speed if aircraft.cruise_speed else 0,
                 "route": route,
                 "remarks": aircraft.remarks or "/V/",
-                "aircraftType": aircraft.aircraft_type.replace("/L", "").replace("/G", "").replace("/A", "")
+                "aircraftType": aircraft.aircraft_type  # Keep equipment suffix (e.g., "B738/L", "C172/G")
             }
             vnas_aircraft["flightplan"] = flightplan
 

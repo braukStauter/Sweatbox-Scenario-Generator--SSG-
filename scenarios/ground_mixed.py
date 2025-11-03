@@ -157,6 +157,7 @@ class GroundMixedScenario(BaseScenario):
             arrival=self.airport_icao,
             route=flight_plan['route'],
             cruise_altitude=flight_plan['altitude'],
+            cruise_speed=flight_plan.get('cruise_speed'),
             flight_rules="I",
             engine_type="J",
             arrival_runway=runway_name,

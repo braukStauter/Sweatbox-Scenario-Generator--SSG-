@@ -6,7 +6,7 @@ dist/
 temp_update/
 
 *.pyc
-*.air
+*_backup.txt
 *.spec
 version.py
 build_distribution.py
