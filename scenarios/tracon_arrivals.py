@@ -258,6 +258,7 @@ class TraconArrivalsScenario(BaseScenario):
             arrival=self.airport_icao,
             route=route,
             cruise_altitude=flight_plan['altitude'],
+            cruise_speed=flight_plan.get('cruise_speed'),
             flight_rules="I",
             engine_type="J",
             navigation_path=navigation_path  # Set Fix/Radial/Distance
