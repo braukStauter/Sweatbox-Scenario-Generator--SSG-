@@ -9,7 +9,7 @@ A standalone desktop application with a modern graphical interface for generatin
 - Google Chrome (for vNAS support)
 - Internet connection (for flight plan API and auto-updates)
 - Access to vNAS Data Admin (for GeoJSON, scenario, and pushing data)
-- [CIFP file](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/cifp/download/) (required for TRACON arrival scenarios)
+- [CIFP file](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/cifp/download/) (required for TRACON arrival scenarios; shipped with releases)
 
 ## Quick Start
 
