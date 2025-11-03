@@ -196,10 +196,14 @@ class AutoUpdater:
 
             # Get new version after update
             # Need to reload the module to get updated version
-            import importlib
-            import version as version_module
-            importlib.reload(version_module)
-            self.new_version = version_module.__version__
+            try:
+                import importlib
+                import version as version_module
+                importlib.reload(version_module)
+                self.new_version = version_module.__version__
+            except Exception as e:
+                logger.warning(f"Failed to read new version after update: {e}")
+                self.new_version = "unknown"
 
             logger.info(f"Updates applied successfully: {self.old_version} → {self.new_version}")
 

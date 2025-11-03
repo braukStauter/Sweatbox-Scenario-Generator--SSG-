@@ -135,7 +135,7 @@ class SplashScreen(tk.Toplevel):
             value: Progress value (0-100)
         """
         self.progress['value'] = value
-        self.update()
+        self.update_idletasks()
 
     def update_version_display(self):
         """Update the version label with current version"""

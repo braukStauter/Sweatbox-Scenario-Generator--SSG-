@@ -22,6 +22,29 @@ class ReleaseUpdater:
         self.repo_name = repo_name
         self.api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
 
+        # Cleanup old temp files on startup
+        self._cleanup_old_temp_files()
+
+    def _cleanup_old_temp_files(self):
+        """Clean up any leftover temp files from previous failed updates"""
+        try:
+            # Clean up temp_update directory
+            temp_dir = Path('temp_update')
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+                logger.info("Cleaned up old temp_update directory")
+
+            # Clean up any old updater scripts
+            for updater_file in Path.cwd().glob('updater*.py'):
+                try:
+                    updater_file.unlink()
+                    logger.info(f"Cleaned up old updater script: {updater_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete {updater_file}: {e}")
+
+        except Exception as e:
+            logger.warning(f"Failed to cleanup old temp files: {e}")
+
     def get_current_version(self):
         """Get the current installed version"""
         try:
@@ -172,6 +195,13 @@ class ReleaseUpdater:
 
         except Exception as e:
             logger.error(f"Error downloading update: {e}")
+            # Cleanup partial download
+            try:
+                if 'zip_path' in locals() and zip_path and zip_path.exists():
+                    zip_path.unlink()
+                    logger.info(f"Cleaned up partial download: {zip_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup partial download: {cleanup_error}")
             return False, None, f"Download error: {str(e)}"
 
     def apply_update(self, zip_path, progress_callback=None, progress_value_callback=None):
@@ -220,7 +250,8 @@ class ReleaseUpdater:
 
     def _create_updater_script(self, extract_dir):
         """Create a script to replace files after the app exits"""
-        updater_path = Path('updater.py')
+        import uuid
+        updater_path = Path(f'updater_{uuid.uuid4().hex[:8]}.py')
 
         script_content = f'''
 import time
@@ -238,6 +269,13 @@ try:
 
     # Target directory (current installation)
     target = Path.cwd()
+
+    # Validate source directory exists
+    if not source.exists():
+        print(f"ERROR: Expected directory not found: {{source}}")
+        print("The update package appears to be corrupted.")
+        input("Press Enter to exit...")
+        sys.exit(1)
 
     # Copy updated files
     if source.exists():
@@ -257,6 +295,10 @@ try:
     exe_path = target / "SSG.exe"
     if exe_path.exists():
         subprocess.Popen([str(exe_path)])
+    else:
+        print("ERROR: SSG.exe not found after update!")
+        print("The update may be corrupted. Please reinstall the application.")
+        input("Press Enter to exit...")
 
 except Exception as e:
     print(f"Update failed: {{e}}")
