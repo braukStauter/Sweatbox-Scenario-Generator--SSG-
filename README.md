@@ -125,5 +125,6 @@ The application includes comprehensive logging. Logs are saved to the `logs/` fo
 **Created by EM for ZAB**
 
 Special thanks to:
-- Flight plan data from flight-plans.csko.hu
+- The FAST project for the idea, starting point, and questions answered.
+- Kornel C. for flight plan data.
 
