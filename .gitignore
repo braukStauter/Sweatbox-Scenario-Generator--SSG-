@@ -13,3 +13,6 @@ build_distribution.py
 updater.py
 
 .no_auto_update
+
+airport_data/'CIFP Readme 2510.pdf'
+airport_data/*.geojson
