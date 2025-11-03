@@ -27,12 +27,13 @@ class VersionManager:
             Version string (e.g., "1.0.0")
         """
         try:
-            # Import version dynamically
-            if self.version_file.exists():
-                import version
-                return version.__version__
-            else:
-                return "0.0.0"
+            # Import version module (works both for source and compiled exe)
+            import version
+            return version.__version__
+        except ImportError:
+            # Module not found
+            logger.debug("version module not found")
+            return "0.0.0"
         except Exception as e:
             logger.error(f"Failed to get version: {e}")
             return "0.0.0"
@@ -138,25 +139,27 @@ class VersionManager:
         Returns:
             Formatted version string (e.g., "v1.0.0 (build 123)")
         """
-        # First try to get version from version.py (for compiled exe)
+        # First try to get version from version.py module (works for both source and compiled exe)
         try:
-            if self.version_file.exists():
-                import version
-                import importlib
-                importlib.reload(version)
+            import version
+            import importlib
+            importlib.reload(version)
 
-                parts = [f"v{version.__version__}"]
+            parts = [f"v{version.__version__}"]
 
-                if hasattr(version, '__build__') and version.__build__ and version.__build__ != "0":
-                    parts.append(f"(build {version.__build__})")
-                elif hasattr(version, '__commit__') and version.__commit__ and version.__commit__ != "unknown":
-                    parts.append(f"({version.__commit__})")
+            if hasattr(version, '__build__') and version.__build__ and version.__build__ != "0":
+                parts.append(f"(build {version.__build__})")
+            elif hasattr(version, '__commit__') and version.__commit__ and version.__commit__ != "unknown":
+                parts.append(f"({version.__commit__})")
 
-                return " ".join(parts)
+            return " ".join(parts)
+        except ImportError:
+            # version module not found, fall back to git
+            logger.debug("version module not found, using git-based version")
         except Exception as e:
-            logger.debug(f"Could not read from version.py: {e}")
+            logger.debug(f"Could not read from version module: {e}")
 
-        # Fallback to git-based version info
+        # Fallback to git-based version info (for development)
         version_str, commit_hash, build_number = self.get_version_info()
 
         parts = [f"v{version_str}"]
