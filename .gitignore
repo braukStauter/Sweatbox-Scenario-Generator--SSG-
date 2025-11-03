@@ -11,3 +11,5 @@ temp_update/
 version.py
 build_distribution.py
 updater.py
+
+.no_auto_update

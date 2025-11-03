@@ -285,6 +285,15 @@ except:
         Returns:
             tuple: (updated: bool, message: str, requires_restart: bool)
         """
+        # Check if updates are disabled via flag file
+        if Path('.no_auto_update').exists():
+            logger.info("Auto-update disabled via .no_auto_update flag file")
+            if progress_callback:
+                progress_callback("Auto-update disabled")
+            if progress_value_callback:
+                progress_value_callback(75)
+            return False, "Auto-update disabled", False
+
         try:
             # Check for updates
             has_updates, check_message, latest_version = self.check_for_updates(
