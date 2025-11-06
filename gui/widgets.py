@@ -328,6 +328,251 @@ class ProgressIndicator(tk.Frame):
         self.progressbar.stop()
 
 
+class AccordionItem(tk.Frame):
+    """Collapsible accordion item for sidebar navigation"""
+
+    def __init__(self, parent, title, icon="▶", on_select=None, **kwargs):
+        super().__init__(parent, bg=DarkTheme.BG_SECONDARY, **kwargs)
+
+        self.title = title
+        self.icon = icon
+        self.on_select = on_select
+        self.is_expanded = False
+        self.is_selected = False
+        self.children_items = []
+
+        # Header frame (clickable)
+        self.header = tk.Frame(self, bg=DarkTheme.BG_SECONDARY, cursor='hand2')
+        self.header.pack(fill='x', padx=2, pady=1)
+
+        # Icon label (for expand/collapse)
+        self.icon_label = tk.Label(
+            self.header,
+            text="▶",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            fg=DarkTheme.FG_SECONDARY,
+            bg=DarkTheme.BG_SECONDARY,
+            width=2,
+            cursor='hand2'
+        )
+        self.icon_label.pack(side='left', padx=(DarkTheme.PADDING_SMALL, 0))
+
+        # Title label
+        self.title_label = tk.Label(
+            self.header,
+            text=title,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            fg=DarkTheme.FG_PRIMARY,
+            bg=DarkTheme.BG_SECONDARY,
+            anchor='w',
+            cursor='hand2'
+        )
+        self.title_label.pack(side='left', fill='x', expand=True, padx=DarkTheme.PADDING_SMALL, pady=DarkTheme.PADDING_SMALL)
+
+        # Container for child items (hidden by default)
+        self.children_container = tk.Frame(self, bg=DarkTheme.BG_PRIMARY)
+
+        # Bind click events
+        self.header.bind('<Button-1>', self._on_header_click)
+        self.icon_label.bind('<Button-1>', self._on_header_click)
+        self.title_label.bind('<Button-1>', self._on_header_click)
+
+        # Hover effects
+        self.header.bind('<Enter>', self._on_enter)
+        self.header.bind('<Leave>', self._on_leave)
+        self.title_label.bind('<Enter>', self._on_enter)
+        self.icon_label.bind('<Enter>', self._on_enter)
+
+    def _on_header_click(self, event):
+        """Handle header click - select this item"""
+        if self.on_select:
+            self.on_select(self)
+
+    def _on_enter(self, event):
+        """Handle mouse enter"""
+        if not self.is_selected:
+            self.header['bg'] = DarkTheme.BG_TERTIARY
+            self.icon_label['bg'] = DarkTheme.BG_TERTIARY
+            self.title_label['bg'] = DarkTheme.BG_TERTIARY
+
+    def _on_leave(self, event):
+        """Handle mouse leave"""
+        if not self.is_selected:
+            self.header['bg'] = DarkTheme.BG_SECONDARY
+            self.icon_label['bg'] = DarkTheme.BG_SECONDARY
+            self.title_label['bg'] = DarkTheme.BG_SECONDARY
+
+    def select(self):
+        """Mark this item as selected"""
+        self.is_selected = True
+        self.header['bg'] = DarkTheme.ACCENT_PRIMARY
+        self.icon_label['bg'] = DarkTheme.ACCENT_PRIMARY
+        self.icon_label['fg'] = DarkTheme.FG_PRIMARY
+        self.title_label['bg'] = DarkTheme.ACCENT_PRIMARY
+        self.title_label['font'] = (DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
+
+    def deselect(self):
+        """Mark this item as not selected"""
+        self.is_selected = False
+        self.header['bg'] = DarkTheme.BG_SECONDARY
+        self.icon_label['bg'] = DarkTheme.BG_SECONDARY
+        self.icon_label['fg'] = DarkTheme.FG_SECONDARY
+        self.title_label['bg'] = DarkTheme.BG_SECONDARY
+        self.title_label['font'] = (DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL)
+
+    def add_child(self, title, on_select=None):
+        """Add a child item (subcategory)"""
+        child = AccordionSubItem(self.children_container, title, on_select)
+        child.pack(fill='x', padx=(DarkTheme.PADDING_LARGE, 0))
+        self.children_items.append(child)
+
+        # Show expand icon since we have children
+        self.icon_label['text'] = "▼" if self.is_expanded else "▶"
+        return child
+
+    def toggle_expand(self):
+        """Toggle expansion state"""
+        if not self.children_items:
+            return
+
+        self.is_expanded = not self.is_expanded
+
+        if self.is_expanded:
+            self.icon_label['text'] = "▼"
+            self.children_container.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+        else:
+            self.icon_label['text'] = "▶"
+            self.children_container.pack_forget()
+
+    def expand(self):
+        """Expand to show children"""
+        if not self.is_expanded and self.children_items:
+            self.toggle_expand()
+
+    def collapse(self):
+        """Collapse to hide children"""
+        if self.is_expanded:
+            self.toggle_expand()
+
+
+class AccordionSubItem(tk.Frame):
+    """Sub-item within an accordion item"""
+
+    def __init__(self, parent, title, on_select=None, **kwargs):
+        super().__init__(parent, bg=DarkTheme.BG_PRIMARY, **kwargs)
+
+        self.title = title
+        self.on_select = on_select
+        self.is_selected = False
+
+        # Title label
+        self.title_label = tk.Label(
+            self,
+            text=title,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            fg=DarkTheme.FG_SECONDARY,
+            bg=DarkTheme.BG_PRIMARY,
+            anchor='w',
+            cursor='hand2',
+            padx=DarkTheme.PADDING_MEDIUM,
+            pady=DarkTheme.PADDING_SMALL
+        )
+        self.title_label.pack(fill='x')
+
+        # Bind events
+        self.title_label.bind('<Button-1>', self._on_click)
+        self.title_label.bind('<Enter>', self._on_enter)
+        self.title_label.bind('<Leave>', self._on_leave)
+
+    def _on_click(self, event):
+        """Handle click"""
+        if self.on_select:
+            self.on_select(self)
+
+    def _on_enter(self, event):
+        """Handle mouse enter"""
+        if not self.is_selected:
+            self.title_label['bg'] = DarkTheme.BG_TERTIARY
+
+    def _on_leave(self, event):
+        """Handle mouse leave"""
+        if not self.is_selected:
+            self.title_label['bg'] = DarkTheme.BG_PRIMARY
+
+    def select(self):
+        """Mark as selected"""
+        self.is_selected = True
+        self.title_label['bg'] = DarkTheme.ACCENT_PRIMARY
+        self.title_label['fg'] = DarkTheme.FG_PRIMARY
+        self.title_label['font'] = (DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL, 'bold')
+
+    def deselect(self):
+        """Mark as not selected"""
+        self.is_selected = False
+        self.title_label['bg'] = DarkTheme.BG_PRIMARY
+        self.title_label['fg'] = DarkTheme.FG_SECONDARY
+        self.title_label['font'] = (DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+
+
+class AccordionSidebar(tk.Frame):
+    """Sidebar with collapsible accordion sections"""
+
+    def __init__(self, parent, on_category_select=None, **kwargs):
+        super().__init__(parent, bg=DarkTheme.BG_SECONDARY, **kwargs)
+
+        self.on_category_select = on_category_select
+        self.items = []
+        self.selected_item = None
+
+        # Title
+        title_frame = tk.Frame(self, bg=DarkTheme.BG_SECONDARY)
+        title_frame.pack(fill='x', padx=DarkTheme.PADDING_MEDIUM, pady=DarkTheme.PADDING_LARGE)
+
+        title_label = tk.Label(
+            title_frame,
+            text="Configuration",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold'),
+            fg=DarkTheme.FG_PRIMARY,
+            bg=DarkTheme.BG_SECONDARY
+        )
+        title_label.pack(anchor='w')
+
+        # Divider
+        divider = tk.Frame(self, bg=DarkTheme.DIVIDER, height=1)
+        divider.pack(fill='x', pady=DarkTheme.PADDING_SMALL)
+
+        # Scrollable container for items
+        self.scroll_frame = ScrollableFrame(self)
+        self.scroll_frame.pack(fill='both', expand=True)
+
+        self.container = self.scroll_frame.scrollable_frame
+
+    def add_item(self, title, category_id=None):
+        """Add an accordion item"""
+        item = AccordionItem(
+            self.container,
+            title,
+            on_select=lambda i: self._on_item_select(i, category_id)
+        )
+        item.pack(fill='x', pady=1)
+        self.items.append(item)
+        return item
+
+    def _on_item_select(self, item, category_id):
+        """Handle item selection"""
+        # Deselect previous
+        if self.selected_item:
+            self.selected_item.deselect()
+
+        # Select new item
+        item.select()
+        self.selected_item = item
+
+        # Notify parent
+        if self.on_category_select and category_id:
+            self.on_category_select(category_id)
+
+
 class Footer(tk.Frame):
     """Footer with copyright/developer information"""
 

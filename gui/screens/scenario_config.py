@@ -1,125 +1,471 @@
 """
-Dynamic scenario configuration screen
+Dynamic scenario configuration screen with accordion sidebar navigation
 """
 import tkinter as tk
 from tkinter import messagebox
 from gui.theme import DarkTheme
-from gui.widgets import ThemedLabel, ThemedButton, ThemedEntry, ThemedFrame, Card, ScrollableFrame, Footer
+from gui.widgets import (ThemedLabel, ThemedButton, ThemedEntry, ThemedFrame,
+                         Card, ScrollableFrame, Footer, AccordionSidebar)
 
 
 class ScenarioConfigScreen(tk.Frame):
-    """Screen for configuring scenario parameters"""
+    """Screen for configuring scenario parameters with sidebar navigation"""
 
     def __init__(self, parent, app_controller):
         super().__init__(parent, bg=DarkTheme.BG_PRIMARY)
         self.app_controller = app_controller
 
-        # Header
-        header = ThemedFrame(self)
-        header.pack(fill='x', padx=DarkTheme.PADDING_XLARGE, pady=(DarkTheme.PADDING_XLARGE, DarkTheme.PADDING_LARGE))
+        # Main container with sidebar and content area
+        main_container = tk.Frame(self, bg=DarkTheme.BG_PRIMARY)
+        main_container.pack(fill='both', expand=True)
 
-        self.title_label = ThemedLabel(header, text="Configure Scenario", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_TITLE, 'bold'))
+        # Left sidebar (250px width)
+        self.sidebar = AccordionSidebar(
+            main_container,
+            on_category_select=self.on_category_select
+        )
+        self.sidebar.pack(side='left', fill='y', ipadx=0, ipady=0)
+        self.sidebar.configure(width=250)
+        self.sidebar.pack_propagate(False)
+
+        # Vertical divider
+        divider = tk.Frame(main_container, bg=DarkTheme.DIVIDER, width=1)
+        divider.pack(side='left', fill='y')
+
+        # Right content area
+        content_area = tk.Frame(main_container, bg=DarkTheme.BG_PRIMARY)
+        content_area.pack(side='left', fill='both', expand=True)
+
+        # Header
+        header = ThemedFrame(content_area)
+        header.pack(fill='x', padx=DarkTheme.PADDING_XLARGE,
+                   pady=(DarkTheme.PADDING_XLARGE, DarkTheme.PADDING_LARGE))
+
+        self.title_label = ThemedLabel(
+            header,
+            text="Configure Scenario",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_TITLE, 'bold')
+        )
         self.title_label.pack(anchor='w')
 
-        self.subtitle_label = ThemedLabel(header, text="Set parameters for your scenario", fg=DarkTheme.FG_SECONDARY)
+        self.subtitle_label = ThemedLabel(
+            header,
+            text="Set parameters for your scenario",
+            fg=DarkTheme.FG_SECONDARY
+        )
         self.subtitle_label.pack(anchor='w', pady=(DarkTheme.PADDING_SMALL, 0))
 
         # Divider
-        divider = tk.Frame(self, bg=DarkTheme.DIVIDER, height=1)
-        divider.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
+        divider_h = tk.Frame(content_area, bg=DarkTheme.DIVIDER, height=1)
+        divider_h.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
 
-        # Scrollable configuration container
-        scroll_container = ScrollableFrame(self)
-        scroll_container.pack(fill='both', expand=True, padx=DarkTheme.PADDING_XLARGE, pady=DarkTheme.PADDING_MEDIUM)
+        # Scrollable content container for configuration panels
+        scroll_container = ScrollableFrame(content_area)
+        scroll_container.pack(fill='both', expand=True,
+                            padx=DarkTheme.PADDING_XLARGE,
+                            pady=DarkTheme.PADDING_MEDIUM)
 
-        self.config_container = scroll_container.scrollable_frame
+        self.content_container = scroll_container.scrollable_frame
 
         # Footer with navigation buttons
-        footer = ThemedFrame(self)
-        footer.pack(fill='x', padx=DarkTheme.PADDING_XLARGE, pady=DarkTheme.PADDING_LARGE)
+        footer = ThemedFrame(content_area)
+        footer.pack(fill='x', padx=DarkTheme.PADDING_XLARGE,
+                   pady=DarkTheme.PADDING_LARGE)
 
-        back_button = ThemedButton(footer, text="Back", command=self.on_back, primary=False)
+        back_button = ThemedButton(footer, text="Back",
+                                  command=self.on_back, primary=False)
         back_button.pack(side='left')
 
-        self.generate_button = ThemedButton(footer, text="Generate", command=self.on_generate, primary=True)
+        self.generate_button = ThemedButton(footer, text="Generate",
+                                          command=self.on_generate, primary=True)
         self.generate_button.pack(side='right')
 
         # Copyright footer
-        copyright_footer = Footer(self)
+        copyright_footer = Footer(content_area)
         copyright_footer.pack(side='bottom', fill='x')
 
-        # Store input widgets
+        # Store input widgets and content panels
         self.inputs = {}
+        self.content_panels = {}
+        self.current_panel = None
 
-    def load_config_for_scenario(self, scenario_type):
-        """Load configuration form based on scenario type"""
-        # Clear existing inputs
-        for widget in self.config_container.winfo_children():
-            widget.destroy()
-        self.inputs.clear()
+        # Initialize sidebar categories
+        self._init_sidebar_categories()
 
-        # Clear stored widget references (they're about to be destroyed/recreated)
-        if hasattr(self, '_first_widget_after_aircraft_counts'):
-            delattr(self, '_first_widget_after_aircraft_counts')
-        if hasattr(self, '_aircraft_counts_divider'):
-            delattr(self, '_aircraft_counts_divider')
-        if hasattr(self, '_aircraft_counts_pack_info'):
-            delattr(self, '_aircraft_counts_pack_info')
-        if hasattr(self, '_spawn_delay_pack_info'):
-            delattr(self, '_spawn_delay_pack_info')
+    def _init_sidebar_categories(self):
+        """Initialize sidebar navigation categories (will be rebuilt based on scenario type)"""
+        # Categories will be dynamically added in load_config_for_scenario
+        pass
 
-        # Store scenario type flags for later use
+    def _rebuild_sidebar_for_scenario(self, scenario_type):
+        """Rebuild sidebar categories based on scenario type"""
+        # Clear existing items
+        for item in self.sidebar.items:
+            item.destroy()
+        self.sidebar.items.clear()
+        self.sidebar.selected_item = None
+
+        # Determine which features this scenario needs
         has_departures = scenario_type in ['ground_departures', 'ground_mixed', 'tower_mixed', 'tracon_departures', 'tracon_mixed']
         has_arrivals = scenario_type in ['ground_mixed', 'tower_mixed', 'tracon_arrivals', 'tracon_mixed']
-        has_runways = scenario_type in ['ground_mixed', 'tower_mixed', 'tracon_departures', 'tracon_arrivals', 'tracon_mixed']
-        is_tower = scenario_type == 'tower_mixed'
-        is_tracon_arrivals = scenario_type in ['tracon_arrivals', 'tracon_mixed']
+        has_tower_separation = scenario_type == 'tower_mixed'
 
-        # Difficulty levels configuration FIRST (collapsible)
-        self._add_difficulty_config()
-        self._add_divider()
+        # Category 1: Aircraft & Traffic (always shown)
+        self.sidebar.add_item("Aircraft & Traffic", "aircraft_traffic")
 
-        # Aircraft counts section - compact grid layout
-        if has_departures or has_arrivals:
-            self._add_aircraft_counts_section(has_departures, has_arrivals)
-            self._add_divider()
-            # Store reference to divider that comes right after aircraft counts
-            self._aircraft_counts_divider = self.config_container.winfo_children()[-1]
+        # Category 2: Runway & Airport (always shown, but content varies)
+        self.sidebar.add_item("Runway & Airport", "runway_airport")
 
-        # Runway and separation config - compact inline
-        if has_runways or is_tower:
-            self._add_runway_and_separation_section(has_runways, is_tower)
-            # Store reference to first widget after aircraft counts section (for repositioning)
-            if not hasattr(self, '_first_widget_after_aircraft_counts'):
-                self._first_widget_after_aircraft_counts = self.config_container.winfo_children()[-1]
-            self._add_divider()
+        # Category 3: Timing & Spawning (always shown)
+        self.sidebar.add_item("Timing & Spawning", "timing_spawning")
 
-        # TRACON arrivals specific - compact
-        if is_tracon_arrivals:
-            self._add_tracon_arrivals_config()
-            # Store reference if this is the first widget after aircraft counts
-            if not hasattr(self, '_first_widget_after_aircraft_counts'):
-                self._first_widget_after_aircraft_counts = self.config_container.winfo_children()[-1]
-            self._add_divider()
+        # Category 4: Arrivals & Approach (only for scenarios with arrivals)
+        if has_arrivals:
+            self.sidebar.add_item("Arrivals & Approach", "arrivals_approach")
 
-        # Spawn delay and output - compact inline
-        self._add_spawn_and_output_section()
-        # Store reference if this is the first widget after aircraft counts
-        if not hasattr(self, '_first_widget_after_aircraft_counts'):
-            self._first_widget_after_aircraft_counts = self.config_container.winfo_children()[-1]
+        # Category 5: Departures & Climb (only for scenarios with departures)
+        if has_departures:
+            self.sidebar.add_item("Departures & Climb", "departures_climb")
 
-    def _add_divider(self):
-        """Add a subtle divider line between sections"""
-        divider = tk.Frame(self.config_container, bg=DarkTheme.DIVIDER, height=1)
+        # Category 6: Advanced Options (always shown for future expansion)
+        self.sidebar.add_item("Advanced Options", "advanced")
+
+        # Category 7: Output & Export (always shown)
+        self.sidebar.add_item("Output & Export", "output_export")
+
+        # Store scenario features for use in panel building
+        self.scenario_has_departures = has_departures
+        self.scenario_has_arrivals = has_arrivals
+        self.scenario_has_tower_separation = has_tower_separation
+
+    def on_category_select(self, category_id):
+        """Handle category selection from sidebar"""
+        # Hide current panel
+        if self.current_panel:
+            self.current_panel.pack_forget()
+
+        # Show selected panel (create if needed)
+        if category_id not in self.content_panels:
+            self.content_panels[category_id] = self._create_panel(category_id)
+
+        panel = self.content_panels[category_id]
+        panel.pack(fill='both', expand=True)
+        self.current_panel = panel
+
+    def _create_panel(self, category_id):
+        """Create content panel for a category"""
+        panel = ThemedFrame(self.content_container)
+
+        if category_id == "aircraft_traffic":
+            self._build_aircraft_traffic_panel(panel)
+        elif category_id == "runway_airport":
+            self._build_runway_airport_panel(panel)
+        elif category_id == "timing_spawning":
+            self._build_timing_spawning_panel(panel)
+        elif category_id == "arrivals_approach":
+            self._build_arrivals_approach_panel(panel)
+        elif category_id == "departures_climb":
+            self._build_departures_climb_panel(panel)
+        elif category_id == "advanced":
+            self._build_advanced_panel(panel)
+        elif category_id == "output_export":
+            self._build_output_export_panel(panel)
+
+        return panel
+
+    def _build_aircraft_traffic_panel(self, panel):
+        """Build Aircraft & Traffic configuration panel"""
+        # Panel title
+        title = ThemedLabel(
+            panel,
+            text="Aircraft & Traffic Configuration",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # Difficulty levels section (collapsible)
+        self._add_difficulty_section(panel)
+        self._add_divider(panel)
+
+        # Aircraft counts section (conditional based on scenario type)
+        has_departures = getattr(self, 'scenario_has_departures', True)
+        has_arrivals = getattr(self, 'scenario_has_arrivals', True)
+        self._add_aircraft_counts_section(panel, has_departures, has_arrivals)
+        self._add_divider(panel)
+
+        # Placeholder for future options
+        placeholder = ThemedLabel(
+            panel,
+            text="Additional aircraft options (type mix, equipment, etc.) can be added here",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
+
+    def _build_runway_airport_panel(self, panel):
+        """Build Runway & Airport configuration panel"""
+        title = ThemedLabel(
+            panel,
+            text="Runway & Airport Configuration",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # Active runways
+        section = ThemedFrame(panel)
+        section.pack(fill='x', pady=(0, DarkTheme.PADDING_MEDIUM))
+
+        label = ThemedLabel(
+            section,
+            text="Active Runways:",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
+        )
+        label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        entry = ThemedEntry(section, placeholder="e.g., 7L, 25R")
+        entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+        self.inputs['active_runways'] = entry
+
+        hint = ThemedLabel(
+            section,
+            text="Comma separated list of runway identifiers",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        hint.pack(anchor='w')
+
+        # Separation standards (only for tower scenarios)
+        if hasattr(self, 'scenario_has_tower_separation') and self.scenario_has_tower_separation:
+            self._add_divider(panel)
+            self._add_separation_section(panel)
+
+        self._add_divider(panel)
+
+        # Placeholder for future options
+        placeholder = ThemedLabel(
+            panel,
+            text="Additional runway options (parallel ops, taxiway routing, etc.) can be added here",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
+
+    def _build_timing_spawning_panel(self, panel):
+        """Build Timing & Spawning configuration panel"""
+        title = ThemedLabel(
+            panel,
+            text="Timing & Spawning Configuration",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # Spawn delay configuration
+        self._add_spawn_delay_section(panel)
+
+        # Placeholder for future options
+        placeholder = ThemedLabel(
+            panel,
+            text="Additional timing options (time of day, rush hour, etc.) can be added here",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_LARGE)
+
+    def _build_arrivals_approach_panel(self, panel):
+        """Build Arrivals & Approach configuration panel"""
+        title = ThemedLabel(
+            panel,
+            text="Arrivals & Approach Configuration",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # TRACON arrivals configuration
+        self._add_tracon_arrivals_section(panel)
+
+        # Placeholder for future options
+        placeholder = ThemedLabel(
+            panel,
+            text="Additional arrival options (approach types, speeds, etc.) can be added here",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_LARGE)
+
+    def _build_departures_climb_panel(self, panel):
+        """Build Departures & Climb configuration panel"""
+        title = ThemedLabel(
+            panel,
+            text="Departures & Climb Configuration",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # Placeholder for future options
+        placeholder = ThemedLabel(
+            panel,
+            text="Departure options (SIDs, climb rates, initial altitudes, etc.) can be added here",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
+
+    def _build_advanced_panel(self, panel):
+        """Build Advanced Options configuration panel"""
+        title = ThemedLabel(
+            panel,
+            text="Advanced Configuration Options",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # Placeholder for future options
+        placeholder = ThemedLabel(
+            panel,
+            text="Advanced options (weather, emergencies, special ops, etc.) can be added here",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
+
+    def _build_output_export_panel(self, panel):
+        """Build Output & Export configuration panel"""
+        title = ThemedLabel(
+            panel,
+            text="Output & Export Settings",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # Output filename info
+        info = ThemedLabel(
+            panel,
+            text="Output filename is automatically generated based on airport code",
+            fg=DarkTheme.FG_SECONDARY
+        )
+        info.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
+
+        # Placeholder for future options
+        placeholder = ThemedLabel(
+            panel,
+            text="Additional export options (format, metadata, auto-save, etc.) can be added here",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
+
+    # Helper methods for building sections
+
+    def _add_divider(self, parent):
+        """Add a subtle divider line"""
+        divider = tk.Frame(parent, bg=DarkTheme.DIVIDER, height=1)
         divider.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
 
-    def _add_aircraft_counts_section(self, has_departures, has_arrivals):
-        """Add aircraft counts in a compact grid layout"""
-        section = ThemedFrame(self.config_container)
+    def _add_difficulty_section(self, parent):
+        """Add difficulty level configuration section"""
+        section = ThemedFrame(parent)
+        section.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Collapsible header with checkbox
+        header_frame = ThemedFrame(section)
+        header_frame.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        enable_var = tk.BooleanVar(value=False)
+
+        # Create clickable header with toggle indicator
+        toggle_label = ThemedLabel(
+            header_frame,
+            text="▶",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        toggle_label.pack(side='left', padx=(0, DarkTheme.PADDING_SMALL))
+
+        enable_checkbox = tk.Checkbutton(
+            header_frame,
+            text="Configure by difficulty level (Easy/Medium/Hard)",
+            variable=enable_var,
+            bg=DarkTheme.BG_PRIMARY,
+            fg=DarkTheme.FG_PRIMARY,
+            selectcolor=DarkTheme.BG_TERTIARY,
+            activebackground=DarkTheme.BG_PRIMARY,
+            activeforeground=DarkTheme.FG_PRIMARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            cursor='hand2',
+            command=lambda: self._toggle_difficulty_inputs(
+                enable_var.get(), difficulty_frame, toggle_label
+            )
+        )
+        enable_checkbox.pack(side='left')
+        self.inputs['enable_difficulty'] = enable_var
+
+        # Hint text
+        hint = ThemedLabel(
+            header_frame,
+            text="(splits aircraft counts into difficulty tiers)",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        hint.pack(side='left', padx=(DarkTheme.PADDING_SMALL, 0))
+
+        # Container for difficulty inputs (hidden by default)
+        difficulty_frame = ThemedFrame(section)
+        difficulty_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
+        difficulty_frame.pack_forget()  # Hide initially
+
+        # Grid layout for difficulty inputs
+        grid = ThemedFrame(difficulty_frame)
+        grid.pack(fill='x', padx=(DarkTheme.PADDING_LARGE, 0))
+
+        # Easy difficulty
+        easy_label = ThemedLabel(grid, text="Easy:")
+        easy_label.grid(row=0, column=0, sticky='w',
+                       padx=(0, DarkTheme.PADDING_SMALL))
+
+        easy_entry = ThemedEntry(grid, placeholder="0")
+        easy_entry.grid(row=0, column=1, sticky='ew',
+                       padx=(0, DarkTheme.PADDING_LARGE))
+        self.inputs['difficulty_easy'] = easy_entry
+
+        # Medium difficulty
+        medium_label = ThemedLabel(grid, text="Medium:")
+        medium_label.grid(row=0, column=2, sticky='w',
+                         padx=(0, DarkTheme.PADDING_SMALL))
+
+        medium_entry = ThemedEntry(grid, placeholder="0")
+        medium_entry.grid(row=0, column=3, sticky='ew',
+                         padx=(0, DarkTheme.PADDING_LARGE))
+        self.inputs['difficulty_medium'] = medium_entry
+
+        # Hard difficulty
+        hard_label = ThemedLabel(grid, text="Hard:")
+        hard_label.grid(row=0, column=4, sticky='w',
+                       padx=(0, DarkTheme.PADDING_SMALL))
+
+        hard_entry = ThemedEntry(grid, placeholder="0")
+        hard_entry.grid(row=0, column=5, sticky='ew')
+        self.inputs['difficulty_hard'] = hard_entry
+
+        # Make entry columns expand equally
+        grid.columnconfigure(1, weight=1)
+        grid.columnconfigure(3, weight=1)
+        grid.columnconfigure(5, weight=1)
+
+        # Store references for toggling
+        self.difficulty_section = section
+        self.difficulty_frame = difficulty_frame
+        self.difficulty_toggle_label = toggle_label
+
+    def _add_aircraft_counts_section(self, parent, has_departures=True, has_arrivals=True):
+        """Add aircraft counts section (conditional based on scenario type)"""
+        section = ThemedFrame(parent)
         section.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL))
 
         # Section title
-        title = ThemedLabel(section, text="Aircraft Count", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'))
+        title = ThemedLabel(
+            section,
+            text="Aircraft Count",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
+        )
         title.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
         # Grid container for inputs
@@ -127,126 +473,65 @@ class ScenarioConfigScreen(tk.Frame):
         grid_frame.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
 
         col = 0
+
+        # Departures (if applicable)
         if has_departures:
             dep_label = ThemedLabel(grid_frame, text="Departures:")
-            dep_label.grid(row=0, column=col, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
+            dep_label.grid(row=0, column=col, sticky='w',
+                          padx=(0, DarkTheme.PADDING_SMALL))
 
             dep_entry = ThemedEntry(grid_frame, placeholder="e.g., 10")
-            dep_entry.grid(row=0, column=col+1, sticky='ew', padx=(0, DarkTheme.PADDING_LARGE))
+            dep_entry.grid(row=0, column=col+1, sticky='ew',
+                          padx=(0, DarkTheme.PADDING_LARGE))
             self.inputs['num_departures'] = dep_entry
-            self.departure_entry_frame = dep_entry
+
+            grid_frame.columnconfigure(col+1, weight=1)
             col += 2
 
+        # Arrivals (if applicable)
         if has_arrivals:
             arr_label = ThemedLabel(grid_frame, text="Arrivals:")
-            arr_label.grid(row=0, column=col, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
+            arr_label.grid(row=0, column=col, sticky='w',
+                          padx=(0, DarkTheme.PADDING_SMALL))
 
             arr_entry = ThemedEntry(grid_frame, placeholder="e.g., 5")
-            arr_entry.grid(row=0, column=col+1, sticky='ew', padx=(0, DarkTheme.PADDING_LARGE))
+            arr_entry.grid(row=0, column=col+1, sticky='ew',
+                          padx=(0, DarkTheme.PADDING_LARGE if has_departures else 0))
             self.inputs['num_arrivals'] = arr_entry
-            self.arrival_entry_frame = arr_entry
 
-        # Make entry columns expand
-        grid_frame.columnconfigure(1, weight=1)
-        if has_departures and has_arrivals:
-            grid_frame.columnconfigure(3, weight=1)
+            grid_frame.columnconfigure(col+1, weight=1)
 
-        # Store references for hiding/showing
+        # Store reference
         self.aircraft_counts_section = section
 
-        # Store the pack info immediately after packing for the first time
-        # This ensures we can restore it to this exact position later
-        self.config_container.update_idletasks()  # Force layout to complete
-        self._aircraft_counts_pack_info = section.pack_info()
+    def _add_separation_section(self, parent):
+        """Add separation standards section"""
+        section = ThemedFrame(parent)
+        section.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
 
-    def _add_runway_and_separation_section(self, has_runways, is_tower):
-        """Add runway and separation config in compact inline layout"""
-        section = ThemedFrame(self.config_container)
-        section.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL))
+        label = ThemedLabel(
+            section,
+            text="Separation Range (NM):",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
+        )
+        label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
-        # Section title
-        title = ThemedLabel(section, text="Runway Configuration", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'))
-        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+        entry = ThemedEntry(section, placeholder="3-6")
+        entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+        self.inputs['separation_range'] = entry
 
-        # Grid container
-        grid_frame = ThemedFrame(section)
-        grid_frame.pack(fill='x')
+        hint = ThemedLabel(
+            section,
+            text="Format: min-max (e.g., 3-6 for 3-6 nautical miles)",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        hint.pack(anchor='w')
 
-        row = 0
-        if has_runways:
-            # Runways label and input
-            runway_label = ThemedLabel(grid_frame, text="Active Runways:")
-            runway_label.grid(row=row, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
-
-            runway_entry = ThemedEntry(grid_frame, placeholder="e.g., 7L, 25R")
-            runway_entry.grid(row=row, column=1, sticky='ew', pady=(0, DarkTheme.PADDING_SMALL))
-            self.inputs['active_runways'] = runway_entry
-
-            runway_hint = ThemedLabel(grid_frame, text="(comma separated)", fg=DarkTheme.FG_DISABLED, font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
-            runway_hint.grid(row=row, column=2, sticky='w', padx=(DarkTheme.PADDING_SMALL, 0))
-            row += 1
-
-        if is_tower:
-            # Separation label and input
-            sep_label = ThemedLabel(grid_frame, text="Separation (NM):")
-            sep_label.grid(row=row, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
-
-            sep_entry = ThemedEntry(grid_frame, placeholder="3-6")
-            sep_entry.grid(row=row, column=1, sticky='ew', pady=(0, DarkTheme.PADDING_SMALL))
-            self.inputs['separation_range'] = sep_entry
-
-            sep_hint = ThemedLabel(grid_frame, text="(min-max)", fg=DarkTheme.FG_DISABLED, font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
-            sep_hint.grid(row=row, column=2, sticky='w', padx=(DarkTheme.PADDING_SMALL, 0))
-
-        # Make entry column expand
-        grid_frame.columnconfigure(1, weight=1)
-
-    def _add_tracon_arrivals_config(self):
-        """Add TRACON arrivals specific configuration (compact)"""
-        section = ThemedFrame(self.config_container)
-        section.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL))
-
-        # Section title
-        title = ThemedLabel(section, text="TRACON Arrivals", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'))
-        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
-
-        # Grid container
-        grid_frame = ThemedFrame(section)
-        grid_frame.pack(fill='x')
-
-        # STAR Waypoints
-        waypoint_label = ThemedLabel(grid_frame, text="STAR Waypoints:")
-        waypoint_label.grid(row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
-
-        waypoints_entry = ThemedEntry(grid_frame, placeholder="e.g., EAGUL.JESSE3, PINNG.PINNG1")
-        waypoints_entry.grid(row=0, column=1, sticky='ew', pady=(0, DarkTheme.PADDING_SMALL))
-        self.inputs['arrival_waypoints'] = waypoints_entry
-
-        waypoint_hint = ThemedLabel(grid_frame, text="(WAYPOINT.STAR, spawn 10NM out)", fg=DarkTheme.FG_DISABLED, font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
-        waypoint_hint.grid(row=0, column=2, sticky='w', padx=(DarkTheme.PADDING_SMALL, 0))
-
-        # Altitude range
-        alt_label = ThemedLabel(grid_frame, text="Altitude Range (ft):")
-        alt_label.grid(row=1, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
-
-        altitude_entry = ThemedEntry(grid_frame, placeholder="7000-18000")
-        altitude_entry.grid(row=1, column=1, sticky='ew', pady=(0, DarkTheme.PADDING_SMALL))
-        self.inputs['altitude_range'] = altitude_entry
-
-        alt_hint = ThemedLabel(grid_frame, text="(fallback when CIFP lacks constraints)", fg=DarkTheme.FG_DISABLED, font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
-        alt_hint.grid(row=1, column=2, sticky='w', padx=(DarkTheme.PADDING_SMALL, 0))
-
-        # Make entry column expand
-        grid_frame.columnconfigure(1, weight=1)
-
-    def _add_spawn_and_output_section(self):
-        """Add spawn delay configuration and output filename"""
-        section = ThemedFrame(self.config_container)
-        section.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL))
-
-        # Section title
-        title = ThemedLabel(section, text="Timing & Output", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'))
-        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+    def _add_spawn_delay_section(self, parent):
+        """Add spawn delay configuration section"""
+        section = ThemedFrame(parent)
+        section.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
 
         # Spawn delay checkbox
         spawn_header_frame = ThemedFrame(section)
@@ -281,7 +566,8 @@ class ScenarioConfigScreen(tk.Frame):
 
         # Container for spawn delay options (hidden by default)
         self.spawn_delay_frame = ThemedFrame(section)
-        self.spawn_delay_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, DarkTheme.PADDING_SMALL))
+        self.spawn_delay_frame.pack(fill='x',
+                                   pady=(DarkTheme.PADDING_SMALL, DarkTheme.PADDING_SMALL))
         self.spawn_delay_frame.pack_forget()  # Hide initially
 
         # Radio buttons for spawn delay mode
@@ -317,7 +603,8 @@ class ScenarioConfigScreen(tk.Frame):
             fg=DarkTheme.FG_DISABLED,
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
         )
-        incremental_hint.pack(anchor='w', padx=(DarkTheme.PADDING_XLARGE, 0), pady=(0, DarkTheme.PADDING_SMALL))
+        incremental_hint.pack(anchor='w', padx=(DarkTheme.PADDING_XLARGE, 0),
+                             pady=(0, DarkTheme.PADDING_SMALL))
 
         # Total mode radio
         total_radio = tk.Radiobutton(
@@ -352,10 +639,15 @@ class ScenarioConfigScreen(tk.Frame):
         self.incremental_input_frame = ThemedFrame(inputs_grid)
         self.incremental_input_frame.pack(fill='x')
 
-        incremental_label = ThemedLabel(self.incremental_input_frame, text="Delay between aircraft (min):")
-        incremental_label.grid(row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
+        incremental_label = ThemedLabel(
+            self.incremental_input_frame,
+            text="Delay between aircraft (min):"
+        )
+        incremental_label.grid(row=0, column=0, sticky='w',
+                              padx=(0, DarkTheme.PADDING_SMALL))
 
-        incremental_entry = ThemedEntry(self.incremental_input_frame, placeholder="2-5 or 3")
+        incremental_entry = ThemedEntry(self.incremental_input_frame,
+                                       placeholder="2-5 or 3")
         incremental_entry.grid(row=0, column=1, sticky='ew')
         self.inputs['incremental_delay_value'] = incremental_entry
 
@@ -365,7 +657,8 @@ class ScenarioConfigScreen(tk.Frame):
             fg=DarkTheme.FG_DISABLED,
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
         )
-        incremental_input_hint.grid(row=0, column=2, sticky='w', padx=(DarkTheme.PADDING_SMALL, 0))
+        incremental_input_hint.grid(row=0, column=2, sticky='w',
+                                   padx=(DarkTheme.PADDING_SMALL, 0))
 
         self.incremental_input_frame.columnconfigure(1, weight=1)
 
@@ -374,8 +667,10 @@ class ScenarioConfigScreen(tk.Frame):
         self.total_input_frame.pack(fill='x')
         self.total_input_frame.pack_forget()  # Hide initially
 
-        total_label = ThemedLabel(self.total_input_frame, text="Total session length (min):")
-        total_label.grid(row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
+        total_label = ThemedLabel(self.total_input_frame,
+                                 text="Total session length (min):")
+        total_label.grid(row=0, column=0, sticky='w',
+                        padx=(0, DarkTheme.PADDING_SMALL))
 
         total_entry = ThemedEntry(self.total_input_frame, placeholder="30")
         total_entry.grid(row=0, column=1, sticky='ew')
@@ -387,171 +682,134 @@ class ScenarioConfigScreen(tk.Frame):
             fg=DarkTheme.FG_DISABLED,
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
         )
-        total_input_hint.grid(row=0, column=2, sticky='w', padx=(DarkTheme.PADDING_SMALL, 0))
+        total_input_hint.grid(row=0, column=2, sticky='w',
+                             padx=(DarkTheme.PADDING_SMALL, 0))
 
         self.total_input_frame.columnconfigure(1, weight=1)
 
-    def _add_difficulty_config(self):
-        """Add difficulty level configuration (collapsible)"""
-        section = ThemedFrame(self.config_container)
+    def _add_tracon_arrivals_section(self, parent):
+        """Add TRACON arrivals specific configuration"""
+        section = ThemedFrame(parent)
         section.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
 
-        # Collapsible header with checkbox
-        header_frame = ThemedFrame(section)
-        header_frame.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
-
-        enable_var = tk.BooleanVar(value=False)
-
-        # Create clickable header with toggle indicator
-        toggle_label = ThemedLabel(header_frame, text="▶", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL))
-        toggle_label.pack(side='left', padx=(0, DarkTheme.PADDING_SMALL))
-
-        enable_checkbox = tk.Checkbutton(
-            header_frame,
-            text="Configure by difficulty level (Easy/Medium/Hard)",
-            variable=enable_var,
-            bg=DarkTheme.BG_PRIMARY,
-            fg=DarkTheme.FG_PRIMARY,
-            selectcolor=DarkTheme.BG_TERTIARY,
-            activebackground=DarkTheme.BG_PRIMARY,
-            activeforeground=DarkTheme.FG_PRIMARY,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
-            cursor='hand2',
-            command=lambda: self._toggle_difficulty_inputs(enable_var.get(), difficulty_frame, toggle_label)
+        # STAR Waypoints
+        waypoint_label = ThemedLabel(
+            section,
+            text="STAR Waypoints:",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
         )
-        enable_checkbox.pack(side='left')
-        self.inputs['enable_difficulty'] = enable_var
+        waypoint_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
-        # Hint text
-        hint = ThemedLabel(
-            header_frame,
-            text="(splits counts for mixed scenarios)",
+        waypoints_entry = ThemedEntry(section,
+                                     placeholder="e.g., EAGUL.JESSE3, PINNG.PINNG1")
+        waypoints_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+        self.inputs['arrival_waypoints'] = waypoints_entry
+
+        waypoint_hint = ThemedLabel(
+            section,
+            text="Format: WAYPOINT.STAR (aircraft spawn 10NM out from waypoint)",
             fg=DarkTheme.FG_DISABLED,
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
         )
-        hint.pack(side='left', padx=(DarkTheme.PADDING_SMALL, 0))
+        waypoint_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM))
 
-        # Container for difficulty inputs (hidden by default)
-        difficulty_frame = ThemedFrame(section)
-        difficulty_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
-        difficulty_frame.pack_forget()  # Hide initially
+        # Altitude range
+        alt_label = ThemedLabel(
+            section,
+            text="Altitude Range (ft):",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
+        )
+        alt_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
-        # Grid layout for difficulty inputs
-        grid = ThemedFrame(difficulty_frame)
-        grid.pack(fill='x', padx=(DarkTheme.PADDING_LARGE, 0))
+        altitude_entry = ThemedEntry(section, placeholder="7000-18000")
+        altitude_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+        self.inputs['altitude_range'] = altitude_entry
 
-        # Easy difficulty
-        easy_label = ThemedLabel(grid, text="Easy:")
-        easy_label.grid(row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
+        alt_hint = ThemedLabel(
+            section,
+            text="Fallback altitude range when CIFP lacks constraints",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        alt_hint.pack(anchor='w')
 
-        easy_entry = ThemedEntry(grid, placeholder="0")
-        easy_entry.grid(row=0, column=1, sticky='ew', padx=(0, DarkTheme.PADDING_LARGE))
-        self.inputs['difficulty_easy'] = easy_entry
-
-        # Medium difficulty
-        medium_label = ThemedLabel(grid, text="Medium:")
-        medium_label.grid(row=0, column=2, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
-
-        medium_entry = ThemedEntry(grid, placeholder="0")
-        medium_entry.grid(row=0, column=3, sticky='ew', padx=(0, DarkTheme.PADDING_LARGE))
-        self.inputs['difficulty_medium'] = medium_entry
-
-        # Hard difficulty
-        hard_label = ThemedLabel(grid, text="Hard:")
-        hard_label.grid(row=0, column=4, sticky='w', padx=(0, DarkTheme.PADDING_SMALL))
-
-        hard_entry = ThemedEntry(grid, placeholder="0")
-        hard_entry.grid(row=0, column=5, sticky='ew')
-        self.inputs['difficulty_hard'] = hard_entry
-
-        # Make entry columns expand equally
-        grid.columnconfigure(1, weight=1)
-        grid.columnconfigure(3, weight=1)
-        grid.columnconfigure(5, weight=1)
+    # Toggle methods
 
     def _toggle_difficulty_inputs(self, enabled, frame, toggle_label):
-        """Show/hide difficulty input fields and aircraft count section based on checkbox state"""
+        """Show/hide difficulty input fields"""
         if enabled:
-            # Show difficulty inputs
             frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
             toggle_label.config(text="▼")
 
-            # Hide manual aircraft count section and its divider
+            # Hide manual aircraft count section
             if hasattr(self, 'aircraft_counts_section'):
                 self.aircraft_counts_section.pack_forget()
-            if hasattr(self, '_aircraft_counts_divider'):
-                self._aircraft_counts_divider.pack_forget()
         else:
-            # Hide difficulty inputs
             frame.pack_forget()
             toggle_label.config(text="▶")
 
-            # Restore manual aircraft count section to its original position
+            # Show manual aircraft count section
             if hasattr(self, 'aircraft_counts_section'):
-                # Use stored pack info and position before the next widget
-                pack_options = self._aircraft_counts_pack_info.copy() if hasattr(self, '_aircraft_counts_pack_info') else {
-                    'fill': 'x',
-                    'pady': (DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL)
-                }
-
-                # Position before the next widget to maintain order
-                if hasattr(self, '_first_widget_after_aircraft_counts'):
-                    pack_options['before'] = self._first_widget_after_aircraft_counts
-
-                self.aircraft_counts_section.pack(**pack_options)
-
-                # Restore divider right after aircraft counts section
-                if hasattr(self, '_aircraft_counts_divider'):
-                    divider_pack_options = {'fill': 'x', 'pady': DarkTheme.PADDING_MEDIUM}
-                    if hasattr(self, '_first_widget_after_aircraft_counts'):
-                        divider_pack_options['before'] = self._first_widget_after_aircraft_counts
-                    self._aircraft_counts_divider.pack(**divider_pack_options)
+                self.aircraft_counts_section.pack(
+                    fill='x',
+                    pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL)
+                )
 
     def _toggle_spawn_delay_inputs(self, enabled):
-        """Show/hide spawn delay configuration based on checkbox state"""
+        """Show/hide spawn delay configuration"""
         if enabled:
-            # Use stored pack info or defaults
-            pack_options = self._spawn_delay_pack_info.copy() if hasattr(self, '_spawn_delay_pack_info') else {
-                'fill': 'x',
-                'pady': (DarkTheme.PADDING_SMALL, DarkTheme.PADDING_SMALL)
-            }
-
-            self.spawn_delay_frame.pack(**pack_options)
-
-            # Store pack info after first show
-            if not hasattr(self, '_spawn_delay_pack_info'):
-                self._spawn_delay_pack_info = self.spawn_delay_frame.pack_info()
+            self.spawn_delay_frame.pack(
+                fill='x',
+                pady=(DarkTheme.PADDING_SMALL, DarkTheme.PADDING_SMALL)
+            )
         else:
-            # Store pack info before hiding if not already stored
-            if not hasattr(self, '_spawn_delay_pack_info'):
-                self._spawn_delay_pack_info = self.spawn_delay_frame.pack_info()
             self.spawn_delay_frame.pack_forget()
 
     def _update_spawn_delay_mode_inputs(self, mode):
         """Show/hide spawn delay inputs based on selected mode"""
         if mode == "incremental":
-            # Show incremental frame, hide total frame
-            if not hasattr(self, '_incremental_pack_info'):
-                self.incremental_input_frame.pack(fill='x')
-                self._incremental_pack_info = self.incremental_input_frame.pack_info()
-            else:
-                self.incremental_input_frame.pack(**self._incremental_pack_info)
-
-            if not hasattr(self, '_total_pack_info'):
-                self._total_pack_info = self.total_input_frame.pack_info()
+            self.incremental_input_frame.pack(fill='x')
             self.total_input_frame.pack_forget()
-
         elif mode == "total":
-            # Show total frame, hide incremental frame
-            if not hasattr(self, '_total_pack_info'):
-                self.total_input_frame.pack(fill='x')
-                self._total_pack_info = self.total_input_frame.pack_info()
-            else:
-                self.total_input_frame.pack(**self._total_pack_info)
-
-            if not hasattr(self, '_incremental_pack_info'):
-                self._incremental_pack_info = self.incremental_input_frame.pack_info()
+            self.total_input_frame.pack(fill='x')
             self.incremental_input_frame.pack_forget()
+
+    # Screen lifecycle methods
+
+    def load_config_for_scenario(self, scenario_type):
+        """Load configuration form based on scenario type"""
+        # Store scenario type for validation
+        self.scenario_type = scenario_type
+
+        # Update subtitle
+        scenario_names = {
+            'ground_departures': 'Ground - Departures Only',
+            'ground_mixed': 'Ground - Mixed Operations',
+            'tower_mixed': 'Tower - Mixed Operations',
+            'tracon_departures': 'TRACON - Departures Only',
+            'tracon_arrivals': 'TRACON - Arrivals Only',
+            'tracon_mixed': 'TRACON - Mixed Operations'
+        }
+        scenario_name = scenario_names.get(scenario_type, 'Unknown')
+        self.subtitle_label.config(text=f"Scenario Type: {scenario_name}")
+
+        # Clear all content panels and inputs
+        for panel in self.content_panels.values():
+            panel.destroy()
+        self.content_panels.clear()
+        self.current_panel = None
+        self.inputs.clear()
+
+        # Rebuild sidebar based on scenario type
+        self._rebuild_sidebar_for_scenario(scenario_type)
+
+        # Select first category by default
+        if self.sidebar.items:
+            first_item = self.sidebar.items[0]
+            first_item.select()
+            self.sidebar.selected_item = first_item
+            # Trigger category selection
+            self.on_category_select("aircraft_traffic")
 
     def get_config_values(self):
         """Get all configuration values from inputs"""
@@ -578,36 +836,34 @@ class ScenarioConfigScreen(tk.Frame):
         if validation_errors:
             messagebox.showerror(
                 "Configuration Error",
-                "Please fix the following errors:\n\n" + "\n".join(f"• {error}" for error in validation_errors)
+                "Please fix the following errors:\n\n" +
+                "\n".join(f"• {error}" for error in validation_errors)
             )
             return
 
         self.app_controller.generate_scenario(config)
 
     def _validate_config(self, config):
-        """
-        Validate configuration values
-
-        Returns:
-            List of error messages (empty if valid)
-        """
+        """Validate configuration values"""
         errors = []
 
-        # Get scenario type from app controller
-        scenario_type = self.app_controller.scenario_type
+        # Get scenario type from stored value
+        scenario_type = self.scenario_type
 
-        # Validate runways - required for scenarios with arrivals or TRACON (for STAR routing)
-        # ground_departures doesn't need runways (uses parking spots only)
+        # Validate runways - required for scenarios with arrivals or TRACON
         active_runways = config.get('active_runways', '').strip()
-        scenarios_requiring_runways = ['ground_mixed', 'tower_mixed', 'tracon_arrivals', 'tracon_mixed']
+        scenarios_requiring_runways = [
+            'ground_mixed', 'tower_mixed',
+            'tracon_arrivals', 'tracon_mixed'
+        ]
         if not active_runways and scenario_type in scenarios_requiring_runways:
-            errors.append("Active runways are required")
+            errors.append("Active runways are required for this scenario type")
 
         # Check if difficulty levels are enabled
         difficulty_enabled = config.get('enable_difficulty', False)
 
         if difficulty_enabled:
-            # When difficulty is enabled, validate difficulty counts
+            # Validate difficulty counts
             try:
                 easy_count = int(config.get('difficulty_easy', '0') or '0')
                 medium_count = int(config.get('difficulty_medium', '0') or '0')
@@ -619,16 +875,10 @@ class ScenarioConfigScreen(tk.Frame):
                 total_aircraft = easy_count + medium_count + hard_count
                 if total_aircraft == 0:
                     errors.append("Must specify at least one aircraft in difficulty levels")
-
-                # Store calculated totals for later use
-                num_dep = total_aircraft
-                num_arr = 0  # Will be calculated based on scenario type
             except ValueError:
                 errors.append("Difficulty counts must be valid numbers")
-                num_dep = 0
-                num_arr = 0
         else:
-            # When difficulty is disabled, validate manual aircraft counts
+            # Validate manual aircraft counts
             num_departures = config.get('num_departures', '')
             num_arrivals = config.get('num_arrivals', '')
 
@@ -643,11 +893,9 @@ class ScenarioConfigScreen(tk.Frame):
                 if num_dep == 0 and num_arr == 0:
                     errors.append("Must generate at least one departure or arrival")
             except ValueError:
-                errors.append("Number of departures and arrivals must be valid numbers")
-                num_dep = 0
-                num_arr = 0
+                errors.append("Aircraft counts must be valid numbers")
 
-        # Validate ranges (if provided)
+        # Validate ranges
         if config.get('separation_range'):
             try:
                 parts = config['separation_range'].split('-')
@@ -676,32 +924,23 @@ class ScenarioConfigScreen(tk.Frame):
             except ValueError:
                 errors.append("Altitude range must contain valid numbers")
 
-        if config.get('delay_range'):
-            try:
-                parts = config['delay_range'].split('-')
-                if len(parts) != 2:
-                    errors.append("Delay range must be in format: min-max (e.g., 4-7)")
+        # Validate spawn delay values if enabled
+        if config.get('enable_spawn_delays'):
+            mode = config.get('spawn_delay_mode', 'incremental')
+            if mode == 'incremental':
+                delay_value = config.get('incremental_delay_value', '')
+                if not delay_value:
+                    errors.append("Incremental delay value is required when spawn delays are enabled")
+            elif mode == 'total':
+                total_minutes = config.get('total_session_minutes', '')
+                if not total_minutes:
+                    errors.append("Total session minutes is required when using total spawn delay mode")
                 else:
-                    min_delay, max_delay = int(parts[0]), int(parts[1])
-                    if min_delay < 0 or max_delay < 0:
-                        errors.append("Delay values cannot be negative")
-                    if min_delay > max_delay:
-                        errors.append("Minimum delay cannot be greater than maximum")
-            except ValueError:
-                errors.append("Delay range must contain valid numbers")
-
-        if config.get('spawn_delay_range'):
-            try:
-                parts = config['spawn_delay_range'].split('-')
-                if len(parts) != 2:
-                    errors.append("Spawn delay range must be in format: min-max (e.g., 0-0 or 1-5)")
-                else:
-                    min_spawn, max_spawn = int(parts[0]), int(parts[1])
-                    if min_spawn < 0 or max_spawn < 0:
-                        errors.append("Spawn delay values cannot be negative")
-                    if min_spawn > max_spawn:
-                        errors.append("Minimum spawn delay cannot be greater than maximum")
-            except ValueError:
-                errors.append("Spawn delay range must contain valid numbers")
+                    try:
+                        minutes = int(total_minutes)
+                        if minutes <= 0:
+                            errors.append("Total session minutes must be positive")
+                    except ValueError:
+                        errors.append("Total session minutes must be a valid number")
 
         return errors
