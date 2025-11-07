@@ -21,5 +21,15 @@
     "range": "B1-B11 assigns AAL to gates B1, B2, B4-B11 (B3 excluded by specific)",
     "wildcard": "B# handles any B gates not covered by specific or range assignments",
     "multiple_airlines": "E# randomly selects from ASA, ACA, or UAL for E gates"
-  }
+  },
+  "less_common_airports": [
+    "KSDL", "KDVT", "KCHD", "KGEU", "KFFZ", "KIWA", "KBXK", "KPRC", "KGYR", "KTUS",
+    "KFLG", "KYUM", "KIGM", "KPGA", "KGCN", "KSEZ", "KINW", "KCGZ", "KBLH", "KIFP",
+    "KBYS", "KSGU", "KCDC", "KLUF", "KFUL", "KEMT", "KVNY", "KHND", "KBVU", "KSNA"
+  ],
+  "_comment_less_common_airports": "Airports used for GA traffic destinations. Customize this list for your region.",
+  "common_ga_aircraft": [
+    "C172", "C182", "BE36", "C208", "PA32", "SR22", "C210", "P28A", "BE58"
+  ],
+  "_comment_common_ga_aircraft": "Aircraft types classified as General Aviation. Used to identify GA aircraft and prevent them from spawning at commercial gates."
 }

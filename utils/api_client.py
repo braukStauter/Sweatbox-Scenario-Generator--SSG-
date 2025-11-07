@@ -26,30 +26,17 @@ class FlightDataAPIClient:
 
     def _calculate_cruise_speed(self, aircraft_type: str) -> int:
         """
-        Calculate typical cruise speed based on aircraft type
+        Return default cruise speed fallback (used only when API doesn't provide speed)
 
         Args:
             aircraft_type: Aircraft type with optional equipment suffix (e.g., "B738")
 
         Returns:
-            Cruise speed in knots
+            Cruise speed in knots (default: 450 for jets)
         """
-        from utils.constants import (
-            AIRCRAFT_CRUISE_SPEEDS,
-            DEFAULT_CRUISE_SPEEDS_BY_SUFFIX,
-            DEFAULT_CRUISE_SPEED
-        )
-
-        # Extract base aircraft type (remove equipment suffix if present)
-        base_type = aircraft_type.split('/')[0] if '/' in aircraft_type else aircraft_type
-
-        # Try to find cruise speed in the mapping
-        if base_type in AIRCRAFT_CRUISE_SPEEDS:
-            return AIRCRAFT_CRUISE_SPEEDS[base_type]
-
-        # Last resort: generic default
-        logger.debug(f"Using default cruise speed for unknown aircraft type: {aircraft_type}")
-        return DEFAULT_CRUISE_SPEED
+        # Simple fallback - API should provide actual cruise speeds
+        logger.debug(f"Using default cruise speed fallback for: {aircraft_type}")
+        return 450
 
     def fetch_flights(
         self,
