@@ -291,6 +291,43 @@ class BaseScenario(ABC):
             logger.info("No config.json found. Using default configuration.")
             return {}
 
+    def _add_equipment_suffix(self, aircraft_type: str, is_ga: bool = False) -> str:
+        """
+        Ensure aircraft type has proper equipment suffix
+
+        Args:
+            aircraft_type: Base aircraft type (e.g., "B738", "C172")
+            is_ga: True if GA aircraft, False if airline
+
+        Returns:
+            Aircraft type with equipment suffix (/L for airlines, /G for GA)
+        """
+        # If already has suffix, return as-is
+        if '/' in aircraft_type:
+            return aircraft_type
+
+        # Add appropriate suffix
+        suffix = '/G' if is_ga else '/L'
+        return f"{aircraft_type}{suffix}"
+
+    def _is_ga_aircraft_type(self, aircraft_type: str) -> bool:
+        """
+        Check if an aircraft type is a GA aircraft based on common GA types
+
+        Args:
+            aircraft_type: Aircraft type code (e.g., "C172", "P28A", "B738")
+
+        Returns:
+            True if GA aircraft type, False if airline/commercial
+        """
+        from utils.constants import COMMON_GA_AIRCRAFT
+
+        # Remove equipment suffix if present
+        base_type = aircraft_type.split('/')[0]
+
+        # Check against known GA aircraft list
+        return base_type in COMMON_GA_AIRCRAFT
+
     def _expand_gate_range(self, range_str: str) -> List[str]:
         """
         Expand a gate range string into individual gate names
@@ -605,12 +642,13 @@ class BaseScenario(ABC):
 
         self.departure_flight_pool = valid_flights
 
-    def _get_next_departure_flight(self, parking_spot_name: str = None) -> Dict:
+    def _get_next_departure_flight(self, parking_spot_name: str = None, is_ga_spot: bool = False) -> Dict:
         """
         Get the next departure flight from the pool
 
         Args:
             parking_spot_name: Optional parking spot name for airline matching
+            is_ga_spot: True if this is a GA parking spot
 
         Returns:
             Flight dictionary or None if pool is empty
@@ -633,11 +671,22 @@ class BaseScenario(ABC):
             if parking_airline:
                 # Try to find flight from preferred airline
                 for i, flight in enumerate(self.departure_flight_pool):
+                    aircraft_type = flight.get('aircraftType', '')
+                    # Skip GA aircraft at non-GA gates
+                    if not is_ga_spot and self._is_ga_aircraft_type(aircraft_type):
+                        continue
                     if flight.get('operator') == parking_airline:
                         return self.departure_flight_pool.pop(i)
 
-        # Return first available flight
-        return self.departure_flight_pool.pop(0) if self.departure_flight_pool else None
+        # Return first available non-GA flight (or any flight if GA spot)
+        for i, flight in enumerate(self.departure_flight_pool):
+            aircraft_type = flight.get('aircraftType', '')
+            # If not a GA spot, skip GA aircraft types
+            if not is_ga_spot and self._is_ga_aircraft_type(aircraft_type):
+                continue
+            return self.departure_flight_pool.pop(i)
+
+        return None
 
     def _create_departure_aircraft(self, parking_spot, destination: str = None,
                                    callsign: str = None, aircraft_type: str = None,
@@ -653,8 +702,11 @@ class BaseScenario(ABC):
 
         logger.debug(f"Assigned parking spot: {parking_spot.name}")
 
+        # Check if this is a GA parking spot
+        is_ga_spot = "GA" in parking_spot.name.upper()
+
         # Get flight from pool
-        flight_data = self._get_next_departure_flight(parking_spot.name)
+        flight_data = self._get_next_departure_flight(parking_spot.name, is_ga_spot)
 
         if not flight_data:
             logger.error("No flight data available for departure aircraft")
@@ -689,24 +741,29 @@ class BaseScenario(ABC):
         # Use provided parameters or API data
         aircraft_type = aircraft_type or api_aircraft_type
 
-        # Determine callsign
+        # Ensure equipment suffix (/L for airlines, /G for GA)
+        is_ga_type = self._is_ga_aircraft_type(aircraft_type)
+        aircraft_type = self._add_equipment_suffix(aircraft_type, is_ga_type)
+
+        # ALWAYS use API callsign if provided - never generate for real flight data
+        # This ensures aircraft/route/callsign data stays matched from the API
         if callsign is None:
-            parking_airline = self._get_airline_for_parking(parking_spot.name)
-            if parking_airline:
-                callsign = self._generate_callsign(airline=parking_airline)
-            elif api_callsign and api_callsign.strip():
+            if api_callsign and api_callsign.strip():
                 callsign = api_callsign
             else:
+                # Only generate if API didn't provide a callsign
+                logger.warning(f"No callsign from API for flight to {destination}, generating one")
                 callsign = self._generate_callsign()
 
         # Thread-safe callsign assignment - ensure uniqueness
         with self.callsign_lock:
-            while callsign in self.used_callsigns:
-                parking_airline = self._get_airline_for_parking(parking_spot.name)
-                if parking_airline:
-                    callsign = self._generate_callsign(airline=parking_airline)
-                else:
-                    callsign = self._generate_callsign()
+            # If callsign is already used, we have a duplicate from API
+            if callsign in self.used_callsigns:
+                logger.warning(f"Duplicate callsign from API: {callsign}, skipping this flight")
+                # Don't use this flight - return None to skip it
+                with self.parking_lock:
+                    self.used_parking_spots.discard(parking_spot.name)
+                return None
             self.used_callsigns.add(callsign)
 
         ground_altitude = self.geojson_parser.field_elevation
@@ -776,8 +833,14 @@ class BaseScenario(ABC):
         flight_data = self._get_next_ga_flight()
 
         if flight_data:
-            # Use API data
-            callsign = flight_data.get('aircraftIdentification', self._generate_ga_callsign())
+            # Use API data - ALWAYS use the API callsign to keep data matched
+            api_callsign = flight_data.get('aircraftIdentification', '')
+            if api_callsign and api_callsign.strip():
+                callsign = api_callsign
+            else:
+                # API didn't provide callsign, generate one
+                logger.warning("GA flight from API missing callsign, generating one")
+                callsign = self._generate_ga_callsign()
             aircraft_type = flight_data.get('aircraftType', 'C172')
             destination = destination or flight_data.get('arrivalAirport', self._get_random_destination(exclude=self.airport_icao, less_common=True))
             raw_route = flight_data.get('route', 'DCT')
@@ -823,8 +886,15 @@ class BaseScenario(ABC):
 
         # Ensure callsign uniqueness
         with self.callsign_lock:
-            while callsign in self.used_callsigns:
-                callsign = self._generate_ga_callsign()
+            if callsign in self.used_callsigns:
+                # If from API data, skip this flight to maintain data integrity
+                if flight_data and flight_data.get('aircraftIdentification'):
+                    logger.warning(f"Duplicate GA callsign from API: {callsign}, skipping this flight")
+                    self.used_parking_spots.discard(parking_spot.name)
+                    return None
+                # Otherwise generate new callsign (only for fallback generated aircraft)
+                while callsign in self.used_callsigns:
+                    callsign = self._generate_ga_callsign()
             self.used_callsigns.add(callsign)
 
         # Ensure equipment suffix

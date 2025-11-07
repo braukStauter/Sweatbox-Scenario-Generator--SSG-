@@ -199,17 +199,31 @@ class TowerMixedScenario(BaseScenario):
         else:
             cruise_speed = self.api_client._calculate_cruise_speed(api_aircraft_type)
 
-        # Use callsign from API if available, otherwise generate
-        callsign = api_callsign if api_callsign and api_callsign.strip() else self._generate_callsign()
+        # ALWAYS use API callsign to keep data matched - never generate
+        if api_callsign and api_callsign.strip():
+            callsign = api_callsign
+        else:
+            logger.warning(f"Arrival from {departure} missing callsign from API, generating one")
+            callsign = self._generate_callsign()
 
         # Ensure callsign is unique
         with self.callsign_lock:
-            while callsign in self.used_callsigns:
-                callsign = self._generate_callsign()
+            if callsign in self.used_callsigns:
+                # If from API, skip this flight to maintain data integrity
+                if api_callsign and api_callsign.strip():
+                    logger.warning(f"Duplicate arrival callsign from API: {callsign}, skipping this flight")
+                    return None
+                # Otherwise generate new callsign (only for fallback)
+                while callsign in self.used_callsigns:
+                    callsign = self._generate_callsign()
             self.used_callsigns.add(callsign)
 
+        # Ensure equipment suffix (/L for airlines, /G for GA)
+        is_ga_type = self._is_ga_aircraft_type(api_aircraft_type)
+        aircraft_type = self._add_equipment_suffix(api_aircraft_type, is_ga_type)
+
         # Calculate appropriate final approach speed based on aircraft type
-        ground_speed = self._get_final_approach_speed(api_aircraft_type)
+        ground_speed = self._get_final_approach_speed(aircraft_type)
 
         # Use vNAS "On Final" starting condition - vNAS automatically positions aircraft
         # We only need to set arrival_runway and arrival_distance_nm
@@ -218,7 +232,7 @@ class TowerMixedScenario(BaseScenario):
 
         aircraft = Aircraft(
             callsign=callsign,
-            aircraft_type=api_aircraft_type,
+            aircraft_type=aircraft_type,
             latitude=0.0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
             longitude=0.0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
             altitude=0,  # vNAS will calculate from arrival_runway and arrival_distance_nm

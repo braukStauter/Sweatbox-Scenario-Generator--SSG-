@@ -25,7 +25,7 @@ COMMON_JETS = [
 ]
 
 COMMON_GA_AIRCRAFT = [
-    "C172", "C182", "PA28", "BE36", "C208", "PA32", "SR22", "C210", "P28A", "BE58"
+    "C172", "C182", "BE36", "C208", "PA32", "SR22", "C210", "P28A", "BE58"
 ]
 
 # Flight rules
