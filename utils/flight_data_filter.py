@@ -264,6 +264,82 @@ def filter_arrivals_by_waypoint(
     return valid_flights
 
 
+def filter_arrivals_by_stars(
+    flights: List[Dict[str, Any]],
+    star_transitions: List[Tuple[str, str]],
+    allow_waypoint_only: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    Filter arrival flights by multiple STAR transitions or waypoints
+
+    Args:
+        flights: List of arrival flight dictionaries
+        star_transitions: List of (waypoint, STAR) tuples to filter by
+                         e.g., [('EAGUL', 'EAGUL6'), ('HOTTT', 'EAGUL6')]
+                         If STAR is None, filters by waypoint only
+        allow_waypoint_only: If True, allows filtering by waypoint when STAR not specified
+
+    Returns:
+        Filtered list of flights matching any of the specified STARs or waypoints
+    """
+    if not star_transitions:
+        return flights
+
+    # Separate transitions into those with STARs and waypoint-only
+    star_names = set()
+    waypoint_only = set()
+
+    for waypoint, star_name in star_transitions:
+        if star_name:
+            star_names.add(star_name)
+        elif allow_waypoint_only:
+            waypoint_only.add(waypoint)
+
+    valid_flights = []
+
+    for flight in flights:
+        route = flight.get('route', '')
+        route_star = extract_star_from_route(route)
+
+        matched = False
+
+        # Check if flight's STAR matches any of the configured STARs
+        if star_names and route_star and route_star in star_names:
+            matched = True
+            logger.debug(f"Flight {flight.get('aircraftIdentification')} matched by STAR: {route_star}")
+
+        # Check if route contains any of the waypoint-only filters
+        elif waypoint_only:
+            for waypoint in waypoint_only:
+                if route_contains_waypoint(route, waypoint):
+                    # Verify it has a STAR (not a DCT route)
+                    if route_star:
+                        matched = True
+                        logger.debug(
+                            f"Flight {flight.get('aircraftIdentification')} matched by waypoint '{waypoint}' "
+                            f"with STAR '{route_star}'"
+                        )
+                        break
+
+        if matched:
+            valid_flights.append(flight)
+        else:
+            logger.debug(
+                f"Flight {flight.get('aircraftIdentification')} with STAR '{route_star}' "
+                f"did not match filters"
+            )
+
+    filter_desc = []
+    if star_names:
+        filter_desc.append(f"STARs: {star_names}")
+    if waypoint_only:
+        filter_desc.append(f"Waypoints: {waypoint_only}")
+
+    logger.info(f"Filtered arrivals by {', '.join(filter_desc)}: {len(valid_flights)}/{len(flights)} valid")
+
+    return valid_flights
+
+
 def filter_by_parking_airline(
     flights: List[Dict[str, Any]],
     preferred_airlines: List[str]

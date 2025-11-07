@@ -52,14 +52,13 @@ class TraconMixedScenario(BaseScenario):
         self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids)
         self._prepare_ga_flight_pool()
 
-        # For arrivals, prepare pool filtered by waypoints if specified
-        if arrival_waypoints:
-            # Use first waypoint for filtering (could be enhanced to support multiple)
-            waypoint_parts = arrival_waypoints[0].split('.')
-            waypoint_name = waypoint_parts[0] if waypoint_parts else None
-            star_name = waypoint_parts[1] if len(waypoint_parts) > 1 else None
-            self._prepare_arrival_flight_pool(waypoint_name, star_name)
+        # Parse STAR transitions and prepare filtered arrival pool (pass active_runways for random selection)
+        star_transitions = self._parse_star_transitions(arrival_waypoints, active_runways)
+        if star_transitions:
+            logger.info(f"Preparing arrival flight pool filtered by {len(star_transitions)} STAR transitions")
+            self._prepare_arrival_flight_pool(star_transitions=star_transitions)
         else:
+            logger.info("No STAR transitions specified, using all arrivals")
             self._prepare_arrival_flight_pool()
 
         # Setup difficulty assignment
@@ -119,28 +118,42 @@ class TraconMixedScenario(BaseScenario):
             return self.aircraft
 
         # Generate arrivals at waypoints
-        for i in range(num_arrivals):
-            waypoint_name, star_name = star_transitions[i % len(star_transitions)]
+        # Keep trying until we have enough arrivals or we've tried too many times
+        arrivals_created = len([a for a in self.aircraft if a.arrival == self.airport_icao])
+        attempts = 0
+        max_attempts = num_arrivals * 3  # Allow 3x attempts to handle duplicates/skips
+
+        while arrivals_created < num_arrivals and attempts < max_attempts:
+            waypoint_name, star_name = star_transitions[attempts % len(star_transitions)]
 
             # Get waypoint for this STAR
             waypoint = self.cifp_parser.get_transition_waypoint(waypoint_name, star_name)
 
             if not waypoint:
                 logger.warning(f"Waypoint {waypoint_name}.{star_name} not found in CIFP data")
+                attempts += 1
                 continue
 
             # Check if waypoint has valid coordinates
             if waypoint.latitude == 0.0 and waypoint.longitude == 0.0:
                 logger.warning(f"Waypoint {waypoint.name} has no coordinate data")
+                attempts += 1
                 continue
 
             aircraft = self._create_arrival_at_waypoint(waypoint, 0, active_runways, star_name)
-            # Legacy mode: apply random spawn delay
-            if spawn_delay_range and not delay_value:
-                aircraft.spawn_delay = random.randint(min_delay, max_delay)
-                logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
-            difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
-            self.aircraft.append(aircraft)
+            if aircraft is not None:
+                # Legacy mode: apply random spawn delay
+                if spawn_delay_range and not delay_value:
+                    aircraft.spawn_delay = random.randint(min_delay, max_delay)
+                    logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
+                difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                self.aircraft.append(aircraft)
+                arrivals_created += 1
+
+            attempts += 1
+
+        if arrivals_created < num_arrivals:
+            logger.warning(f"Could only generate {arrivals_created}/{num_arrivals} arrivals after {attempts} attempts (likely due to duplicate callsigns or limited API data)")
 
         # Apply new spawn delay system
         if not spawn_delay_range:
@@ -184,23 +197,42 @@ class TraconMixedScenario(BaseScenario):
 
         return aircraft
 
-    def _parse_star_transitions(self, arrival_waypoints: List[str]) -> List[Tuple[str, str]]:
+    def _parse_star_transitions(self, arrival_waypoints: List[str], active_runways: List[str] = None) -> List[Tuple[str, str]]:
         """
         Parse STAR waypoint input format
 
         Users can specify ANY waypoint along a STAR procedure, not just transition points.
+        If no waypoints are specified, random STAR transitions will be selected from CIFP.
 
         Args:
             arrival_waypoints: List of strings in format "WAYPOINT.STAR"
                               (e.g., "EAGUL.JESSE3", "PINNG.PINNG1", "HOTTT.PINNG1")
+                              If empty or None, random transitions will be selected
+            active_runways: Optional list of active runways to filter random selection
 
         Returns:
             List of (waypoint_name, star_name) tuples
         """
+        # If no waypoints specified, get random STAR transitions from CIFP
+        if not arrival_waypoints or (len(arrival_waypoints) == 1 and not arrival_waypoints[0].strip()):
+            logger.info("No STAR waypoints specified, selecting random transitions from CIFP")
+            # Select 3-5 random transitions
+            import random
+            count = random.randint(3, 5)
+            star_transitions = self.cifp_parser.get_random_star_transitions(count, active_runways)
+            if star_transitions:
+                logger.info(f"Auto-selected {len(star_transitions)} random STAR transitions: {star_transitions}")
+                return star_transitions
+            else:
+                logger.error("No STAR transitions available in CIFP data")
+                return []
+
         star_transitions = []
 
         for entry in arrival_waypoints:
             entry = entry.strip()
+            if not entry:
+                continue
 
             # Check if it's in WAYPOINT.STAR format
             if '.' in entry:
@@ -208,17 +240,20 @@ class TraconMixedScenario(BaseScenario):
                 if len(parts) == 2:
                     waypoint_name = parts[0].strip()
                     star_name = parts[1].strip()
-                    star_transitions.append((waypoint_name, star_name))
-                    logger.debug(f"Parsed STAR waypoint: {waypoint_name}.{star_name}")
+
+                    # If STAR part is empty, it means waypoint-only filtering
+                    if not star_name:
+                        star_transitions.append((waypoint_name, None))
+                        logger.debug(f"Parsed waypoint-only filter: {waypoint_name}")
+                    else:
+                        star_transitions.append((waypoint_name, star_name))
+                        logger.debug(f"Parsed STAR waypoint: {waypoint_name}.{star_name}")
                 else:
                     logger.warning(f"Invalid STAR waypoint format: {entry} (expected WAYPOINT.STAR)")
             else:
-                # Legacy support: treat as waypoint name, try to infer STAR
-                waypoint = self.cifp_parser.get_waypoint(entry)
-                if waypoint and waypoint.arrival_name:
-                    star_transitions.append((entry, waypoint.arrival_name))
-                    logger.warning(f"Legacy format detected: {entry} - inferred as {entry}.{waypoint.arrival_name}")
-                else:
-                    logger.warning(f"Cannot parse entry: {entry} (use WAYPOINT.STAR format)")
+                # Waypoint-only format (no STAR specified)
+                # This will match any STAR containing this waypoint
+                star_transitions.append((entry, None))
+                logger.debug(f"Parsed waypoint-only filter: {entry}")
 
         return star_transitions

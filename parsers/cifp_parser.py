@@ -4,7 +4,7 @@ Based on ARINC 424 specification
 """
 import logging
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from models.airport import Waypoint
 
 logger = logging.getLogger(__name__)
@@ -1020,3 +1020,46 @@ class CIFPParser:
             List of STAR names
         """
         return sorted(list(self.arrivals.keys()))
+
+    def get_random_star_transitions(self, count: int = 1, active_runways: List[str] = None) -> List[Tuple[str, str]]:
+        """
+        Get random STAR transition waypoints
+
+        Args:
+            count: Number of random transitions to get
+            active_runways: Optional list of active runways to filter by
+
+        Returns:
+            List of (transition_waypoint, star_name) tuples
+        """
+        import random
+
+        all_transitions = []
+
+        # Get all available STARs
+        available_stars = self.get_available_stars()
+
+        for star_name in available_stars:
+            # Filter by runways if specified
+            if active_runways:
+                star_runways = self.get_runways_for_arrival(star_name)
+                # Only include this STAR if it feeds any active runway
+                if not any(rwy in active_runways for rwy in star_runways):
+                    continue
+
+            # Get transitions for this STAR
+            transitions = self.get_available_transitions(star_name)
+            for transition in transitions:
+                all_transitions.append((transition, star_name))
+
+        if not all_transitions:
+            logger.warning("No STAR transitions available")
+            return []
+
+        # Randomly select transitions
+        selected_count = min(count, len(all_transitions))
+        selected = random.sample(all_transitions, selected_count)
+
+        logger.info(f"Selected {len(selected)} random STAR transitions: {selected}")
+
+        return selected

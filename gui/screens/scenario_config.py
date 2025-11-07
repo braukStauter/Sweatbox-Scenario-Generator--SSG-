@@ -722,15 +722,16 @@ class ScenarioConfigScreen(tk.Frame):
         waypoint_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
         waypoints_entry = ThemedEntry(section,
-                                     placeholder="e.g., EAGUL.JESSE3, PINNG.PINNG1")
+                                     placeholder="e.g., EAGUL.JESSE3, PINNG.PINNG1 (or leave blank for random)")
         waypoints_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
         self.inputs['arrival_waypoints'] = waypoints_entry
 
         waypoint_hint = ThemedLabel(
             section,
-            text="Format: WAYPOINT.STAR (aircraft spawn 10NM out from waypoint)",
+            text="Format: WAYPOINT.STAR, WAYPOINT. (any STAR with waypoint), or WAYPOINT (waypoint only). Leave blank to auto-select random STAR transitions.",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
         )
         waypoint_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM))
 

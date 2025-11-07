@@ -5,7 +5,7 @@ import random
 import logging
 import json
 import threading
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from abc import ABC, abstractmethod
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -18,7 +18,7 @@ from utils.api_client import FlightDataAPIClient
 from utils.constants import POPULAR_US_AIRPORTS, LESS_COMMON_AIRPORTS, COMMON_JETS, COMMON_GA_AIRCRAFT
 from utils.flight_data_filter import (
     filter_valid_flights, categorize_flights, filter_departures_by_sid,
-    filter_arrivals_by_waypoint, filter_by_parking_airline, is_ga_aircraft,
+    filter_arrivals_by_waypoint, filter_arrivals_by_stars, filter_by_parking_airline, is_ga_aircraft,
     get_airline_from_callsign, clean_route_string
 )
 
@@ -928,20 +928,25 @@ class BaseScenario(ABC):
 
         return aircraft
 
-    def _prepare_arrival_flight_pool(self, waypoint: str = None, star_name: str = None):
+    def _prepare_arrival_flight_pool(self, waypoint: str = None, star_name: str = None, star_transitions: List[Tuple[str, str]] = None):
         """
         Prepare the pool of arrival flights from cached data
 
         Args:
-            waypoint: Optional waypoint to filter by
-            star_name: Optional STAR name to filter by
+            waypoint: Optional single waypoint to filter by (legacy)
+            star_name: Optional single STAR name to filter by (legacy)
+            star_transitions: Optional list of (waypoint, STAR) tuples for filtering by multiple STARs
         """
         # Start with cached arrivals
         valid_flights = filter_valid_flights(self.cached_flights['arrivals'])
         logger.info(f"Filtered {len(valid_flights)} valid arrivals from {len(self.cached_flights['arrivals'])} cached")
 
-        # Apply waypoint filtering if specified
-        if waypoint:
+        # Apply STAR filtering if multiple transitions specified
+        if star_transitions:
+            valid_flights = filter_arrivals_by_stars(valid_flights, star_transitions)
+            logger.info(f"After STAR filtering: {len(valid_flights)} arrivals remain")
+        # Legacy: Apply waypoint filtering if specified
+        elif waypoint:
             valid_flights = filter_arrivals_by_waypoint(valid_flights, waypoint, star_name)
             logger.info(f"After waypoint filtering ({waypoint}): {len(valid_flights)} arrivals remain")
 
