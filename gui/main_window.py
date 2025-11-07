@@ -270,15 +270,6 @@ class MainWindow(tk.Tk):
                 except:
                     pass
 
-            # Parse altitude range
-            altitude_range = (7000, 18000)
-            if config.get('altitude_range'):
-                try:
-                    parts = config['altitude_range'].split('-')
-                    altitude_range = (int(parts[0]), int(parts[1]))
-                except:
-                    pass
-
             # Parse delay range
             delay_range = (4, 7)
             if config.get('delay_range'):
@@ -332,7 +323,6 @@ class MainWindow(tk.Tk):
                 num_arrivals,
                 active_runways,
                 separation_range,
-                altitude_range,
                 delay_range,
                 arrival_waypoints,
                 spawn_delay_mode,
@@ -409,7 +399,7 @@ class MainWindow(tk.Tk):
             raise ValueError(f"Unknown scenario type: {self.scenario_type}")
 
     def _generate_aircraft(self, scenario, num_departures, num_arrivals,
-                          active_runways, separation_range, altitude_range,
+                          active_runways, separation_range,
                           delay_range, arrival_waypoints, spawn_delay_mode,
                           delay_value, total_session_minutes, difficulty_config=None,
                           enable_cifp_sids=False, manual_sids=None):
@@ -432,12 +422,12 @@ class MainWindow(tk.Tk):
                                     delay_value, total_session_minutes, None, difficulty_config,
                                     enable_cifp_sids, manual_sids)
         elif self.scenario_type == 'tracon_arrivals':
-            return scenario.generate(num_arrivals, arrival_waypoints, altitude_range,
+            return scenario.generate(num_arrivals, arrival_waypoints,
                                     delay_range, spawn_delay_mode, delay_value,
                                     total_session_minutes, None, difficulty_config, active_runways)
         elif self.scenario_type == 'tracon_mixed':
             return scenario.generate(num_departures, num_arrivals, arrival_waypoints,
-                                    altitude_range, delay_range, spawn_delay_mode,
+                                    delay_range, spawn_delay_mode,
                                     delay_value, total_session_minutes, None,
                                     difficulty_config, active_runways, enable_cifp_sids, manual_sids)
         else:

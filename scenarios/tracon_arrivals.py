@@ -17,7 +17,6 @@ class TraconArrivalsScenario(BaseScenario):
     """Scenario for TRACON with arrivals only"""
 
     def generate(self, num_arrivals: int, arrival_waypoints: List[str],
-                 altitude_range: Tuple[int, int] = (7000, 18000),
                  delay_range: Tuple[int, int] = (4, 7),
                  spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
                  delay_value: str = None, total_session_minutes: int = None,
@@ -30,7 +29,6 @@ class TraconArrivalsScenario(BaseScenario):
             arrival_waypoints: List of STAR waypoints in format "WAYPOINT.STAR"
                               Can be ANY waypoint along the STAR, not just transitions
                               (e.g., "EAGUL.JESSE3", "PINNG.PINNG1", "HOTTT.PINNG1")
-            altitude_range: Tuple of (min, max) altitude in feet (used as fallback only)
             delay_range: DEPRECATED - not used (kept for backward compatibility)
             spawn_delay_mode: SpawnDelayMode enum (NONE, INCREMENTAL, or TOTAL)
             delay_value: For INCREMENTAL mode: delay range/value in minutes (e.g., "2-5" or "3")
@@ -90,7 +88,7 @@ class TraconArrivalsScenario(BaseScenario):
                 logger.warning(f"Waypoint {waypoint.name} has no coordinate data")
                 continue
 
-            aircraft = self._create_arrival_at_waypoint(waypoint, altitude_range, 0, active_runways, star_name)
+            aircraft = self._create_arrival_at_waypoint(waypoint, 0, active_runways, star_name)
             # Legacy mode: apply random spawn delay
             if spawn_delay_range and not delay_value:
                 aircraft.spawn_delay = random.randint(min_delay, max_delay)
@@ -144,16 +142,15 @@ class TraconArrivalsScenario(BaseScenario):
 
         return star_transitions
 
-    def _create_arrival_at_waypoint(self, waypoint, altitude_range: Tuple[int, int], delay_seconds: int = 0, active_runways: List[str] = None, star_name: str = None) -> Aircraft:
+    def _create_arrival_at_waypoint(self, waypoint, delay_seconds: int = 0, active_runways: List[str] = None, star_name: str = None) -> Aircraft:
         """
         Create an arrival aircraft at a waypoint
 
         Args:
             waypoint: Waypoint object
-            altitude_range: Tuple of (min, max) altitude (used as fallback only)
             delay_seconds: Spawn delay in seconds
             active_runways: List of active runway designators
-            star_name: STAR name for looking up next waypoint
+            star_name: STAR name for looking up next waypoint and altitude interpolation
 
         Returns:
             Aircraft object
@@ -163,13 +160,13 @@ class TraconArrivalsScenario(BaseScenario):
 
         if not flight_data:
             logger.error("No flight data available for arrival aircraft at waypoint")
-            # Fallback to minimal aircraft data
+            # Fallback to minimal aircraft data (altitude will be calculated from airport elevation)
             flight_data = {
                 'departureAirport': self._get_random_destination(exclude=self.airport_icao),
                 'aircraftIdentification': self._generate_callsign(),
                 'aircraftType': 'B738',
                 'route': '',
-                'requestedAltitude': str(altitude_range[1]),
+                'requestedAltitude': '10000',
                 'requestedAirspeed': '250'
             }
 
@@ -220,7 +217,7 @@ class TraconArrivalsScenario(BaseScenario):
         aircraft_type = self._add_equipment_suffix(api_aircraft_type, is_ga_type)
 
         # Determine altitude - STRICTLY ENFORCE CIFP CONSTRAINTS
-        altitude = self._get_altitude_from_cifp(waypoint, altitude_range)
+        altitude = self._get_altitude_from_cifp(waypoint, star_name)
 
         # Determine inbound course to the waypoint
         from utils.geo_utils import calculate_bearing
@@ -333,13 +330,97 @@ class TraconArrivalsScenario(BaseScenario):
 
         return aircraft
 
-    def _get_altitude_from_cifp(self, waypoint, altitude_range: Tuple[int, int]) -> int:
+    def _interpolate_altitude_from_star(self, waypoint, star_name: str) -> Optional[int]:
         """
-        Get altitude based on CIFP constraints, strictly enforcing altitude descriptors
+        Interpolate altitude based on nearby waypoints in the STAR
+
+        Args:
+            waypoint: Current waypoint (spawn point)
+            star_name: STAR name
+
+        Returns:
+            Interpolated altitude in feet, or None if interpolation not possible
+        """
+        from utils.geo_utils import calculate_distance
+
+        if not star_name or star_name not in self.cifp_parser.star_waypoints:
+            return None
+
+        # Get all waypoints in the STAR with altitude constraints
+        star_waypoints = self.cifp_parser.star_waypoints[star_name]
+        waypoints_with_altitudes = []
+
+        for wpt_name, wpt in star_waypoints.items():
+            # Only consider waypoints with defined altitudes
+            if wpt.min_altitude or wpt.max_altitude:
+                # Use an average altitude for interpolation
+                if wpt.min_altitude and wpt.max_altitude:
+                    avg_alt = (wpt.min_altitude + wpt.max_altitude) / 2
+                elif wpt.min_altitude:
+                    avg_alt = wpt.min_altitude
+                else:
+                    avg_alt = wpt.max_altitude
+
+                # Calculate distance from spawn waypoint to this waypoint
+                if wpt.latitude != 0.0 and wpt.longitude != 0.0 and waypoint.latitude != 0.0 and waypoint.longitude != 0.0:
+                    distance = calculate_distance(
+                        waypoint.latitude, waypoint.longitude,
+                        wpt.latitude, wpt.longitude
+                    )
+                    waypoints_with_altitudes.append({
+                        'name': wpt_name,
+                        'altitude': avg_alt,
+                        'distance': distance,
+                        'waypoint': wpt
+                    })
+
+        if not waypoints_with_altitudes:
+            logger.debug(f"No waypoints with altitudes found in STAR {star_name} for interpolation")
+            return None
+
+        # Sort by distance from spawn waypoint
+        waypoints_with_altitudes.sort(key=lambda x: x['distance'])
+
+        # Find the two closest waypoints (one before, one after in the procedure)
+        # For simplicity, use the two closest waypoints
+        if len(waypoints_with_altitudes) >= 2:
+            closest = waypoints_with_altitudes[0]
+            second_closest = waypoints_with_altitudes[1]
+
+            # Linear interpolation based on distance
+            total_distance = abs(closest['distance'] - second_closest['distance'])
+            if total_distance > 0:
+                # Position of spawn waypoint relative to the two reference waypoints
+                weight = closest['distance'] / total_distance
+                interpolated_alt = int(
+                    closest['altitude'] + (second_closest['altitude'] - closest['altitude']) * weight
+                )
+                logger.info(
+                    f"Interpolated altitude for {waypoint.name}: {interpolated_alt} ft "
+                    f"(between {closest['name']} at {closest['altitude']} ft and "
+                    f"{second_closest['name']} at {second_closest['altitude']} ft)"
+                )
+                return interpolated_alt
+
+        # If only one waypoint with altitude, use it as reference
+        if len(waypoints_with_altitudes) == 1:
+            ref_alt = int(waypoints_with_altitudes[0]['altitude'])
+            logger.info(
+                f"Using reference altitude for {waypoint.name}: {ref_alt} ft "
+                f"(from {waypoints_with_altitudes[0]['name']})"
+            )
+            return ref_alt
+
+        return None
+
+    def _get_altitude_from_cifp(self, waypoint, star_name: str = None) -> int:
+        """
+        Get altitude based on CIFP constraints, strictly enforcing altitude descriptors.
+        Falls back to interpolation from other waypoints, then airport elevation + 10,000 ft.
 
         Args:
             waypoint: Waypoint object with CIFP data
-            altitude_range: Fallback altitude range (min, max)
+            star_name: STAR name for interpolation fallback
 
         Returns:
             Altitude in feet
@@ -392,9 +473,21 @@ class TraconArrivalsScenario(BaseScenario):
             logger.debug(f"CIFP: CROSS {waypoint.name} AT OR BELOW {waypoint.max_altitude} ft")
             return waypoint.max_altitude - random.randint(0, 1000)
 
-        # No CIFP data - use fallback range
-        logger.warning(f"No CIFP altitude constraint for {waypoint.name}, using fallback range {altitude_range[0]}-{altitude_range[1]} ft")
-        return random.randint(altitude_range[0], altitude_range[1])
+        # No CIFP altitude constraint at this waypoint - try interpolation
+        logger.info(f"No CIFP altitude constraint for {waypoint.name}, attempting interpolation")
+
+        if star_name:
+            interpolated_alt = self._interpolate_altitude_from_star(waypoint, star_name)
+            if interpolated_alt:
+                return interpolated_alt
+
+        # Final fallback: airport elevation + 10,000 ft
+        airport_elevation = self.geojson_parser.airport.elevation if self.geojson_parser.airport else 0
+        fallback_altitude = airport_elevation + 10000
+        logger.warning(
+            f"No altitude data available for {waypoint.name}, using airport elevation + 10,000 ft = {fallback_altitude} ft"
+        )
+        return fallback_altitude
 
     def _get_speed_from_cifp(self, waypoint, altitude: int) -> int:
         """

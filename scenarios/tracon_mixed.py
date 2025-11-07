@@ -17,7 +17,6 @@ class TraconMixedScenario(BaseScenario):
     """Scenario for TRACON with both departures and arrivals"""
 
     def generate(self, num_departures: int, num_arrivals: int, arrival_waypoints: List[str],
-                 altitude_range: Tuple[int, int] = (7000, 18000),
                  delay_range: Tuple[int, int] = (4, 7),
                  spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
                  delay_value: str = None, total_session_minutes: int = None,
@@ -32,7 +31,6 @@ class TraconMixedScenario(BaseScenario):
             arrival_waypoints: List of STAR waypoints in format "WAYPOINT.STAR"
                               Can be ANY waypoint along the STAR, not just transitions
                               (e.g., "EAGUL.JESSE3", "PINNG.PINNG1", "HOTTT.PINNG1")
-            altitude_range: Tuple of (min, max) altitude in feet for arrivals (used as fallback only)
             delay_range: Tuple of (min, max) spawn delay in minutes between aircraft
             spawn_delay_mode: SpawnDelayMode enum (NONE, INCREMENTAL, or TOTAL)
             delay_value: For INCREMENTAL mode: delay range/value in minutes (e.g., "2-5" or "3")
@@ -136,7 +134,7 @@ class TraconMixedScenario(BaseScenario):
                 logger.warning(f"Waypoint {waypoint.name} has no coordinate data")
                 continue
 
-            aircraft = self._create_arrival_at_waypoint(waypoint, altitude_range, 0, active_runways, star_name)
+            aircraft = self._create_arrival_at_waypoint(waypoint, 0, active_runways, star_name)
             # Legacy mode: apply random spawn delay
             if spawn_delay_range and not delay_value:
                 aircraft.spawn_delay = random.randint(min_delay, max_delay)
@@ -151,16 +149,15 @@ class TraconMixedScenario(BaseScenario):
         logger.info(f"Generated {len(self.aircraft)} total aircraft")
         return self.aircraft
 
-    def _create_arrival_at_waypoint(self, waypoint, altitude_range: Tuple[int, int], delay_seconds: int = 0, active_runways: List[str] = None, star_name: str = None) -> Aircraft:
+    def _create_arrival_at_waypoint(self, waypoint, delay_seconds: int = 0, active_runways: List[str] = None, star_name: str = None) -> Aircraft:
         """
         Create an arrival aircraft at a waypoint
 
         Args:
             waypoint: Waypoint object
-            altitude_range: Tuple of (min, max) altitude (used as fallback only)
             delay_seconds: Spawn delay in seconds
             active_runways: List of active runway designators
-            star_name: STAR name for looking up next waypoint
+            star_name: STAR name for looking up next waypoint and altitude interpolation
 
         Returns:
             Aircraft object
@@ -180,7 +177,7 @@ class TraconMixedScenario(BaseScenario):
         temp_scenario.used_callsigns = self.used_callsigns
 
         # Use the enhanced arrival creation from TraconArrivalsScenario
-        aircraft = temp_scenario._create_arrival_at_waypoint(waypoint, altitude_range, delay_seconds, active_runways, star_name)
+        aircraft = temp_scenario._create_arrival_at_waypoint(waypoint, delay_seconds, active_runways, star_name)
 
         # Update our used callsigns with any new ones
         self.used_callsigns.update(temp_scenario.used_callsigns)

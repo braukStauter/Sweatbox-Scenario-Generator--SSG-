@@ -734,26 +734,6 @@ class ScenarioConfigScreen(tk.Frame):
         )
         waypoint_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM))
 
-        # Altitude range
-        alt_label = ThemedLabel(
-            section,
-            text="Altitude Range (ft):",
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
-        )
-        alt_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
-
-        altitude_entry = ThemedEntry(section, placeholder="7000-18000")
-        altitude_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
-        self.inputs['altitude_range'] = altitude_entry
-
-        alt_hint = ThemedLabel(
-            section,
-            text="Fallback altitude range when CIFP lacks constraints",
-            fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
-        )
-        alt_hint.pack(anchor='w')
-
     def _add_cifp_sid_section(self, parent):
         """Add CIFP SID configuration section"""
         section = ThemedFrame(parent)
@@ -1058,20 +1038,6 @@ class ScenarioConfigScreen(tk.Frame):
                         errors.append("Minimum separation cannot be greater than maximum")
             except ValueError:
                 errors.append("Separation range must contain valid numbers")
-
-        if config.get('altitude_range'):
-            try:
-                parts = config['altitude_range'].split('-')
-                if len(parts) != 2:
-                    errors.append("Altitude range must be in format: min-max (e.g., 7000-18000)")
-                else:
-                    min_alt, max_alt = int(parts[0]), int(parts[1])
-                    if min_alt < 0 or max_alt < 0:
-                        errors.append("Altitude values cannot be negative")
-                    if min_alt > max_alt:
-                        errors.append("Minimum altitude cannot be greater than maximum")
-            except ValueError:
-                errors.append("Altitude range must contain valid numbers")
 
         # Validate spawn delay values if enabled
         if config.get('enable_spawn_delays'):
