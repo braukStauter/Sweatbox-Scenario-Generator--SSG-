@@ -8,6 +8,7 @@ from typing import List
 from scenarios.base_scenario import BaseScenario
 from models.aircraft import Aircraft
 from models.spawn_delay_mode import SpawnDelayMode
+from utils.flight_data_filter import clean_route_string
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,8 @@ class GroundMixedScenario(BaseScenario):
     def generate(self, num_departures: int, num_arrivals: int, active_runways: List[str],
                  spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
                  delay_value: str = None, total_session_minutes: int = None,
-                 spawn_delay_range: str = None, difficulty_config=None) -> List[Aircraft]:
+                 spawn_delay_range: str = None, difficulty_config=None,
+                 enable_cifp_sids: bool = False, manual_sids: List[str] = None) -> List[Aircraft]:
         """
         Generate ground departure and arrival aircraft
 
@@ -31,12 +33,20 @@ class GroundMixedScenario(BaseScenario):
             total_session_minutes: For TOTAL mode: total session length in minutes
             spawn_delay_range: LEGACY parameter - kept for backward compatibility
             difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
+            enable_cifp_sids: Whether to use CIFP SID procedures
+            manual_sids: Optional list of specific SIDs to use
 
         Returns:
             List of Aircraft objects
         """
         # Reset tracking for new generation
         self._reset_tracking()
+
+        # Prepare flight pools from cached data
+        logger.info("Preparing flight pools...")
+        self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids)
+        self._prepare_ga_flight_pool()
+        self._prepare_arrival_flight_pool()
 
         # Setup difficulty assignment
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
@@ -50,7 +60,8 @@ class GroundMixedScenario(BaseScenario):
 
         if num_departures > len(parking_spots):
             raise ValueError(
-                f"Cannot create {num_departures} aircraft with only {len(parking_spots)} parking spots available"
+                f"Cannot create {num_departures} departures - only {len(parking_spots)} parking spots available at {self.airport_icao}. "
+                f"Please reduce the number of departures to {len(parking_spots)} or fewer."
             )
 
         logger.info(f"Generating {num_departures} departures and {num_arrivals} arrivals with spawn_delay_mode={spawn_delay_mode.value}")
@@ -69,7 +80,12 @@ class GroundMixedScenario(BaseScenario):
                 logger.info(f"Creating GA aircraft for parking spot: {spot.name}")
                 aircraft = self._create_ga_aircraft(spot)
             else:
-                aircraft = self._create_departure_aircraft(spot)
+                aircraft = self._create_departure_aircraft(
+                    spot,
+                    active_runways=active_runways,
+                    enable_cifp_sids=enable_cifp_sids,
+                    manual_sids=manual_sids
+                )
 
             if aircraft is not None:
                 # Legacy mode: apply random spawn delay
@@ -114,7 +130,7 @@ class GroundMixedScenario(BaseScenario):
 
     def _create_arrival_aircraft(self, runway_name: str, distance_nm: float) -> Aircraft:
         """
-        Create an arrival aircraft on final approach
+        Create an arrival aircraft on final approach using cached flight data
 
         Args:
             runway_name: Runway designator (e.g., '7L')
@@ -123,22 +139,48 @@ class GroundMixedScenario(BaseScenario):
         Returns:
             Aircraft object
         """
-        # Get flight plan from API (includes callsign)
-        departure = self._get_random_destination(exclude=self.airport_icao)
-        flight_plan = self.api_client.get_random_flight_plan(departure, self.airport_icao)
+        # Get flight from pool
+        flight_data = self._get_next_arrival_flight()
+
+        if not flight_data:
+            logger.error("No flight data available for arrival aircraft")
+            return None
+
+        # Extract data from API flight
+        departure = flight_data.get('departureAirport', self._get_random_destination(exclude=self.airport_icao))
+        raw_route = flight_data.get('route', '')
+        route = clean_route_string(raw_route)
+        api_callsign = flight_data.get('aircraftIdentification', '')
+        api_aircraft_type = flight_data.get('aircraftType', 'B738')
+
+        # Calculate cruise altitude from requested altitude or default
+        requested_alt = flight_data.get('requestedAltitude') or flight_data.get('assignedAltitude')
+        if requested_alt:
+            cruise_altitude = str(int(float(requested_alt)))
+        else:
+            cruise_altitude = '35000'
+
+        # Calculate cruise speed
+        cruise_speed_str = flight_data.get('requestedAirspeed')
+        if cruise_speed_str:
+            try:
+                cruise_speed = int(float(cruise_speed_str))
+            except (ValueError, TypeError):
+                cruise_speed = self.api_client._calculate_cruise_speed(api_aircraft_type)
+        else:
+            cruise_speed = self.api_client._calculate_cruise_speed(api_aircraft_type)
 
         # Use callsign from API if available, otherwise generate
-        callsign = flight_plan.get('callsign') or self._generate_callsign()
+        callsign = api_callsign if api_callsign and api_callsign.strip() else self._generate_callsign()
 
-        # Ensure callsign is unique - if it's already used, generate a new one
-        if callsign in self.used_callsigns:
-            callsign = self._generate_callsign()
-
-        # Add callsign to used set
-        self.used_callsigns.add(callsign)
+        # Ensure callsign is unique
+        with self.callsign_lock:
+            while callsign in self.used_callsigns:
+                callsign = self._generate_callsign()
+            self.used_callsigns.add(callsign)
 
         # Calculate appropriate final approach speed based on aircraft type
-        ground_speed = self._get_final_approach_speed(flight_plan['aircraft_type'])
+        ground_speed = self._get_final_approach_speed(api_aircraft_type)
 
         # Use vNAS "On Final" starting condition - vNAS automatically positions aircraft
         # We only need to set arrival_runway and arrival_distance_nm
@@ -147,7 +189,7 @@ class GroundMixedScenario(BaseScenario):
 
         aircraft = Aircraft(
             callsign=callsign,
-            aircraft_type=flight_plan['aircraft_type'],
+            aircraft_type=api_aircraft_type,
             latitude=0.0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
             longitude=0.0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
             altitude=0,  # vNAS will calculate from arrival_runway and arrival_distance_nm
@@ -155,13 +197,19 @@ class GroundMixedScenario(BaseScenario):
             ground_speed=ground_speed,
             departure=departure,
             arrival=self.airport_icao,
-            route=flight_plan['route'],
-            cruise_altitude=flight_plan['altitude'],
-            cruise_speed=flight_plan.get('cruise_speed'),
-            flight_rules="I",
+            route=route,
+            cruise_altitude=cruise_altitude,
+            cruise_speed=cruise_speed,
+            flight_rules=flight_data.get('initialFlightRules', 'I')[0] if flight_data.get('initialFlightRules') else 'I',
             engine_type="J",
             arrival_runway=runway_name,
-            arrival_distance_nm=distance_nm
+            arrival_distance_nm=distance_nm,
+            # Additional API fields
+            gufi=flight_data.get('gufi'),
+            registration=flight_data.get('registration'),
+            operator=flight_data.get('operator'),
+            estimated_arrival_time=flight_data.get('estimatedArrivalTime'),
+            wake_turbulence=flight_data.get('wakeTurbulence')
         )
 
         return aircraft

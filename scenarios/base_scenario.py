@@ -4,16 +4,23 @@ Base scenario class
 import random
 import logging
 import json
+import threading
 from typing import List, Dict
 from abc import ABC, abstractmethod
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from models.aircraft import Aircraft
 from models.spawn_delay_mode import SpawnDelayMode
 from parsers.geojson_parser import GeoJSONParser
 from parsers.cifp_parser import CIFPParser
-from utils.api_client import FlightPlanAPIClient
+from utils.api_client import FlightDataAPIClient
 from utils.constants import POPULAR_US_AIRPORTS, LESS_COMMON_AIRPORTS, COMMON_JETS, COMMON_GA_AIRCRAFT
+from utils.flight_data_filter import (
+    filter_valid_flights, categorize_flights, filter_departures_by_sid,
+    filter_arrivals_by_waypoint, filter_by_parking_airline, is_ga_aircraft,
+    get_airline_from_callsign, clean_route_string
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +29,8 @@ class BaseScenario(ABC):
     """Base class for all scenario types"""
 
     def __init__(self, airport_icao: str, geojson_parser: GeoJSONParser,
-                 cifp_parser: CIFPParser, api_client: FlightPlanAPIClient):
+                 cifp_parser: CIFPParser, api_client: FlightDataAPIClient,
+                 cached_flights: Dict[str, List] = None):
         """
         Initialize the scenario
 
@@ -30,7 +38,8 @@ class BaseScenario(ABC):
             airport_icao: ICAO code of the primary airport
             geojson_parser: Parser for airport GeoJSON data
             cifp_parser: Parser for CIFP data
-            api_client: API client for flight plans
+            api_client: API client for flight data
+            cached_flights: Pre-loaded flight data dict with 'departures' and 'arrivals' keys
         """
         self.airport_icao = airport_icao
         self.geojson_parser = geojson_parser
@@ -40,6 +49,16 @@ class BaseScenario(ABC):
         self.used_callsigns: set = set()
         self.used_parking_spots: set = set()
         self.config = self._load_config()
+
+        # Cached flight data from API
+        self.cached_flights = cached_flights or {'departures': [], 'arrivals': []}
+        self.departure_flight_pool = []
+        self.arrival_flight_pool = []
+
+        # Thread safety locks
+        self.callsign_lock = threading.Lock()
+        self.parking_lock = threading.Lock()
+        self.aircraft_lock = threading.Lock()
 
     @abstractmethod
     def generate(self, **kwargs) -> List[Aircraft]:
@@ -272,27 +291,98 @@ class BaseScenario(ABC):
             logger.info("No config.json found. Using default configuration.")
             return {}
 
+    def _expand_gate_range(self, range_str: str) -> List[str]:
+        """
+        Expand a gate range string into individual gate names
+
+        Examples:
+            "B1-B11" -> ["B1", "B2", "B3", ..., "B11"]
+            "A10-A15" -> ["A10", "A11", "A12", "A13", "A14", "A15"]
+            "C1-C3" -> ["C1", "C2", "C3"]
+
+        Args:
+            range_str: Range string in format "PREFIX#-PREFIX#"
+
+        Returns:
+            List of expanded gate names
+        """
+        import re
+
+        # Match pattern like "B1-B11" or "A10-A15"
+        match = re.match(r'^([A-Z]+)(\d+)-([A-Z]+)(\d+)$', range_str)
+
+        if not match:
+            return []
+
+        prefix1, start_num, prefix2, end_num = match.groups()
+
+        # Prefixes must match
+        if prefix1 != prefix2:
+            logger.warning(f"Gate range prefixes don't match: {prefix1} vs {prefix2} in '{range_str}'")
+            return []
+
+        start = int(start_num)
+        end = int(end_num)
+
+        if start > end:
+            logger.warning(f"Gate range start > end: {start} > {end} in '{range_str}'")
+            return []
+
+        # Generate all gates in range
+        gates = [f"{prefix1}{num}" for num in range(start, end + 1)]
+        logger.debug(f"Expanded gate range '{range_str}' to {len(gates)} gates: {gates[:3]}...")
+
+        return gates
+
     def _get_airline_for_parking(self, parking_name: str) -> str:
         """
         Get a specific airline code for a parking spot based on configuration
-        Supports wildcards using # (e.g., "A#" matches "A1", "A2", "A10", etc.)
+
+        Supports:
+        1. Specific gates (highest priority): "B3" -> ["JBU"]
+        2. Gate ranges: "B1-B11" -> ["AAL"]
+        3. Wildcards (lowest priority): "B#" -> ["AAL"]
+
+        Priority order: Specific > Range > Wildcard
+
+        Args:
+            parking_name: Name of the parking spot (e.g., "B3", "A10")
+
+        Returns:
+            Random airline from matching configuration, or None
         """
         parking_airlines = self.config.get('parking_airlines', {})
 
-        if self.airport_icao in parking_airlines:
-            airport_config = parking_airlines[self.airport_icao]
+        if self.airport_icao not in parking_airlines:
+            return None
 
-            if parking_name in airport_config:
-                airlines = airport_config[parking_name]
-                if airlines:
-                    return random.choice(airlines)
+        airport_config = parking_airlines[self.airport_icao]
 
-            for pattern, airlines in airport_config.items():
-                if '#' in pattern:
-                    prefix = pattern.replace('#', '')
-                    if parking_name.startswith(prefix):
-                        if airlines:
-                            return random.choice(airlines)
+        # Priority 1: Check for exact match (specific gate override)
+        if parking_name in airport_config:
+            airlines = airport_config[parking_name]
+            if airlines:
+                logger.debug(f"Gate {parking_name}: Using specific assignment -> {airlines}")
+                return random.choice(airlines)
+
+        # Priority 2: Check for range matches
+        for pattern, airlines in airport_config.items():
+            if '-' in pattern and '#' not in pattern:
+                # This is a range pattern
+                expanded_gates = self._expand_gate_range(pattern)
+                if parking_name in expanded_gates:
+                    if airlines:
+                        logger.debug(f"Gate {parking_name}: Matched range '{pattern}' -> {airlines}")
+                        return random.choice(airlines)
+
+        # Priority 3: Check for wildcard matches
+        for pattern, airlines in airport_config.items():
+            if '#' in pattern:
+                prefix = pattern.replace('#', '')
+                if parking_name.startswith(prefix):
+                    if airlines:
+                        logger.debug(f"Gate {parking_name}: Matched wildcard '{pattern}' -> {airlines}")
+                        return random.choice(airlines)
 
         return None
 
@@ -365,86 +455,261 @@ class BaseScenario(ABC):
         else:
             return random.choice(COMMON_JETS)
 
-    def _create_departure_aircraft(self, parking_spot, destination: str = None,
-                                   callsign: str = None, aircraft_type: str = None) -> Aircraft:
-        """Create a departure aircraft at a parking spot"""
-        if parking_spot.name in self.used_parking_spots:
-            logger.warning(f"Parking spot {parking_spot.name} is already in use, skipping")
+    def _extract_sid_from_route(self, api_route: str) -> str:
+        """
+        Extract the SID from an API route string
+
+        Args:
+            api_route: Route string from API (e.g., "DCT XMRKS" or "RDRNR3 XMRKS J100")
+
+        Returns:
+            SID name if found, None otherwise
+        """
+        if not api_route or not self.cifp_parser:
             return None
 
-        self.used_parking_spots.add(parking_spot.name)
+        route_parts = api_route.strip().split()
+        if not route_parts:
+            return None
+
+        # Get all available SIDs from CIFP
+        known_sids = self.cifp_parser.get_available_sids()
+
+        # Check first few elements for a known SID
+        for part in route_parts[:3]:  # Check first 3 elements
+            if part.upper() in [sid.upper() for sid in known_sids]:
+                return part.upper()
+
+        return None
+
+    def _validate_route_for_runways(self, api_route: str, active_runways: List[str] = None,
+                                     manual_sids: List[str] = None) -> bool:
+        """
+        Validate if an API route's SID matches the active runways
+
+        Args:
+            api_route: Route string from API
+            active_runways: List of active runway designators
+            manual_sids: Optional list of specific SIDs to allow
+
+        Returns:
+            True if route is valid for the runway configuration, False otherwise
+        """
+        # If CIFP SIDs are not being filtered, all routes are valid
+        if not self.cifp_parser or (not active_runways and not manual_sids):
+            return True
+
+        # Extract SID from the route
+        sid_in_route = self._extract_sid_from_route(api_route)
+
+        # If no SID in route, it's valid (DCT routes are allowed)
+        if not sid_in_route:
+            logger.debug(f"No SID found in route '{api_route}', accepting as valid")
+            return True
+
+        # If manual SIDs specified, check against those
+        if manual_sids:
+            is_valid = sid_in_route.upper() in [s.upper() for s in manual_sids]
+            if is_valid:
+                logger.debug(f"Route SID '{sid_in_route}' matches manual SID list")
+            else:
+                logger.debug(f"Route SID '{sid_in_route}' not in manual SID list {manual_sids}")
+            return is_valid
+
+        # Otherwise, check if SID is valid for active runways
+        if active_runways:
+            sid_runways = self.cifp_parser.get_runways_for_departure(sid_in_route)
+            if not sid_runways:
+                logger.debug(f"No runway data found for SID '{sid_in_route}', accepting as valid")
+                return True
+
+            # Check if any active runway matches the SID's runways
+            for active_rwy in active_runways:
+                for sid_rwy in sid_runways:
+                    # Normalize runway formats (remove leading zeros)
+                    active_normalized = active_rwy.lstrip('0') or '0'
+                    sid_normalized = sid_rwy.lstrip('0') or '0'
+                    if active_normalized == sid_normalized or active_rwy == sid_rwy:
+                        logger.debug(f"Route SID '{sid_in_route}' valid for runway {active_rwy}")
+                        return True
+
+            logger.debug(f"Route SID '{sid_in_route}' (runways: {sid_runways}) does not match active runways {active_runways}")
+            return False
+
+        return True
+
+    def _get_cifp_sid_route(self, active_runways: List[str] = None,
+                           manual_sids: List[str] = None) -> str:
+        """
+        Get a CIFP SID route based on active runways or manual SID specification
+
+        Args:
+            active_runways: List of active runway designators (e.g., ['08', '26'])
+            manual_sids: Optional list of specific SIDs to use
+
+        Returns:
+            SID route string (e.g., "RDRNR3") or None if no SID available
+        """
+        available_sids = []
+
+        # If manual SIDs are specified, use those
+        if manual_sids and len(manual_sids) > 0:
+            available_sids = manual_sids
+            logger.debug(f"Using manual SIDs: {', '.join(manual_sids)}")
+        # Otherwise, filter by active runways
+        elif active_runways and len(active_runways) > 0:
+            # Get SIDs for each active runway
+            for runway in active_runways:
+                runway_sids = self.cifp_parser.get_sids_for_runway(runway)
+                available_sids.extend(runway_sids)
+
+            # Remove duplicates
+            available_sids = list(set(available_sids))
+
+            if available_sids:
+                logger.debug(f"Found {len(available_sids)} SIDs for runways {', '.join(active_runways)}: {', '.join(available_sids)}")
+            else:
+                logger.warning(f"No SIDs found for runways {', '.join(active_runways)}")
+        else:
+            logger.warning("No active runways or manual SIDs specified for SID selection")
+            return None
+
+        # Randomly select a SID from available options
+        if available_sids:
+            selected_sid = random.choice(available_sids)
+            logger.debug(f"Selected SID: {selected_sid}")
+            return selected_sid
+
+        return None
+
+    def _prepare_departure_flight_pool(self, active_runways: List[str] = None,
+                                        enable_cifp_sids: bool = False,
+                                        manual_sids: List[str] = None):
+        """
+        Prepare the pool of departure flights from cached data
+
+        Args:
+            active_runways: List of active runway names
+            enable_cifp_sids: Whether to filter by SID/runway compatibility
+            manual_sids: Manual SID list if specified
+        """
+        # Start with cached departures
+        valid_flights = filter_valid_flights(self.cached_flights['departures'])
+        logger.info(f"Filtered {len(valid_flights)} valid departures from {len(self.cached_flights['departures'])} cached")
+
+        # Apply SID filtering if enabled
+        if enable_cifp_sids and self.cifp_parser and active_runways:
+            available_sids = manual_sids if manual_sids else self.cifp_parser.get_available_sids()
+            valid_flights = filter_departures_by_sid(valid_flights, available_sids, active_runways)
+            logger.info(f"After SID filtering: {len(valid_flights)} departures remain")
+
+        self.departure_flight_pool = valid_flights
+
+    def _get_next_departure_flight(self, parking_spot_name: str = None) -> Dict:
+        """
+        Get the next departure flight from the pool
+
+        Args:
+            parking_spot_name: Optional parking spot name for airline matching
+
+        Returns:
+            Flight dictionary or None if pool is empty
+        """
+        if not self.departure_flight_pool:
+            # Pool depleted, fetch more
+            logger.warning("Departure flight pool depleted, fetching more from API...")
+            additional_flights = self.api_client.fetch_departures(self.airport_icao, limit=50)
+            if additional_flights:
+                valid_flights = filter_valid_flights(additional_flights)
+                self.departure_flight_pool.extend(valid_flights)
+                logger.info(f"Added {len(valid_flights)} more departures to pool")
+            else:
+                logger.error("Failed to fetch additional departures from API")
+                return None
+
+        # If parking spot has airline preference, try to match
+        if parking_spot_name:
+            parking_airline = self._get_airline_for_parking(parking_spot_name)
+            if parking_airline:
+                # Try to find flight from preferred airline
+                for i, flight in enumerate(self.departure_flight_pool):
+                    if flight.get('operator') == parking_airline:
+                        return self.departure_flight_pool.pop(i)
+
+        # Return first available flight
+        return self.departure_flight_pool.pop(0) if self.departure_flight_pool else None
+
+    def _create_departure_aircraft(self, parking_spot, destination: str = None,
+                                   callsign: str = None, aircraft_type: str = None,
+                                   active_runways: List[str] = None, enable_cifp_sids: bool = False,
+                                   manual_sids: List[str] = None) -> Aircraft:
+        """Create a departure aircraft at a parking spot using cached flight data"""
+        # Thread-safe parking spot reservation
+        with self.parking_lock:
+            if parking_spot.name in self.used_parking_spots:
+                logger.warning(f"Parking spot {parking_spot.name} is already in use, skipping")
+                return None
+            self.used_parking_spots.add(parking_spot.name)
+
         logger.debug(f"Assigned parking spot: {parking_spot.name}")
 
-        if destination is None:
-            destination = self._get_random_destination(exclude=self.airport_icao)
+        # Get flight from pool
+        flight_data = self._get_next_departure_flight(parking_spot.name)
 
-        flight_plan = self.api_client.get_random_flight_plan(self.airport_icao, destination)
+        if not flight_data:
+            logger.error("No flight data available for departure aircraft")
+            with self.parking_lock:
+                self.used_parking_spots.discard(parking_spot.name)
+            return None
 
+        # Extract data from API flight
+        raw_route = flight_data.get('route', '')
+        route = clean_route_string(raw_route)
+        destination = destination or flight_data.get('arrivalAirport', self._get_random_destination())
+        api_callsign = flight_data.get('aircraftIdentification', '')
+        api_aircraft_type = flight_data.get('aircraftType', 'B738')
+
+        # Calculate cruise altitude from requested altitude or default
+        requested_alt = flight_data.get('requestedAltitude') or flight_data.get('assignedAltitude')
+        if requested_alt:
+            cruise_altitude = str(int(float(requested_alt)))
+        else:
+            cruise_altitude = '35000'
+
+        # Calculate cruise speed
+        cruise_speed_str = flight_data.get('requestedAirspeed')
+        if cruise_speed_str:
+            try:
+                cruise_speed = int(float(cruise_speed_str))
+            except (ValueError, TypeError):
+                cruise_speed = self.api_client._calculate_cruise_speed(api_aircraft_type)
+        else:
+            cruise_speed = self.api_client._calculate_cruise_speed(api_aircraft_type)
+
+        # Use provided parameters or API data
+        aircraft_type = aircraft_type or api_aircraft_type
+
+        # Determine callsign
         if callsign is None:
             parking_airline = self._get_airline_for_parking(parking_spot.name)
             if parking_airline:
                 callsign = self._generate_callsign(airline=parking_airline)
+            elif api_callsign and api_callsign.strip():
+                callsign = api_callsign
             else:
-                callsign = flight_plan.get('callsign') or self._generate_callsign()
+                callsign = self._generate_callsign()
 
-        if callsign in self.used_callsigns:
-            parking_airline = self._get_airline_for_parking(parking_spot.name)
-            callsign = self._generate_callsign(airline=parking_airline)
-
-        self.used_callsigns.add(callsign)
-
-        if aircraft_type is None:
-            aircraft_type = flight_plan['aircraft_type']
-
-        ground_altitude = self.geojson_parser.field_elevation
-
-        aircraft = Aircraft(
-            callsign=callsign,
-            aircraft_type=aircraft_type,
-            latitude=parking_spot.latitude,
-            longitude=parking_spot.longitude,
-            altitude=ground_altitude,
-            heading=parking_spot.heading,
-            ground_speed=0,
-            departure=self.airport_icao,
-            arrival=destination,
-            route=flight_plan['route'],
-            cruise_altitude=flight_plan['altitude'],
-            cruise_speed=flight_plan.get('cruise_speed'),
-            flight_rules="I",
-            engine_type="J",
-            parking_spot_name=parking_spot.name
-        )
-
-        return aircraft
-
-    def _create_ga_aircraft(self, parking_spot, destination: str = None) -> Aircraft:
-        """Create a GA (general aviation) aircraft"""
-        if parking_spot.name in self.used_parking_spots:
-            logger.warning(f"Parking spot {parking_spot.name} is already in use, skipping")
-            return None
-
-        self.used_parking_spots.add(parking_spot.name)
-        logger.debug(f"Assigned parking spot: {parking_spot.name}")
-
-        callsign = self._generate_ga_callsign()
-        self.used_callsigns.add(callsign)
-
-        aircraft_type = self._get_random_aircraft_type(is_ga=True)
-
-        if '/' not in aircraft_type:
-            aircraft_type = f"{aircraft_type}/G"
+        # Thread-safe callsign assignment - ensure uniqueness
+        with self.callsign_lock:
+            while callsign in self.used_callsigns:
+                parking_airline = self._get_airline_for_parking(parking_spot.name)
+                if parking_airline:
+                    callsign = self._generate_callsign(airline=parking_airline)
+                else:
+                    callsign = self._generate_callsign()
+            self.used_callsigns.add(callsign)
 
         ground_altitude = self.geojson_parser.field_elevation
-
-        if destination is None:
-            destination = self._get_random_destination(exclude=self.airport_icao, less_common=True)
-
-        cruise_altitude = random.randint(3000, 8000)
-        route = f"DCT"
-
-        # Calculate cruise speed based on aircraft type
-        cruise_speed = self.api_client._calculate_cruise_speed(aircraft_type)
 
         aircraft = Aircraft(
             callsign=callsign,
@@ -457,14 +722,182 @@ class BaseScenario(ABC):
             departure=self.airport_icao,
             arrival=destination,
             route=route,
-            cruise_altitude=str(cruise_altitude),
+            cruise_altitude=cruise_altitude,
             cruise_speed=cruise_speed,
-            flight_rules="I",
-            engine_type="P",
-            parking_spot_name=parking_spot.name
+            flight_rules=flight_data.get('initialFlightRules', 'I')[0] if flight_data.get('initialFlightRules') else 'I',
+            engine_type="J",
+            parking_spot_name=parking_spot.name,
+            # Additional API fields
+            gufi=flight_data.get('gufi'),
+            registration=flight_data.get('registration'),
+            operator=flight_data.get('operator'),
+            estimated_arrival_time=flight_data.get('estimatedArrivalTime'),
+            wake_turbulence=flight_data.get('wakeTurbulence')
         )
 
         return aircraft
+
+    def _prepare_ga_flight_pool(self):
+        """Prepare pool of GA flights from cached departure data"""
+        # Filter for GA aircraft (N-number callsigns)
+        valid_flights = filter_valid_flights(self.cached_flights['departures'])
+        ga_flights, _ = categorize_flights(valid_flights)
+
+        self.ga_flight_pool = ga_flights
+        logger.info(f"Prepared GA flight pool with {len(ga_flights)} aircraft")
+
+    def _get_next_ga_flight(self) -> Dict:
+        """Get next GA flight from pool"""
+        if not hasattr(self, 'ga_flight_pool'):
+            self._prepare_ga_flight_pool()
+
+        if not self.ga_flight_pool:
+            # Try to fetch more
+            logger.warning("GA flight pool depleted, fetching more...")
+            additional_flights = self.api_client.fetch_departures(self.airport_icao, limit=50)
+            if additional_flights:
+                valid_flights = filter_valid_flights(additional_flights)
+                ga_flights, _ = categorize_flights(valid_flights)
+                self.ga_flight_pool.extend(ga_flights)
+                logger.info(f"Added {len(ga_flights)} more GA flights to pool")
+
+        return self.ga_flight_pool.pop(0) if self.ga_flight_pool else None
+
+    def _create_ga_aircraft(self, parking_spot, destination: str = None) -> Aircraft:
+        """Create a GA (general aviation) aircraft using API data"""
+        if parking_spot.name in self.used_parking_spots:
+            logger.warning(f"Parking spot {parking_spot.name} is already in use, skipping")
+            return None
+
+        self.used_parking_spots.add(parking_spot.name)
+        logger.debug(f"Assigned parking spot: {parking_spot.name}")
+
+        # Try to get GA flight from API
+        flight_data = self._get_next_ga_flight()
+
+        if flight_data:
+            # Use API data
+            callsign = flight_data.get('aircraftIdentification', self._generate_ga_callsign())
+            aircraft_type = flight_data.get('aircraftType', 'C172')
+            destination = destination or flight_data.get('arrivalAirport', self._get_random_destination(exclude=self.airport_icao, less_common=True))
+            raw_route = flight_data.get('route', 'DCT')
+            route = clean_route_string(raw_route) if raw_route != 'DCT' else 'DCT'
+
+            # Get altitude and speed from API
+            requested_alt = flight_data.get('requestedAltitude') or flight_data.get('assignedAltitude')
+            if requested_alt:
+                cruise_altitude = str(int(float(requested_alt)))
+            else:
+                cruise_altitude = str(random.randint(3000, 8000))
+
+            cruise_speed_str = flight_data.get('requestedAirspeed')
+            if cruise_speed_str:
+                try:
+                    cruise_speed = int(float(cruise_speed_str))
+                except (ValueError, TypeError):
+                    cruise_speed = self.api_client._calculate_cruise_speed(aircraft_type)
+            else:
+                cruise_speed = self.api_client._calculate_cruise_speed(aircraft_type)
+
+            flight_rules = flight_data.get('initialFlightRules', 'I')[0] if flight_data.get('initialFlightRules') else 'I'
+            gufi = flight_data.get('gufi')
+            registration = flight_data.get('registration')
+            operator = flight_data.get('operator')
+            estimated_arrival_time = flight_data.get('estimatedArrivalTime')
+            wake_turbulence = flight_data.get('wakeTurbulence')
+        else:
+            # Fallback to generated GA aircraft
+            logger.warning("No GA flight data available, generating manually")
+            callsign = self._generate_ga_callsign()
+            aircraft_type = self._get_random_aircraft_type(is_ga=True)
+            destination = destination or self._get_random_destination(exclude=self.airport_icao, less_common=True)
+            route = 'DCT'
+            cruise_altitude = str(random.randint(3000, 8000))
+            cruise_speed = self.api_client._calculate_cruise_speed(aircraft_type)
+            flight_rules = 'I'
+            gufi = None
+            registration = None
+            operator = None
+            estimated_arrival_time = None
+            wake_turbulence = 'L'
+
+        # Ensure callsign uniqueness
+        with self.callsign_lock:
+            while callsign in self.used_callsigns:
+                callsign = self._generate_ga_callsign()
+            self.used_callsigns.add(callsign)
+
+        # Ensure equipment suffix
+        if '/' not in aircraft_type:
+            aircraft_type = f"{aircraft_type}/G"
+
+        ground_altitude = self.geojson_parser.field_elevation
+
+        aircraft = Aircraft(
+            callsign=callsign,
+            aircraft_type=aircraft_type,
+            latitude=parking_spot.latitude,
+            longitude=parking_spot.longitude,
+            altitude=ground_altitude,
+            heading=parking_spot.heading,
+            ground_speed=0,
+            departure=self.airport_icao,
+            arrival=destination,
+            route=route,
+            cruise_altitude=cruise_altitude,
+            cruise_speed=cruise_speed,
+            flight_rules=flight_rules,
+            engine_type="P",
+            parking_spot_name=parking_spot.name,
+            gufi=gufi,
+            registration=registration,
+            operator=operator,
+            estimated_arrival_time=estimated_arrival_time,
+            wake_turbulence=wake_turbulence
+        )
+
+        return aircraft
+
+    def _prepare_arrival_flight_pool(self, waypoint: str = None, star_name: str = None):
+        """
+        Prepare the pool of arrival flights from cached data
+
+        Args:
+            waypoint: Optional waypoint to filter by
+            star_name: Optional STAR name to filter by
+        """
+        # Start with cached arrivals
+        valid_flights = filter_valid_flights(self.cached_flights['arrivals'])
+        logger.info(f"Filtered {len(valid_flights)} valid arrivals from {len(self.cached_flights['arrivals'])} cached")
+
+        # Apply waypoint filtering if specified
+        if waypoint:
+            valid_flights = filter_arrivals_by_waypoint(valid_flights, waypoint, star_name)
+            logger.info(f"After waypoint filtering ({waypoint}): {len(valid_flights)} arrivals remain")
+
+        self.arrival_flight_pool = valid_flights
+
+    def _get_next_arrival_flight(self) -> Dict:
+        """
+        Get the next arrival flight from the pool
+
+        Returns:
+            Flight dictionary or None if pool is empty
+        """
+        if not self.arrival_flight_pool:
+            # Pool depleted, fetch more
+            logger.warning("Arrival flight pool depleted, fetching more from API...")
+            additional_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=50)
+            if additional_flights:
+                valid_flights = filter_valid_flights(additional_flights)
+                self.arrival_flight_pool.extend(valid_flights)
+                logger.info(f"Added {len(valid_flights)} more arrivals to pool")
+            else:
+                logger.error("Failed to fetch additional arrivals from API")
+                return None
+
+        # Return first available flight
+        return self.arrival_flight_pool.pop(0) if self.arrival_flight_pool else None
 
     def get_aircraft(self) -> List[Aircraft]:
         """Get generated aircraft list"""

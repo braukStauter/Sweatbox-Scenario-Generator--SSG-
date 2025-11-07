@@ -554,6 +554,7 @@ class AccordionSidebar(tk.Frame):
             title,
             on_select=lambda i: self._on_item_select(i, category_id)
         )
+        item.category_id = category_id  # Store category_id on the item for easy access
         item.pack(fill='x', pady=1)
         self.items.append(item)
         return item

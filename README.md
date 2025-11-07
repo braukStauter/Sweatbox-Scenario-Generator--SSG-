@@ -89,6 +89,15 @@ Modify the `config.json` file to assign specific airlines to parking spots:
 - Repeat airline codes to increase probability
 - `["AAL", "AAL", "DAL"]` = 67% AAL, 33% DAL
 
+**Gate 'Blocking' Support:**
+```json
+Mixed Terminal with Overrides:
+  "E1-E20": ["ASA", "ACA"],   // Most E gates = Alaska/Air Canada
+  "E5": ["JBU"],              // E5 dedicated to JetBlue
+  "E10": ["JBU"],             // E10 dedicated to JetBlue
+  "E#": ["FFT"]               // Any other E gates = Frontier
+```
+
 ### GA (General Aviation) Parking
 
 Parking spots with "GA" in the name automatically:

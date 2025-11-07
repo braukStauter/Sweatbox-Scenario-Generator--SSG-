@@ -8,6 +8,7 @@ from typing import List, Tuple
 from scenarios.base_scenario import BaseScenario
 from models.aircraft import Aircraft
 from models.spawn_delay_mode import SpawnDelayMode
+from utils.flight_data_filter import clean_route_string
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,17 @@ class TraconArrivalsScenario(BaseScenario):
         """
         # Reset tracking for new generation
         self._reset_tracking()
+
+        # Prepare arrival flight pool filtered by waypoints if specified
+        if arrival_waypoints:
+            # Use first waypoint for filtering (could be enhanced to support multiple)
+            waypoint_parts = arrival_waypoints[0].split('.')
+            waypoint_name = waypoint_parts[0] if waypoint_parts else None
+            star_name = waypoint_parts[1] if len(waypoint_parts) > 1 else None
+            logger.info(f"Preparing arrival flight pool filtered by waypoint: {waypoint_name}.{star_name}")
+            self._prepare_arrival_flight_pool(waypoint_name, star_name)
+        else:
+            self._prepare_arrival_flight_pool()
 
         # Setup difficulty assignment
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
@@ -146,19 +158,52 @@ class TraconArrivalsScenario(BaseScenario):
         Returns:
             Aircraft object
         """
-        # Get random departure airport and flight plan
-        departure = self._get_random_destination(exclude=self.airport_icao)
-        flight_plan = self.api_client.get_random_flight_plan(departure, self.airport_icao)
+        # Get flight from pool
+        flight_data = self._get_next_arrival_flight()
+
+        if not flight_data:
+            logger.error("No flight data available for arrival aircraft at waypoint")
+            # Fallback to minimal aircraft data
+            flight_data = {
+                'departureAirport': self._get_random_destination(exclude=self.airport_icao),
+                'aircraftIdentification': self._generate_callsign(),
+                'aircraftType': 'B738',
+                'route': '',
+                'requestedAltitude': str(altitude_range[1]),
+                'requestedAirspeed': '250'
+            }
+
+        # Extract data from API flight
+        departure = flight_data.get('departureAirport', self._get_random_destination(exclude=self.airport_icao))
+        api_callsign = flight_data.get('aircraftIdentification', '')
+        api_aircraft_type = flight_data.get('aircraftType', 'B738')
+        api_route = flight_data.get('route', '')
+
+        # Calculate cruise altitude
+        requested_alt = flight_data.get('requestedAltitude') or flight_data.get('assignedAltitude')
+        if requested_alt:
+            cruise_altitude = str(int(float(requested_alt)))
+        else:
+            cruise_altitude = '35000'
+
+        # Calculate cruise speed
+        cruise_speed_str = flight_data.get('requestedAirspeed')
+        if cruise_speed_str:
+            try:
+                cruise_speed = int(float(cruise_speed_str))
+            except (ValueError, TypeError):
+                cruise_speed = self.api_client._calculate_cruise_speed(api_aircraft_type)
+        else:
+            cruise_speed = self.api_client._calculate_cruise_speed(api_aircraft_type)
 
         # Use callsign from API if available, otherwise generate
-        callsign = flight_plan.get('callsign') or self._generate_callsign()
+        callsign = api_callsign if api_callsign and api_callsign.strip() else self._generate_callsign()
 
-        # Ensure callsign is unique - if it's already used, generate a new one
-        if callsign in self.used_callsigns:
-            callsign = self._generate_callsign()
-
-        # Add callsign to used set
-        self.used_callsigns.add(callsign)
+        # Ensure callsign is unique
+        with self.callsign_lock:
+            while callsign in self.used_callsigns:
+                callsign = self._generate_callsign()
+            self.used_callsigns.add(callsign)
 
         # Determine altitude - STRICTLY ENFORCE CIFP CONSTRAINTS
         altitude = self._get_altitude_from_cifp(waypoint, altitude_range)
@@ -248,7 +293,7 @@ class TraconArrivalsScenario(BaseScenario):
 
         aircraft = Aircraft(
             callsign=callsign,
-            aircraft_type=flight_plan['aircraft_type'],
+            aircraft_type=api_aircraft_type,
             latitude=spawn_lat,      # Use calculated spawn position
             longitude=spawn_lon,      # Use calculated spawn position
             altitude=altitude,
@@ -257,11 +302,17 @@ class TraconArrivalsScenario(BaseScenario):
             departure=departure,
             arrival=self.airport_icao,
             route=route,
-            cruise_altitude=flight_plan['altitude'],
-            cruise_speed=flight_plan.get('cruise_speed'),
-            flight_rules="I",
+            cruise_altitude=cruise_altitude,
+            cruise_speed=cruise_speed,
+            flight_rules=flight_data.get('initialFlightRules', 'I')[0] if flight_data.get('initialFlightRules') else 'I',
             engine_type="J",
-            navigation_path=navigation_path  # Set Fix/Radial/Distance
+            navigation_path=navigation_path,  # Set Fix/Radial/Distance
+            # Additional API fields
+            gufi=flight_data.get('gufi'),
+            registration=flight_data.get('registration'),
+            operator=flight_data.get('operator'),
+            estimated_arrival_time=flight_data.get('estimatedArrivalTime'),
+            wake_turbulence=flight_data.get('wakeTurbulence')
         )
 
         logger.debug(f"Set navigation path for {callsign}: {navigation_path}")

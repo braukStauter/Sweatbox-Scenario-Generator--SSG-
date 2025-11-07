@@ -76,9 +76,9 @@ class ScenarioConfigScreen(tk.Frame):
                                   command=self.on_back, primary=False)
         back_button.pack(side='left')
 
-        self.generate_button = ThemedButton(footer, text="Generate",
-                                          command=self.on_generate, primary=True)
-        self.generate_button.pack(side='right')
+        self.next_generate_button = ThemedButton(footer, text="Next",
+                                          command=self.on_next_or_generate, primary=True)
+        self.next_generate_button.pack(side='right')
 
         # Copyright footer
         copyright_footer = Footer(content_area)
@@ -88,6 +88,8 @@ class ScenarioConfigScreen(tk.Frame):
         self.inputs = {}
         self.content_panels = {}
         self.current_panel = None
+        self.current_category_index = 0
+        self.category_order = []  # Will be populated based on scenario type
 
         # Initialize sidebar categories
         self._init_sidebar_categories()
@@ -110,28 +112,38 @@ class ScenarioConfigScreen(tk.Frame):
         has_arrivals = scenario_type in ['ground_mixed', 'tower_mixed', 'tracon_arrivals', 'tracon_mixed']
         has_tower_separation = scenario_type == 'tower_mixed'
 
+        # Build category order list for navigation
+        self.category_order = []
+
         # Category 1: Aircraft & Traffic (always shown)
         self.sidebar.add_item("Aircraft & Traffic", "aircraft_traffic")
+        self.category_order.append("aircraft_traffic")
 
         # Category 2: Runway & Airport (always shown, but content varies)
         self.sidebar.add_item("Runway & Airport", "runway_airport")
+        self.category_order.append("runway_airport")
 
         # Category 3: Timing & Spawning (always shown)
         self.sidebar.add_item("Timing & Spawning", "timing_spawning")
+        self.category_order.append("timing_spawning")
 
         # Category 4: Arrivals & Approach (only for scenarios with arrivals)
         if has_arrivals:
             self.sidebar.add_item("Arrivals & Approach", "arrivals_approach")
+            self.category_order.append("arrivals_approach")
 
         # Category 5: Departures & Climb (only for scenarios with departures)
         if has_departures:
             self.sidebar.add_item("Departures & Climb", "departures_climb")
+            self.category_order.append("departures_climb")
 
         # Category 6: Advanced Options (always shown for future expansion)
         self.sidebar.add_item("Advanced Options", "advanced")
+        self.category_order.append("advanced")
 
         # Category 7: Output & Export (always shown)
         self.sidebar.add_item("Output & Export", "output_export")
+        self.category_order.append("output_export")
 
         # Store scenario features for use in panel building
         self.scenario_has_departures = has_departures
@@ -151,6 +163,11 @@ class ScenarioConfigScreen(tk.Frame):
         panel = self.content_panels[category_id]
         panel.pack(fill='both', expand=True)
         self.current_panel = panel
+
+        # Update current category index and button text
+        if category_id in self.category_order:
+            self.current_category_index = self.category_order.index(category_id)
+            self._update_button_text()
 
     def _create_panel(self, category_id):
         """Create content panel for a category"""
@@ -301,10 +318,14 @@ class ScenarioConfigScreen(tk.Frame):
         )
         title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
 
+        # CIFP SID Configuration
+        self._add_cifp_sid_section(panel)
+        self._add_divider(panel)
+
         # Placeholder for future options
         placeholder = ThemedLabel(
             panel,
-            text="Departure options (SIDs, climb rates, initial altitudes, etc.) can be added here",
+            text="Additional departure options (climb rates, initial altitudes, etc.) can be added here",
             fg=DarkTheme.FG_DISABLED,
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
         )
@@ -733,6 +754,70 @@ class ScenarioConfigScreen(tk.Frame):
         )
         alt_hint.pack(anchor='w')
 
+    def _add_cifp_sid_section(self, parent):
+        """Add CIFP SID configuration section"""
+        section = ThemedFrame(parent)
+        section.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Enable CIFP SIDs checkbox
+        sid_header_frame = ThemedFrame(section)
+        sid_header_frame.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        enable_cifp_sids_var = tk.BooleanVar(value=True)
+
+        enable_cifp_checkbox = tk.Checkbutton(
+            sid_header_frame,
+            text="Use CIFP departure procedures (SIDs)",
+            variable=enable_cifp_sids_var,
+            bg=DarkTheme.BG_PRIMARY,
+            fg=DarkTheme.FG_PRIMARY,
+            selectcolor=DarkTheme.BG_TERTIARY,
+            activebackground=DarkTheme.BG_PRIMARY,
+            activeforeground=DarkTheme.FG_PRIMARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            cursor='hand2',
+            command=lambda: self._toggle_cifp_sid_inputs(enable_cifp_sids_var.get())
+        )
+        enable_cifp_checkbox.pack(anchor='w')
+        self.inputs['enable_cifp_sids'] = enable_cifp_sids_var
+
+        # Hint text (on separate line below checkbox)
+        cifp_hint = ThemedLabel(
+            section,
+            text="Filter API routes to only include SIDs that match active runways. Uncheck to accept any API route.",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        cifp_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Container for SID-specific options (shown by default)
+        self.cifp_sid_frame = ThemedFrame(section)
+        self.cifp_sid_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
+
+        # Manual SID specification (optional)
+        manual_sid_label = ThemedLabel(
+            self.cifp_sid_frame,
+            text="Specific SIDs to use (optional):",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
+        )
+        manual_sid_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        manual_sids_entry = ThemedEntry(
+            self.cifp_sid_frame,
+            placeholder="e.g., RDRNR3, CTZEN3 (leave blank for auto-selection)"
+        )
+        manual_sids_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+        self.inputs['manual_sids'] = manual_sids_entry
+
+        manual_sid_hint = ThemedLabel(
+            self.cifp_sid_frame,
+            text="Comma-separated list of SIDs. API routes will be filtered to only these SIDs. Leave blank to auto-filter by active runways.",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
+        )
+        manual_sid_hint.pack(anchor='w')
+
     # Toggle methods
 
     def _toggle_difficulty_inputs(self, enabled, frame, toggle_label):
@@ -764,6 +849,13 @@ class ScenarioConfigScreen(tk.Frame):
             )
         else:
             self.spawn_delay_frame.pack_forget()
+
+    def _toggle_cifp_sid_inputs(self, enabled):
+        """Show/hide CIFP SID configuration"""
+        if enabled:
+            self.cifp_sid_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
+        else:
+            self.cifp_sid_frame.pack_forget()
 
     def _update_spawn_delay_mode_inputs(self, mode):
         """Show/hide spawn delay inputs based on selected mode"""
@@ -808,6 +900,8 @@ class ScenarioConfigScreen(tk.Frame):
             first_item = self.sidebar.items[0]
             first_item.select()
             self.sidebar.selected_item = first_item
+            # Reset to first category
+            self.current_category_index = 0
             # Trigger category selection
             self.on_category_select("aircraft_traffic")
 
@@ -826,6 +920,45 @@ class ScenarioConfigScreen(tk.Frame):
     def on_back(self):
         """Handle back button click"""
         self.app_controller.show_screen('scenario_type')
+
+    def _update_button_text(self):
+        """Update button text based on current category"""
+        if not self.category_order:
+            return
+
+        # Check if we're on the last category (Output & Export)
+        is_last_category = self.current_category_index >= len(self.category_order) - 1
+
+        if is_last_category:
+            self.next_generate_button.config(text="Generate")
+        else:
+            self.next_generate_button.config(text="Next")
+
+    def on_next_or_generate(self):
+        """Handle Next/Generate button click"""
+        if not self.category_order:
+            return
+
+        # Check if we're on the last category
+        is_last_category = self.current_category_index >= len(self.category_order) - 1
+
+        if is_last_category:
+            # On last category - validate and generate
+            self.on_generate()
+        else:
+            # Navigate to next category
+            next_index = self.current_category_index + 1
+            if next_index < len(self.category_order):
+                next_category = self.category_order[next_index]
+
+                # Select the next sidebar item
+                for item in self.sidebar.items:
+                    if item.category_id == next_category:
+                        item.select()
+                        break
+
+                # Trigger category selection (which updates button text)
+                self.on_category_select(next_category)
 
     def on_generate(self):
         """Handle generate button click"""
@@ -850,14 +983,10 @@ class ScenarioConfigScreen(tk.Frame):
         # Get scenario type from stored value
         scenario_type = self.scenario_type
 
-        # Validate runways - required for scenarios with arrivals or TRACON
+        # Validate runways - required for all scenarios
         active_runways = config.get('active_runways', '').strip()
-        scenarios_requiring_runways = [
-            'ground_mixed', 'tower_mixed',
-            'tracon_arrivals', 'tracon_mixed'
-        ]
-        if not active_runways and scenario_type in scenarios_requiring_runways:
-            errors.append("Active runways are required for this scenario type")
+        if not active_runways:
+            errors.append("Active runways are required (needed for CIFP SID filtering and arrival procedures)")
 
         # Check if difficulty levels are enabled
         difficulty_enabled = config.get('enable_difficulty', False)

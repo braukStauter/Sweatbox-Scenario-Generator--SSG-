@@ -63,7 +63,8 @@ class Waypoint:
     name: str
     latitude: float
     longitude: float
-    arrival_name: str = None
+    arrival_name: str = None  # STAR name this waypoint belongs to
+    departure_name: str = None  # SID name this waypoint belongs to
     min_altitude: int = None
     max_altitude: int = None
     inbound_course: int = None  # Magnetic course inbound to this waypoint

@@ -13,7 +13,7 @@ from gui.screens.generation_screen import GenerationScreen
 
 from parsers.geojson_parser import GeoJSONParser
 from parsers.cifp_parser import CIFPParser
-from utils.api_client import FlightPlanAPIClient
+from utils.api_client import FlightDataAPIClient
 from generators.backup_scenario_generator import BackupScenarioGenerator
 
 from scenarios.ground_departures import GroundDeparturesScenario
@@ -52,8 +52,13 @@ class MainWindow(tk.Tk):
         self.scenario_type = None
         self.geojson_parser = None
         self.cifp_parser = None
-        self.api_client = FlightPlanAPIClient()
+        self.api_client = FlightDataAPIClient()
         self.airport_data_dir = Path("airport_data")
+
+        # Cached flight data
+        self.cached_departures = []
+        self.cached_arrivals = []
+        self.flight_cache_timestamp = None
 
         # Container for screens
         self.container = tk.Frame(self, bg=DarkTheme.BG_PRIMARY)
@@ -99,6 +104,7 @@ class MainWindow(tk.Tk):
     def _load_airport_data_thread(self, airport_icao):
         """Load airport data (runs in separate thread)"""
         try:
+            import time
             self.airport_icao = airport_icao
             logger.info(f"Selected airport: {airport_icao}")
 
@@ -118,6 +124,10 @@ class MainWindow(tk.Tk):
                 self.cifp_parser = None
                 logger.warning("CIFP data not found")
 
+            # Load flight data from API in parallel
+            logger.info("Pre-loading flight data from API...")
+            self._preload_flight_data(airport_icao)
+
             # Hide loading and show next screen (thread-safe)
             self.after(0, self._on_airport_data_loaded)
 
@@ -126,6 +136,51 @@ class MainWindow(tk.Tk):
             # Show error (thread-safe)
             error_msg = str(e)
             self.after(0, lambda msg=error_msg: self._on_airport_data_error(msg))
+
+    def _preload_flight_data(self, airport_icao):
+        """Pre-load flight data from API (called from background thread)"""
+        import time
+        import threading
+
+        # Containers for results
+        departures_result = [None]
+        arrivals_result = [None]
+
+        def fetch_departures():
+            try:
+                logger.info(f"Fetching 200 departures from {airport_icao}...")
+                departures_result[0] = self.api_client.fetch_departures(airport_icao, limit=200)
+                logger.info(f"Fetched {len(departures_result[0]) if departures_result[0] else 0} departures")
+            except Exception as e:
+                logger.error(f"Error fetching departures: {e}")
+                departures_result[0] = []
+
+        def fetch_arrivals():
+            try:
+                logger.info(f"Fetching 200 arrivals to {airport_icao}...")
+                arrivals_result[0] = self.api_client.fetch_arrivals(airport_icao, limit=200)
+                logger.info(f"Fetched {len(arrivals_result[0]) if arrivals_result[0] else 0} arrivals")
+            except Exception as e:
+                logger.error(f"Error fetching arrivals: {e}")
+                arrivals_result[0] = []
+
+        # Start both threads
+        dep_thread = threading.Thread(target=fetch_departures, daemon=True)
+        arr_thread = threading.Thread(target=fetch_arrivals, daemon=True)
+
+        dep_thread.start()
+        arr_thread.start()
+
+        # Wait for both to complete
+        dep_thread.join()
+        arr_thread.join()
+
+        # Store results
+        self.cached_departures = departures_result[0] if departures_result[0] else []
+        self.cached_arrivals = arrivals_result[0] if arrivals_result[0] else []
+        self.flight_cache_timestamp = time.time()
+
+        logger.info(f"Flight data pre-loading complete: {len(self.cached_departures)} departures, {len(self.cached_arrivals)} arrivals")
 
     def _on_airport_data_loaded(self):
         """Called when airport data is loaded successfully"""
@@ -256,6 +311,12 @@ class MainWindow(tk.Tk):
             if config.get('arrival_waypoints'):
                 arrival_waypoints = [w.strip().upper() for w in config['arrival_waypoints'].split(',')]
 
+            # Parse CIFP SID configuration
+            enable_cifp_sids = config.get('enable_cifp_sids', False)
+            manual_sids = []
+            if config.get('manual_sids'):
+                manual_sids = [s.strip().upper() for s in config['manual_sids'].split(',') if s.strip()]
+
             # Update progress
             self._update_progress("Creating scenario...")
 
@@ -277,7 +338,9 @@ class MainWindow(tk.Tk):
                 spawn_delay_mode,
                 delay_value,
                 total_session_minutes,
-                difficulty_config
+                difficulty_config,
+                enable_cifp_sids,
+                manual_sids
             )
 
             if not aircraft:
@@ -312,29 +375,35 @@ class MainWindow(tk.Tk):
 
     def _create_scenario(self):
         """Create scenario object based on type"""
+        # Prepare cached flights dictionary
+        cached_flights = {
+            'departures': self.cached_departures,
+            'arrivals': self.cached_arrivals
+        }
+
         if self.scenario_type == 'ground_departures':
             return GroundDeparturesScenario(
-                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client
+                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client, cached_flights
             )
         elif self.scenario_type == 'ground_mixed':
             return GroundMixedScenario(
-                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client
+                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client, cached_flights
             )
         elif self.scenario_type == 'tower_mixed':
             return TowerMixedScenario(
-                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client
+                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client, cached_flights
             )
         elif self.scenario_type == 'tracon_departures':
             return TraconDeparturesScenario(
-                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client
+                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client, cached_flights
             )
         elif self.scenario_type == 'tracon_arrivals':
             return TraconArrivalsScenario(
-                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client
+                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client, cached_flights
             )
         elif self.scenario_type == 'tracon_mixed':
             return TraconMixedScenario(
-                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client
+                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client, cached_flights
             )
         else:
             raise ValueError(f"Unknown scenario type: {self.scenario_type}")
@@ -342,22 +411,26 @@ class MainWindow(tk.Tk):
     def _generate_aircraft(self, scenario, num_departures, num_arrivals,
                           active_runways, separation_range, altitude_range,
                           delay_range, arrival_waypoints, spawn_delay_mode,
-                          delay_value, total_session_minutes, difficulty_config=None):
+                          delay_value, total_session_minutes, difficulty_config=None,
+                          enable_cifp_sids=False, manual_sids=None):
         """Generate aircraft based on scenario type"""
         if self.scenario_type == 'ground_departures':
             return scenario.generate(num_departures, spawn_delay_mode, delay_value,
-                                    total_session_minutes, None, difficulty_config)
+                                    total_session_minutes, None, difficulty_config,
+                                    active_runways, enable_cifp_sids, manual_sids)
         elif self.scenario_type == 'ground_mixed':
             return scenario.generate(num_departures, num_arrivals, active_runways,
                                     spawn_delay_mode, delay_value, total_session_minutes,
-                                    None, difficulty_config)
+                                    None, difficulty_config, enable_cifp_sids, manual_sids)
         elif self.scenario_type == 'tower_mixed':
             return scenario.generate(num_departures, num_arrivals, active_runways,
                                     separation_range, spawn_delay_mode, delay_value,
-                                    total_session_minutes, None, difficulty_config)
+                                    total_session_minutes, None, difficulty_config,
+                                    enable_cifp_sids, manual_sids)
         elif self.scenario_type == 'tracon_departures':
             return scenario.generate(num_departures, active_runways, spawn_delay_mode,
-                                    delay_value, total_session_minutes, None, difficulty_config)
+                                    delay_value, total_session_minutes, None, difficulty_config,
+                                    enable_cifp_sids, manual_sids)
         elif self.scenario_type == 'tracon_arrivals':
             return scenario.generate(num_arrivals, arrival_waypoints, altitude_range,
                                     delay_range, spawn_delay_mode, delay_value,
@@ -366,7 +439,7 @@ class MainWindow(tk.Tk):
             return scenario.generate(num_departures, num_arrivals, arrival_waypoints,
                                     altitude_range, delay_range, spawn_delay_mode,
                                     delay_value, total_session_minutes, None,
-                                    difficulty_config, active_runways)
+                                    difficulty_config, active_runways, enable_cifp_sids, manual_sids)
         else:
             raise ValueError(f"Unknown scenario type: {self.scenario_type}")
 

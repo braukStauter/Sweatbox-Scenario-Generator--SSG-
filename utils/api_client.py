@@ -1,28 +1,27 @@
 """
-API client for fetching flight plans
+API client for fetching real flight data from creativeshrimp.work.gd
 """
 import requests
-import random
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-class FlightPlanAPIClient:
-    """Client for fetching flight plans from the API"""
+class FlightDataAPIClient:
+    """Client for fetching real flight data from the Creative Shrimp API"""
 
-    BASE_URL = "https://flight-plans.csko.hu/v1/flight_plan"
+    BASE_URL = "http://creativeshrimp.work.gd:3000/flights"
 
     def __init__(self, cache_timeout: int = 3600):
         """
         Initialize the API client
 
         Args:
-            cache_timeout: How long to cache results in seconds
+            cache_timeout: How long to cache results in seconds (default: 1 hour)
         """
-        self.cache = {}
+        self.cache: Dict[str, tuple] = {}
         self.cache_timeout = cache_timeout
 
     def _calculate_cruise_speed(self, aircraft_type: str) -> int:
@@ -30,7 +29,7 @@ class FlightPlanAPIClient:
         Calculate typical cruise speed based on aircraft type
 
         Args:
-            aircraft_type: Aircraft type with optional equipment suffix (e.g., "B738/L")
+            aircraft_type: Aircraft type with optional equipment suffix (e.g., "B738")
 
         Returns:
             Cruise speed in knots
@@ -41,150 +40,90 @@ class FlightPlanAPIClient:
             DEFAULT_CRUISE_SPEED
         )
 
-        # Extract base aircraft type and equipment suffix
-        if '/' in aircraft_type:
-            base_type, equipment_suffix = aircraft_type.split('/', 1)
-        else:
-            base_type = aircraft_type
-            equipment_suffix = None
+        # Extract base aircraft type (remove equipment suffix if present)
+        base_type = aircraft_type.split('/')[0] if '/' in aircraft_type else aircraft_type
 
         # Try to find cruise speed in the mapping
         if base_type in AIRCRAFT_CRUISE_SPEEDS:
             return AIRCRAFT_CRUISE_SPEEDS[base_type]
 
-        # Fall back to equipment suffix default
-        if equipment_suffix and equipment_suffix in DEFAULT_CRUISE_SPEEDS_BY_SUFFIX:
-            return DEFAULT_CRUISE_SPEEDS_BY_SUFFIX[equipment_suffix]
-
         # Last resort: generic default
-        logger.info(f"Using default cruise speed for unknown aircraft type: {aircraft_type}")
+        logger.debug(f"Using default cruise speed for unknown aircraft type: {aircraft_type}")
         return DEFAULT_CRUISE_SPEED
 
-    def get_flight_plan(self, departure: str, arrival: str, retries: int = 3) -> Optional[Dict[str, Any]]:
+    def fetch_flights(
+        self,
+        departure: Optional[str] = None,
+        arrival: Optional[str] = None,
+        limit: int = 200,
+        retries: int = 3
+    ) -> Optional[List[Dict[str, Any]]]:
         """
-        Get a flight plan from departure to arrival
+        Fetch flights from the API
 
         Args:
-            departure: Departure airport ICAO code
-            arrival: Arrival airport ICAO code
+            departure: Departure airport ICAO code (use "any" for all departures)
+            arrival: Arrival airport ICAO code (use "any" for all arrivals)
+            limit: Maximum number of flights to request (API returns up to this many)
             retries: Number of retries if request fails
 
         Returns:
-            Dict with 'route', 'altitude', and 'aircraft_type' or None if not found
+            List of flight dictionaries or None if request fails
         """
-        cache_key = f"{departure}:{arrival}"
+        # Build cache key
+        dep = departure or "any"
+        arr = arrival or "any"
+        cache_key = f"{dep}:{arr}:{limit}"
 
         # Check cache
         if cache_key in self.cache:
             cached_data, timestamp = self.cache[cache_key]
             if time.time() - timestamp < self.cache_timeout:
+                logger.debug(f"Using cached data for {cache_key}")
                 return cached_data
+
+        # Build request parameters
+        params = {}
+        if departure:
+            params['departure'] = departure
+        if arrival:
+            params['arrival'] = arrival
 
         # Try to fetch from API
         for attempt in range(retries):
             try:
-                # Use a recent timestamp (last 90 days)
-                since = int(time.time()) - (90 * 24 * 3600)
+                logger.info(f"Fetching flights: departure={dep}, arrival={arr}, limit={limit} (attempt {attempt + 1}/{retries})")
 
-                params = {
-                    'departure': departure,
-                    'arrival': arrival,
-                    'since': since
-                }
-
-                response = requests.get(self.BASE_URL, params=params, timeout=10)
+                response = requests.get(self.BASE_URL, params=params, timeout=15)
 
                 if response.status_code == 200:
                     data = response.json()
 
-                    # Handle both list and dict responses
-                    plans_list = []
-
-                    if isinstance(data, list):
-                        plans_list = data
-                    elif isinstance(data, dict):
-                        # API returns dict with keys: 'routes', 'adapted_routes', 'most_recent'
-                        # Use 'most_recent' for individual flight plans
-                        if 'most_recent' in data and data['most_recent']:
-                            plans_list = data['most_recent']
-                        elif 'routes' in data and data['routes']:
-                            # Use aggregated routes if no individual plans
-                            plans_list = data['routes']
-                        elif 'plans' in data:
-                            plans_list = data['plans']
-                        elif 'results' in data:
-                            plans_list = data['results']
-                        elif 'data' in data:
-                            plans_list = data['data']
-                        else:
-                            # Single plan returned as dict
-                            plans_list = [data]
-
-                    # Check if we got any plans
-                    if plans_list and len(plans_list) > 0:
-                        # Pick a random plan from the results
-                        plan = random.choice(plans_list)
-
-                        # Extract route - field name varies by response type
-                        route = plan.get('route_text', plan.get('route', ''))
-
-                        # Extract altitude - convert to MSL in feet
-                        altitude = plan.get('assigned_altitude', plan.get('altitude', plan.get('max_altitude')))
-                        if altitude:
-                            if isinstance(altitude, int):
-                                # Already in feet, keep as is
-                                altitude = str(altitude)
-                            elif isinstance(altitude, str):
-                                # Check if it's in FL format (e.g., "FL350")
-                                if altitude.startswith('FL'):
-                                    fl_number = int(altitude[2:])
-                                    altitude = str(fl_number * 100)
-                                else:
-                                    # Assume it's already in feet
-                                    altitude = altitude
-                        else:
-                            altitude = '35000'  # Default 35,000 feet
-
-                        # Extract aircraft type and equipment qualifier
-                        aircraft_type = plan.get('aircraft_type', 'B738')
-                        equipment_qualifier = plan.get('equipment_qualifier', 'L')
-
-                        # Add equipment suffix to aircraft type
-                        if equipment_qualifier and '/' not in aircraft_type:
-                            aircraft_type = f"{aircraft_type}/{equipment_qualifier}"
-
-                        # Extract callsign
-                        callsign = plan.get('aircraft_id', None)
-
-                        # Extract cruise speed from API or calculate based on aircraft type
-                        cruise_speed = plan.get('cruise_speed', plan.get('cruiseSpeed', plan.get('cruise_tas')))
-                        if cruise_speed:
-                            # Convert to int if it's a string
-                            try:
-                                cruise_speed = int(cruise_speed)
-                            except (ValueError, TypeError):
-                                cruise_speed = None
-
-                        # If no cruise speed from API, calculate based on aircraft type
-                        if not cruise_speed:
-                            cruise_speed = self._calculate_cruise_speed(aircraft_type)
-
-                        result = {
-                            'route': route,
-                            'altitude': altitude,
-                            'aircraft_type': aircraft_type,
-                            'callsign': callsign,
-                            'cruise_speed': cruise_speed
-                        }
-
-                        # Cache the result
-                        self.cache[cache_key] = (result, time.time())
-
-                        logger.info(f"Fetched flight plan {departure} -> {arrival}: {result}")
-                        return result
-                    else:
-                        logger.warning(f"No flight plans found for {departure} -> {arrival}")
+                    # Validate response structure
+                    if not isinstance(data, dict) or 'success' not in data:
+                        logger.error(f"Invalid API response structure: {data}")
                         return None
+
+                    if not data.get('success'):
+                        logger.warning(f"API returned success=false: {data}")
+                        return None
+
+                    # Extract flight data
+                    flights = data.get('data', [])
+
+                    if not flights:
+                        logger.warning(f"No flights found for {dep} -> {arr}")
+                        return []
+
+                    # Limit to requested count
+                    flights = flights[:limit]
+
+                    logger.info(f"Fetched {len(flights)} flights from API ({dep} -> {arr})")
+
+                    # Cache the result
+                    self.cache[cache_key] = (flights, time.time())
+
+                    return flights
 
                 elif response.status_code == 429:
                     # Rate limited, wait and retry
@@ -193,49 +132,56 @@ class FlightPlanAPIClient:
                     time.sleep(wait_time)
                 else:
                     logger.warning(f"API returned status code {response.status_code}")
-                    return None
+                    if attempt < retries - 1:
+                        time.sleep(1)
 
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Error fetching flight plan (attempt {attempt + 1}/{retries}): {e}")
+            except requests.exceptions.Timeout:
+                logger.error(f"Request timeout (attempt {attempt + 1}/{retries})")
                 if attempt < retries - 1:
-                    time.sleep(1)
+                    time.sleep(2)
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Network error fetching flights (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    time.sleep(2)
             except (KeyError, ValueError, TypeError) as e:
-                logger.error(f"Error parsing flight plan response (attempt {attempt + 1}/{retries}): {e}")
+                logger.error(f"Error parsing API response (attempt {attempt + 1}/{retries}): {e}")
                 if attempt < retries - 1:
                     time.sleep(1)
             except Exception as e:
-                logger.error(f"Unexpected error fetching flight plan (attempt {attempt + 1}/{retries}): {e}")
+                logger.error(f"Unexpected error fetching flights (attempt {attempt + 1}/{retries}): {e}")
                 if attempt < retries - 1:
                     time.sleep(1)
 
+        logger.error(f"Failed to fetch flights after {retries} attempts")
         return None
 
-    def get_random_flight_plan(self, departure: str, arrival: str) -> Dict[str, Any]:
+    def fetch_departures(self, airport_icao: str, limit: int = 200) -> Optional[List[Dict[str, Any]]]:
         """
-        Get a flight plan or generate a fallback if API fails
+        Fetch all departures from a specific airport
 
         Args:
-            departure: Departure airport ICAO code
-            arrival: Arrival airport ICAO code
+            airport_icao: Airport ICAO code
+            limit: Maximum number of flights to fetch
 
         Returns:
-            Dict with 'route', 'altitude', and 'aircraft_type'
+            List of departure flight dictionaries or None if request fails
         """
-        result = self.get_flight_plan(departure, arrival)
+        return self.fetch_flights(departure=airport_icao, arrival=None, limit=limit)
 
-        if result:
-            return result
+    def fetch_arrivals(self, airport_icao: str, limit: int = 200) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch all arrivals to a specific airport
 
-        # Fallback to generated data
-        logger.info(f"Using fallback flight plan for {departure} -> {arrival}")
+        Args:
+            airport_icao: Airport ICAO code
+            limit: Maximum number of flights to fetch
 
-        from utils.constants import COMMON_JETS
+        Returns:
+            List of arrival flight dictionaries or None if request fails
+        """
+        return self.fetch_flights(departure=None, arrival=airport_icao, limit=limit)
 
-        aircraft_type = random.choice(COMMON_JETS) + '/L'  # Add /L suffix for jets
-        return {
-            'route': 'DCT',  # Direct
-            'altitude': random.choice(['31000', '33000', '35000', '37000', '39000']),
-            'aircraft_type': aircraft_type,
-            'callsign': None,  # Will be generated by scenario
-            'cruise_speed': self._calculate_cruise_speed(aircraft_type)
-        }
+    def clear_cache(self):
+        """Clear all cached flight data"""
+        self.cache.clear()
+        logger.info("Flight data cache cleared")

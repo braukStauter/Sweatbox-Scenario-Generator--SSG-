@@ -21,7 +21,8 @@ class TraconMixedScenario(BaseScenario):
                  delay_range: Tuple[int, int] = (4, 7),
                  spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
                  delay_value: str = None, total_session_minutes: int = None,
-                 spawn_delay_range: str = None, difficulty_config=None, active_runways: List[str] = None) -> List[Aircraft]:
+                 spawn_delay_range: str = None, difficulty_config=None, active_runways: List[str] = None,
+                 enable_cifp_sids: bool = False, manual_sids: List[str] = None) -> List[Aircraft]:
         """
         Generate TRACON mixed scenario
 
@@ -39,12 +40,29 @@ class TraconMixedScenario(BaseScenario):
             spawn_delay_range: LEGACY parameter - kept for backward compatibility
             difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
             active_runways: List of active runway designators
+            enable_cifp_sids: Whether to use CIFP SID procedures
+            manual_sids: Optional list of specific SIDs to use
 
         Returns:
             List of Aircraft objects
         """
         # Reset tracking for new generation
         self._reset_tracking()
+
+        # Prepare flight pools from cached data
+        logger.info("Preparing flight pools...")
+        self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids)
+        self._prepare_ga_flight_pool()
+
+        # For arrivals, prepare pool filtered by waypoints if specified
+        if arrival_waypoints:
+            # Use first waypoint for filtering (could be enhanced to support multiple)
+            waypoint_parts = arrival_waypoints[0].split('.')
+            waypoint_name = waypoint_parts[0] if waypoint_parts else None
+            star_name = waypoint_parts[1] if len(waypoint_parts) > 1 else None
+            self._prepare_arrival_flight_pool(waypoint_name, star_name)
+        else:
+            self._prepare_arrival_flight_pool()
 
         # Setup difficulty assignment
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
@@ -58,7 +76,8 @@ class TraconMixedScenario(BaseScenario):
 
         if num_departures > len(parking_spots):
             raise ValueError(
-                f"Cannot create {num_departures} aircraft with only {len(parking_spots)} parking spots available"
+                f"Cannot create {num_departures} departures - only {len(parking_spots)} parking spots available at {self.airport_icao}. "
+                f"Please reduce the number of departures to {len(parking_spots)} or fewer."
             )
 
         logger.info(f"Generating TRACON mixed scenario: {num_departures} departures, {num_arrivals} arrivals")
@@ -77,7 +96,12 @@ class TraconMixedScenario(BaseScenario):
                 logger.info(f"Creating GA aircraft for parking spot: {spot.name}")
                 aircraft = self._create_ga_aircraft(spot)
             else:
-                aircraft = self._create_departure_aircraft(spot)
+                aircraft = self._create_departure_aircraft(
+                    spot,
+                    active_runways=active_runways,
+                    enable_cifp_sids=enable_cifp_sids,
+                    manual_sids=manual_sids
+                )
 
             if aircraft is not None:
                 # Legacy mode: apply random spawn delay

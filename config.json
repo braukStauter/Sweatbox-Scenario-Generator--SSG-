@@ -2,7 +2,10 @@
   "parking_airlines": {
     "KPHX": {
       "A#": ["AAL"],
-      "B#": ["AAL"],
+      "B1-B11": ["AAL"],
+      "B12-B20": ["SWA"],
+      "B3": ["JBU"],
+      "B#": ["DAL"],
       "C#": ["SWA"],
       "D#": ["SWA"],
       "E#": ["ASA", "ACA", "UAL"],
@@ -11,5 +14,11 @@
       "F2": ["JBU"]
     }
   },
-  "_comment": "Use # as a wildcard. For example, 'A#' matches A1, A2, A3, A10, A11, etc. Specific parking names override wildcards."
+  "_comment_priority": "Priority order: Specific gates > Gate ranges > Wildcards",
+  "_comment_examples": {
+    "specific": "B3 will always be JBU (overrides B1-B11 range)",
+    "range": "B1-B11 assigns AAL to gates B1, B2, B4-B11 (B3 excluded by specific)",
+    "wildcard": "B# handles any B gates not covered by specific or range assignments",
+    "multiple_airlines": "E# randomly selects from ASA, ACA, or UAL for E gates"
+  }
 }

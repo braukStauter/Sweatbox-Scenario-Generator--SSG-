@@ -17,7 +17,9 @@ class GroundDeparturesScenario(BaseScenario):
 
     def generate(self, num_departures: int, spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
                  delay_value: str = None, total_session_minutes: int = None,
-                 spawn_delay_range: str = None, difficulty_config=None) -> List[Aircraft]:
+                 spawn_delay_range: str = None, difficulty_config=None,
+                 active_runways: List[str] = None, enable_cifp_sids: bool = False,
+                 manual_sids: List[str] = None) -> List[Aircraft]:
         """
         Generate ground departure aircraft
 
@@ -28,12 +30,20 @@ class GroundDeparturesScenario(BaseScenario):
             total_session_minutes: For TOTAL mode: total session length in minutes
             spawn_delay_range: LEGACY parameter - kept for backward compatibility
             difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
+            active_runways: List of active runway designators (e.g., ['08', '26'])
+            enable_cifp_sids: Whether to use CIFP SID procedures
+            manual_sids: Optional list of specific SIDs to use
 
         Returns:
             List of Aircraft objects
         """
         # Reset tracking for new generation
         self._reset_tracking()
+
+        # Prepare flight pools from cached data
+        logger.info("Preparing departure flight pool...")
+        self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids)
+        self._prepare_ga_flight_pool()
 
         # Setup difficulty assignment
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
@@ -47,38 +57,46 @@ class GroundDeparturesScenario(BaseScenario):
 
         if num_departures > len(parking_spots):
             raise ValueError(
-                f"Cannot create {num_departures} aircraft with only {len(parking_spots)} parking spots available"
+                f"Cannot create {num_departures} departures - only {len(parking_spots)} parking spots available at {self.airport_icao}. "
+                f"Please reduce the number of departures to {len(parking_spots)} or fewer."
             )
 
         logger.info(f"Generating {num_departures} departure aircraft with spawn_delay_mode={spawn_delay_mode.value}")
 
-        # Generate aircraft, trying more spots if needed
-        attempts = 0
-        max_attempts = len(parking_spots) * 2  # Allow retries
-        available_spots = parking_spots.copy()
+        # Randomize parking spots for variety
+        random.shuffle(parking_spots)
 
-        while len(self.aircraft) < num_departures and attempts < max_attempts and available_spots:
-            # Pick a random spot from available spots
-            spot = random.choice(available_spots)
-            available_spots.remove(spot)
+        # Generate aircraft sequentially (no need for threading since we're not making API calls per aircraft)
+        for i, spot in enumerate(parking_spots):
+            if len(self.aircraft) >= num_departures:
+                break
 
-            # Check if parking spot is for GA (has "GA" in the name)
-            if "GA" in spot.name.upper():
-                logger.info(f"Creating GA aircraft for parking spot: {spot.name}")
-                aircraft = self._create_ga_aircraft(spot)
-            else:
-                aircraft = self._create_departure_aircraft(spot)
+            try:
+                # Check if parking spot is for GA (has "GA" in the name)
+                if "GA" in spot.name.upper():
+                    logger.info(f"Creating GA aircraft for parking spot: {spot.name}")
+                    aircraft = self._create_ga_aircraft(spot)
+                else:
+                    aircraft = self._create_departure_aircraft(
+                        spot,
+                        active_runways=active_runways,
+                        enable_cifp_sids=enable_cifp_sids,
+                        manual_sids=manual_sids
+                    )
 
-            if aircraft is not None:
-                # Legacy mode: apply random spawn delay
-                if spawn_delay_range and not delay_value:
-                    aircraft.spawn_delay = random.randint(min_delay, max_delay)
-                    logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
-                # Assign difficulty level
-                difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
-                self.aircraft.append(aircraft)
+                if aircraft is not None:
+                    # Legacy mode: apply random spawn delay
+                    if spawn_delay_range and not delay_value:
+                        aircraft.spawn_delay = random.randint(min_delay, max_delay)
+                        logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
 
-            attempts += 1
+                    # Assign difficulty level
+                    difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                    self.aircraft.append(aircraft)
+                    logger.debug(f"Created aircraft {len(self.aircraft)}/{num_departures}: {aircraft.callsign}")
+
+            except Exception as e:
+                logger.error(f"Error creating aircraft for parking spot {spot.name}: {e}")
 
         # Apply new spawn delay system
         if not spawn_delay_range:
