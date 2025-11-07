@@ -125,5 +125,5 @@ The application includes comprehensive logging. Logs are saved to the `logs/` fo
 
 Special thanks to:
 - The FAST project for the idea, starting point, and questions answered.
-- Kornel C. for flight plan data.
+- While now no longer used, I do offer thanks to Kornel C. for the flight plan data used in the initial iterations of this program
 
