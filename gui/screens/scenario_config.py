@@ -919,7 +919,27 @@ class ScenarioConfigScreen(tk.Frame):
 
     def on_back(self):
         """Handle back button click"""
-        self.app_controller.show_screen('scenario_type')
+        if not self.category_order:
+            self.app_controller.show_screen('scenario_type')
+            return
+
+        # If on first tab, go back to scenario type selection
+        if self.current_category_index <= 0:
+            self.app_controller.show_screen('scenario_type')
+        else:
+            # Navigate to previous category/tab
+            prev_index = self.current_category_index - 1
+            if prev_index >= 0:
+                prev_category = self.category_order[prev_index]
+
+                # Select the previous sidebar item
+                for item in self.sidebar.items:
+                    if item.category_id == prev_category:
+                        item.select()
+                        break
+
+                # Trigger category selection (which updates button text)
+                self.on_category_select(prev_category)
 
     def _update_button_text(self):
         """Update button text based on current category"""
