@@ -271,7 +271,7 @@ class ScrollableFrame(tk.Frame):
 
         self.scrollable_frame.bind(
             '<Configure>',
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+            lambda e: self._update_scrollregion()
         )
 
         self.canvas_frame = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor='nw')
@@ -283,8 +283,27 @@ class ScrollableFrame(tk.Frame):
         self.canvas.bind('<Enter>', self._bind_mousewheel)
         self.canvas.bind('<Leave>', self._unbind_mousewheel)
 
+    def _update_scrollregion(self):
+        """Update the scroll region to encompass all widgets"""
+        self.canvas.update_idletasks()
+        self.scrollable_frame.update_idletasks()
+        bbox = self.canvas.bbox('all')
+        if bbox:
+            canvas_height = self.canvas.winfo_height()
+            content_height = bbox[3] - bbox[1]
+            self.canvas.configure(scrollregion=bbox)
+            # Debug: print scroll region info
+            #print(f"[DEBUG] Scroll region updated: bbox={bbox}, canvas_height={canvas_height}, content_height={content_height}")
+            # Ensure mousewheel is bound after content changes
+            if content_height > canvas_height:
+                #print(f"[DEBUG] Scrolling enabled (content {content_height} > canvas {canvas_height})")
+                # Re-bind mousewheel to ensure it works after dynamic content changes
+                self._bind_mousewheel(None)
+
     def _on_canvas_configure(self, event):
         self.canvas.itemconfig(self.canvas_frame, width=event.width)
+        # Also update scroll region when canvas resizes
+        self.after(10, self._update_scrollregion)
 
     def _bind_mousewheel(self, event):
         self.canvas.bind_all('<MouseWheel>', self._on_mousewheel)
@@ -293,7 +312,9 @@ class ScrollableFrame(tk.Frame):
         self.canvas.unbind_all('<MouseWheel>')
 
     def _on_mousewheel(self, event):
-        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        # Scroll 3 units per wheel notch for better responsiveness
+        scroll_amount = int(-1 * (event.delta / 120) * 3)
+        self.canvas.yview_scroll(scroll_amount, "units")
 
 
 class ProgressIndicator(tk.Frame):

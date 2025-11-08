@@ -24,7 +24,8 @@ class TraconMixedScenario(BaseScenario):
                  spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
                  delay_value: str = None, total_session_minutes: int = None,
                  spawn_delay_range: str = None, difficulty_config=None, active_runways: List[str] = None,
-                 enable_cifp_sids: bool = False, manual_sids: List[str] = None) -> List[Aircraft]:
+                 enable_cifp_sids: bool = False, manual_sids: List[str] = None,
+                 num_vfr: int = 0, vfr_spawn_locations: List[str] = None) -> List[Aircraft]:
         """
         Generate TRACON mixed scenario
 
@@ -43,6 +44,8 @@ class TraconMixedScenario(BaseScenario):
             active_runways: List of active runway designators
             enable_cifp_sids: Whether to use CIFP SID procedures
             manual_sids: Optional list of specific SIDs to use
+            num_vfr: Number of VFR aircraft to generate
+            vfr_spawn_locations: List of FRD strings (optional, random if None)
 
         Returns:
             List of Aircraft objects
@@ -196,11 +199,17 @@ class TraconMixedScenario(BaseScenario):
             if arrivals_created < num_arrivals:
                 logger.warning(f"Could only generate {arrivals_created}/{num_arrivals} arrivals after {attempts} attempts (limited API data or missing waypoints)")
 
+        # Generate VFR aircraft if requested
+        if num_vfr > 0:
+            logger.info(f"Generating {num_vfr} VFR aircraft")
+            vfr_aircraft = self._generate_vfr_aircraft(num_vfr, vfr_spawn_locations, active_runways, difficulty_list, difficulty_index)
+            self.aircraft.extend(vfr_aircraft)
+
         # Apply new spawn delay system
         if not spawn_delay_range:
             self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
 
-        logger.info(f"Generated {len(self.aircraft)} total aircraft")
+        logger.info(f"Generated {len(self.aircraft)} total aircraft (departures: {num_departures}, arrivals: {arrivals_created}, VFR: {num_vfr})")
         return self.aircraft
 
     def _create_arrival_at_waypoint(self, waypoint, flight_data: Dict, star_name: str, active_runways: List[str] = None) -> Aircraft:

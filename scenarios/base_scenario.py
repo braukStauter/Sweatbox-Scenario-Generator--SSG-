@@ -834,6 +834,32 @@ class BaseScenario(ABC):
 
         return self.ga_flight_pool.pop(0) if self.ga_flight_pool else None
 
+    def _prepare_arrival_flight_pool(self):
+        """Prepare pool of arrival flights from cached arrival data"""
+        valid_flights = filter_valid_flights(self.cached_flights['arrivals'])
+        # For arrivals, we want commercial flights (non-GA)
+        _, commercial_flights = categorize_flights(valid_flights)
+
+        self.arrival_flight_pool = commercial_flights
+        logger.info(f"Prepared arrival flight pool with {len(commercial_flights)} aircraft")
+
+    def _get_next_arrival_flight(self) -> Dict:
+        """Get next arrival flight from pool"""
+        if not hasattr(self, 'arrival_flight_pool'):
+            self._prepare_arrival_flight_pool()
+
+        if not self.arrival_flight_pool:
+            # Try to fetch more
+            logger.warning("Arrival flight pool depleted, fetching more...")
+            additional_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=50)
+            if additional_flights:
+                valid_flights = filter_valid_flights(additional_flights)
+                _, commercial_flights = categorize_flights(valid_flights)
+                self.arrival_flight_pool.extend(commercial_flights)
+                logger.info(f"Added {len(commercial_flights)} more arrival flights to pool")
+
+        return self.arrival_flight_pool.pop(0) if self.arrival_flight_pool else None
+
     def _create_ga_aircraft(self, parking_spot, destination: str = None) -> Aircraft:
         """Create a GA (general aviation) aircraft using API data"""
         if parking_spot.name in self.used_parking_spots:
@@ -941,6 +967,96 @@ class BaseScenario(ABC):
         )
 
         return aircraft
+
+    def _parse_frd_string(self, frd_string: str) -> Tuple[str, int, int]:
+        """
+        Parse FRD (Fix/Radial/Distance) string into components.
+
+        Args:
+            frd_string: FRD format string (e.g., "KABQ020010" or "HOMRR235012")
+
+        Returns:
+            Tuple of (fix_name, radial, distance_nm)
+
+        Raises:
+            ValueError: If FRD string format is invalid
+        """
+        # FRD format: FIXRADIALDISTANCE
+        # Radial: 3 digits (000-359)
+        # Distance: 3 digits (000-999 NM)
+        # Minimum length: fix + 3 + 3 = 7 characters
+        if len(frd_string) < 7:
+            raise ValueError(f"Invalid FRD string: {frd_string} (too short)")
+
+        # Extract distance (last 3 digits)
+        try:
+            distance_nm = int(frd_string[-3:])
+        except ValueError:
+            raise ValueError(f"Invalid FRD string: {frd_string} (distance not numeric)")
+
+        # Extract radial (3 digits before distance)
+        try:
+            radial = int(frd_string[-6:-3])
+        except ValueError:
+            raise ValueError(f"Invalid FRD string: {frd_string} (radial not numeric)")
+
+        if radial < 0 or radial > 359:
+            raise ValueError(f"Invalid FRD string: {frd_string} (radial out of range 0-359)")
+
+        # Extract fix name (everything before radial)
+        fix_name = frd_string[:-6]
+
+        if not fix_name:
+            raise ValueError(f"Invalid FRD string: {frd_string} (no fix name)")
+
+        logger.debug(f"Parsed FRD '{frd_string}': fix={fix_name}, radial={radial:03d}, distance={distance_nm}NM")
+        return (fix_name, radial, distance_nm)
+
+    def _generate_random_frd(self) -> Tuple[str, int, int]:
+        """
+        Generate random FRD position around the airport.
+
+        Returns:
+            Tuple of (fix_name, radial, distance_nm) where:
+            - fix_name is the airport ICAO
+            - radial is random 0-359
+            - distance is random 8-12 NM
+        """
+        fix_name = self.airport_icao
+        radial = random.randint(0, 359)
+        distance_nm = random.randint(8, 12)
+
+        logger.debug(f"Generated random FRD: fix={fix_name}, radial={radial:03d}, distance={distance_nm}NM")
+        return (fix_name, radial, distance_nm)
+
+    def _get_fix_coordinates(self, fix_name: str) -> Tuple[float, float]:
+        """
+        Get coordinates for a fix (waypoint or airport).
+
+        Args:
+            fix_name: Name of the fix (waypoint or airport ICAO)
+
+        Returns:
+            Tuple of (latitude, longitude)
+
+        Raises:
+            ValueError: If fix not found
+        """
+        # First check if it's the airport
+        if fix_name == self.airport_icao:
+            return self.geojson_parser.get_airport_center()
+
+        # Try to find it as a waypoint in CIFP data
+        # Search in all procedures for a waypoint with this name
+        for procedure_type in ['stars', 'sids', 'approaches']:
+            procedures = getattr(self.cifp_parser, procedure_type, {})
+            for proc_name, waypoints in procedures.items():
+                for waypoint in waypoints:
+                    if waypoint.name == fix_name and waypoint.latitude and waypoint.longitude:
+                        logger.debug(f"Found fix {fix_name} in {procedure_type}/{proc_name}: {waypoint.latitude}, {waypoint.longitude}")
+                        return (waypoint.latitude, waypoint.longitude)
+
+        raise ValueError(f"Fix '{fix_name}' not found in airport or CIFP data")
 
     def get_aircraft(self) -> List[Aircraft]:
         """Get generated aircraft list"""

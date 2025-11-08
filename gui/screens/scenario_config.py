@@ -60,12 +60,12 @@ class ScenarioConfigScreen(tk.Frame):
         divider_h.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
 
         # Scrollable content container for configuration panels
-        scroll_container = ScrollableFrame(content_area)
-        scroll_container.pack(fill='both', expand=True,
+        self.scroll_container = ScrollableFrame(content_area)
+        self.scroll_container.pack(fill='both', expand=True,
                             padx=DarkTheme.PADDING_XLARGE,
                             pady=DarkTheme.PADDING_MEDIUM)
 
-        self.content_container = scroll_container.scrollable_frame
+        self.content_container = self.scroll_container.scrollable_frame
 
         # Footer with navigation buttons
         footer = ThemedFrame(content_area)
@@ -111,6 +111,8 @@ class ScenarioConfigScreen(tk.Frame):
         has_departures = scenario_type in ['ground_departures', 'ground_mixed', 'tower_mixed', 'tracon_departures', 'tracon_mixed']
         has_arrivals = scenario_type in ['ground_mixed', 'tower_mixed', 'tracon_arrivals', 'tracon_mixed']
         has_tower_separation = scenario_type == 'tower_mixed'
+        has_tracon_arrivals = scenario_type in ['tracon_arrivals', 'tracon_mixed']  # TRACON scenarios have configurable STAR arrivals
+        has_tower_arrivals = scenario_type == 'tower_mixed'  # Tower scenarios have VFR arrivals
 
         # Build category order list for navigation
         self.category_order = []
@@ -127,8 +129,8 @@ class ScenarioConfigScreen(tk.Frame):
         self.sidebar.add_item("Timing & Spawning", "timing_spawning")
         self.category_order.append("timing_spawning")
 
-        # Category 4: Arrivals & Approach (only for scenarios with arrivals)
-        if has_arrivals:
+        # Category 4: Arrivals & Approach (for TRACON with STAR config, or Tower with VFR config)
+        if has_tracon_arrivals or has_tower_arrivals:
             self.sidebar.add_item("Arrivals & Approach", "arrivals_approach")
             self.category_order.append("arrivals_approach")
 
@@ -149,6 +151,8 @@ class ScenarioConfigScreen(tk.Frame):
         self.scenario_has_departures = has_departures
         self.scenario_has_arrivals = has_arrivals
         self.scenario_has_tower_separation = has_tower_separation
+        self.scenario_has_tracon_arrivals = has_tracon_arrivals
+        self.scenario_has_tower_arrivals = has_tower_arrivals
 
     def on_category_select(self, category_id):
         """Handle category selection from sidebar"""
@@ -162,6 +166,9 @@ class ScenarioConfigScreen(tk.Frame):
 
         panel = self.content_panels[category_id]
         panel.pack(fill='both', expand=True)
+
+        # Update scroll region after panel is shown
+        self.after(50, self._update_scroll_region)
         self.current_panel = panel
 
         # Update current category index and button text
@@ -190,6 +197,14 @@ class ScenarioConfigScreen(tk.Frame):
 
         return panel
 
+    def _update_scroll_region(self):
+        """Force update the scroll region to show all content"""
+        if hasattr(self, 'scroll_container'):
+            # Force widget updates before recalculating scroll region
+            self.update_idletasks()
+            self.scroll_container.scrollable_frame.update_idletasks()
+            self.scroll_container._update_scrollregion()
+
     def _build_aircraft_traffic_panel(self, panel):
         """Build Aircraft & Traffic configuration panel"""
         # Panel title
@@ -208,16 +223,6 @@ class ScenarioConfigScreen(tk.Frame):
         has_departures = getattr(self, 'scenario_has_departures', True)
         has_arrivals = getattr(self, 'scenario_has_arrivals', True)
         self._add_aircraft_counts_section(panel, has_departures, has_arrivals)
-        self._add_divider(panel)
-
-        # Placeholder for future options
-        placeholder = ThemedLabel(
-            panel,
-            text="Additional aircraft options (type mix, equipment, etc.) can be added here",
-            fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
-        )
-        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
 
     def _build_runway_airport_panel(self, panel):
         """Build Runway & Airport configuration panel"""
@@ -256,17 +261,6 @@ class ScenarioConfigScreen(tk.Frame):
             self._add_divider(panel)
             self._add_separation_section(panel)
 
-        self._add_divider(panel)
-
-        # Placeholder for future options
-        placeholder = ThemedLabel(
-            panel,
-            text="Additional runway options (parallel ops, taxiway routing, etc.) can be added here",
-            fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
-        )
-        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
-
     def _build_timing_spawning_panel(self, panel):
         """Build Timing & Spawning configuration panel"""
         title = ThemedLabel(
@@ -279,15 +273,6 @@ class ScenarioConfigScreen(tk.Frame):
         # Spawn delay configuration
         self._add_spawn_delay_section(panel)
 
-        # Placeholder for future options
-        placeholder = ThemedLabel(
-            panel,
-            text="Additional timing options (time of day, rush hour, etc.) can be added here",
-            fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
-        )
-        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_LARGE)
-
     def _build_arrivals_approach_panel(self, panel):
         """Build Arrivals & Approach configuration panel"""
         title = ThemedLabel(
@@ -297,17 +282,13 @@ class ScenarioConfigScreen(tk.Frame):
         )
         title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
 
-        # TRACON arrivals configuration
-        self._add_tracon_arrivals_section(panel)
+        # TRACON scenarios: Show STAR waypoint configuration
+        if hasattr(self, 'scenario_has_tracon_arrivals') and self.scenario_has_tracon_arrivals:
+            self._add_tracon_arrivals_section(panel)
 
-        # Placeholder for future options
-        placeholder = ThemedLabel(
-            panel,
-            text="Additional arrival options (approach types, speeds, etc.) can be added here",
-            fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
-        )
-        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_LARGE)
+        # Tower scenarios: Show VFR aircraft configuration
+        if hasattr(self, 'scenario_has_tower_arrivals') and self.scenario_has_tower_arrivals:
+            self._add_vfr_aircraft_section(panel)
 
     def _build_departures_climb_panel(self, panel):
         """Build Departures & Climb configuration panel"""
@@ -320,16 +301,6 @@ class ScenarioConfigScreen(tk.Frame):
 
         # CIFP SID Configuration
         self._add_cifp_sid_section(panel)
-        self._add_divider(panel)
-
-        # Placeholder for future options
-        placeholder = ThemedLabel(
-            panel,
-            text="Additional departure options (climb rates, initial altitudes, etc.) can be added here",
-            fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
-        )
-        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
 
     def _build_advanced_panel(self, panel):
         """Build Advanced Options configuration panel"""
@@ -340,14 +311,7 @@ class ScenarioConfigScreen(tk.Frame):
         )
         title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
 
-        # Placeholder for future options
-        placeholder = ThemedLabel(
-            panel,
-            text="Advanced options (weather, emergencies, special ops, etc.) can be added here",
-            fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
-        )
-        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
+        # Advanced options go here (difficulty is in Aircraft & Traffic tab)
 
     def _build_output_export_panel(self, panel):
         """Build Output & Export configuration panel"""
@@ -365,15 +329,6 @@ class ScenarioConfigScreen(tk.Frame):
             fg=DarkTheme.FG_SECONDARY
         )
         info.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
-
-        # Placeholder for future options
-        placeholder = ThemedLabel(
-            panel,
-            text="Additional export options (format, metadata, auto-save, etc.) can be added here",
-            fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
-        )
-        placeholder.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
 
     # Helper methods for building sections
 
@@ -735,6 +690,93 @@ class ScenarioConfigScreen(tk.Frame):
         )
         waypoint_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM))
 
+    def _add_vfr_aircraft_section(self, parent):
+        """Add VFR aircraft configuration section"""
+        section = ThemedFrame(parent)
+        section.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Enable VFR aircraft checkbox
+        vfr_header_frame = ThemedFrame(section)
+        vfr_header_frame.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        enable_vfr_var = tk.BooleanVar(value=False)
+
+        enable_vfr_checkbox = tk.Checkbutton(
+            vfr_header_frame,
+            text="Dynamic Tower Approach Scenarios",
+            variable=enable_vfr_var,
+            bg=DarkTheme.BG_PRIMARY,
+            fg=DarkTheme.FG_PRIMARY,
+            selectcolor=DarkTheme.BG_TERTIARY,
+            activebackground=DarkTheme.BG_PRIMARY,
+            activeforeground=DarkTheme.FG_PRIMARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            cursor='hand2',
+            command=lambda: self._toggle_vfr_inputs(enable_vfr_var.get())
+        )
+        enable_vfr_checkbox.pack(anchor='w')
+        self.inputs['enable_vfr'] = enable_vfr_var
+
+        # Hint text
+        vfr_hint = ThemedLabel(
+            section,
+            text="Generate VFR GA aircraft for Class D / tower training scenarios",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        vfr_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Container for VFR-specific options (hidden by default)
+        self.vfr_frame = ThemedFrame(section)
+        self.vfr_frame.pack_forget()
+
+        # Number of VFR aircraft
+        num_vfr_label = ThemedLabel(
+            self.vfr_frame,
+            text="Number of VFR aircraft:",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
+        )
+        num_vfr_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        num_vfr_entry = ThemedEntry(
+            self.vfr_frame,
+            placeholder="e.g., 5"
+        )
+        num_vfr_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+        self.inputs['num_vfr'] = num_vfr_entry
+
+        num_vfr_hint = ThemedLabel(
+            self.vfr_frame,
+            text="Number of VFR GA aircraft to generate",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        num_vfr_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM))
+
+        # VFR spawn locations (optional)
+        spawn_locations_label = ThemedLabel(
+            self.vfr_frame,
+            text="Spawn locations (optional):",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
+        )
+        spawn_locations_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        spawn_locations_entry = ThemedEntry(
+            self.vfr_frame,
+            placeholder="e.g., KABQ020010,KABQ090012 (FRD format)"
+        )
+        spawn_locations_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+        self.inputs['vfr_spawn_locations'] = spawn_locations_entry
+
+        spawn_locations_hint = ThemedLabel(
+            self.vfr_frame,
+            text="Comma-separated FRD strings (Fix/Radial/Distance). Leave blank to generate random positions 8-12 NM from airport.",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
+        )
+        spawn_locations_hint.pack(anchor='w')
+
     def _add_cifp_sid_section(self, parent):
         """Add CIFP SID configuration section"""
         section = ThemedFrame(parent)
@@ -821,6 +863,9 @@ class ScenarioConfigScreen(tk.Frame):
                     pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL)
                 )
 
+        # Update scroll region to show new content
+        self.after(50, self._update_scroll_region)
+
     def _toggle_spawn_delay_inputs(self, enabled):
         """Show/hide spawn delay configuration"""
         if enabled:
@@ -831,12 +876,30 @@ class ScenarioConfigScreen(tk.Frame):
         else:
             self.spawn_delay_frame.pack_forget()
 
+        # Update scroll region to show new content
+        self.after(50, self._update_scroll_region)
+
     def _toggle_cifp_sid_inputs(self, enabled):
         """Show/hide CIFP SID configuration"""
         if enabled:
             self.cifp_sid_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
         else:
             self.cifp_sid_frame.pack_forget()
+
+        # Update scroll region to show new content
+        self.after(50, self._update_scroll_region)
+
+    def _toggle_vfr_inputs(self, enabled):
+        """Show/hide VFR aircraft configuration"""
+        if enabled:
+            self.vfr_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
+        else:
+            self.vfr_frame.pack_forget()
+
+        # Update scroll region multiple times to ensure it catches the layout changes
+        self.after_idle(self._update_scroll_region)
+        self.after(100, self._update_scroll_region)
+        self.after(300, self._update_scroll_region)
 
     def _update_spawn_delay_mode_inputs(self, mode):
         """Show/hide spawn delay inputs based on selected mode"""
@@ -846,6 +909,9 @@ class ScenarioConfigScreen(tk.Frame):
         elif mode == "total":
             self.total_input_frame.pack(fill='x')
             self.incremental_input_frame.pack_forget()
+
+        # Update scroll region to show new content
+        self.after(50, self._update_scroll_region)
 
     # Screen lifecycle methods
 

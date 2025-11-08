@@ -35,8 +35,8 @@ class MainWindow(tk.Tk):
 
         # Window configuration
         self.title("vNAS Sweatbox Scenario Generator")
-        self.geometry("900x700")
-        self.minsize(800, 600)
+        self.geometry("900x1000")
+        self.minsize(800, 900)
         self.configure(bg=DarkTheme.BG_PRIMARY)
 
         # Center window on screen
@@ -308,6 +308,19 @@ class MainWindow(tk.Tk):
             if config.get('manual_sids'):
                 manual_sids = [s.strip().upper() for s in config['manual_sids'].split(',') if s.strip()]
 
+            # Parse VFR aircraft configuration
+            enable_vfr = config.get('enable_vfr', False)
+            num_vfr = 0
+            vfr_spawn_locations = []
+            if enable_vfr:
+                try:
+                    num_vfr = int(config.get('num_vfr', 0))
+                except ValueError:
+                    num_vfr = 0
+
+                if config.get('vfr_spawn_locations'):
+                    vfr_spawn_locations = [loc.strip().upper() for loc in config['vfr_spawn_locations'].split(',') if loc.strip()]
+
             # Update progress
             self._update_progress("Creating scenario...")
 
@@ -330,7 +343,9 @@ class MainWindow(tk.Tk):
                 total_session_minutes,
                 difficulty_config,
                 enable_cifp_sids,
-                manual_sids
+                manual_sids,
+                num_vfr,
+                vfr_spawn_locations
             )
 
             if not aircraft:
@@ -402,13 +417,15 @@ class MainWindow(tk.Tk):
                           active_runways, separation_range,
                           delay_range, arrival_waypoints, spawn_delay_mode,
                           delay_value, total_session_minutes, difficulty_config=None,
-                          enable_cifp_sids=False, manual_sids=None):
+                          enable_cifp_sids=False, manual_sids=None,
+                          num_vfr=0, vfr_spawn_locations=None):
         """Generate aircraft based on scenario type"""
         if self.scenario_type == 'ground_departures':
             return scenario.generate(num_departures, spawn_delay_mode, delay_value,
                                     total_session_minutes, None, difficulty_config,
                                     active_runways, enable_cifp_sids, manual_sids)
         elif self.scenario_type == 'ground_mixed':
+            # Note: ground_mixed doesn't support VFR aircraft yet
             return scenario.generate(num_departures, num_arrivals, active_runways,
                                     spawn_delay_mode, delay_value, total_session_minutes,
                                     None, difficulty_config, enable_cifp_sids, manual_sids)
@@ -416,7 +433,8 @@ class MainWindow(tk.Tk):
             return scenario.generate(num_departures, num_arrivals, active_runways,
                                     separation_range, spawn_delay_mode, delay_value,
                                     total_session_minutes, None, difficulty_config,
-                                    enable_cifp_sids, manual_sids)
+                                    enable_cifp_sids, manual_sids,
+                                    num_vfr, vfr_spawn_locations)
         elif self.scenario_type == 'tracon_departures':
             return scenario.generate(num_departures, active_runways, spawn_delay_mode,
                                     delay_value, total_session_minutes, None, difficulty_config,

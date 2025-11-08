@@ -21,7 +21,8 @@ class TowerMixedScenario(BaseScenario):
                  spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
                  delay_value: str = None, total_session_minutes: int = None,
                  spawn_delay_range: str = None, difficulty_config=None,
-                 enable_cifp_sids: bool = False, manual_sids: List[str] = None) -> List[Aircraft]:
+                 enable_cifp_sids: bool = False, manual_sids: List[str] = None,
+                 num_vfr: int = 0, vfr_spawn_locations: List[str] = None) -> List[Aircraft]:
         """
         Generate tower scenario with departures and arrivals
 
@@ -37,12 +38,20 @@ class TowerMixedScenario(BaseScenario):
             difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
             enable_cifp_sids: Whether to use CIFP SID procedures
             manual_sids: Optional list of specific SIDs to use
+            num_vfr: Number of VFR aircraft to generate
+            vfr_spawn_locations: Optional list of FRD strings for VFR spawn locations
 
         Returns:
             List of Aircraft objects
         """
         # Reset tracking for new generation
         self._reset_tracking()
+
+        # Validate VFR aircraft count
+        if num_vfr > 0 and num_vfr > num_departures:
+            logger.warning(f"VFR aircraft count ({num_vfr}) exceeds departure count ({num_departures}). "
+                          f"Limiting VFR aircraft to {num_departures}")
+            num_vfr = num_departures
 
         # Prepare flight pools from cached data
         logger.info("Preparing flight pools...")
@@ -143,18 +152,25 @@ class TowerMixedScenario(BaseScenario):
                 distance_nm = 6
 
             aircraft = self._create_arrival_aircraft(runway_name, distance_nm)
-            # Legacy mode: apply random spawn delay
-            if spawn_delay_range and not delay_value:
-                aircraft.spawn_delay = random.randint(min_delay, max_delay)
-                logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
-            difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
-            self.aircraft.append(aircraft)
+            if aircraft is not None:
+                # Legacy mode: apply random spawn delay
+                if spawn_delay_range and not delay_value:
+                    aircraft.spawn_delay = random.randint(min_delay, max_delay)
+                    logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
+                difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                self.aircraft.append(aircraft)
+
+        # Generate VFR aircraft if requested
+        if num_vfr > 0:
+            logger.info(f"Generating {num_vfr} VFR aircraft")
+            vfr_aircraft = self._generate_vfr_aircraft(num_vfr, vfr_spawn_locations or [], active_runways, difficulty_list, difficulty_index)
+            self.aircraft.extend(vfr_aircraft)
 
         # Apply new spawn delay system
         if not spawn_delay_range:
             self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
 
-        logger.info(f"Generated {len(self.aircraft)} total aircraft ({num_ga} GA)")
+        logger.info(f"Generated {len(self.aircraft)} total aircraft ({num_ga} GA, {num_vfr} VFR)")
         return self.aircraft
 
     def _create_arrival_aircraft(self, runway_name: str, distance_nm: float) -> Aircraft:
@@ -283,3 +299,140 @@ class TowerMixedScenario(BaseScenario):
 
         # Standard jets (B738, A320, etc.) fly medium approach speeds (135-150 knots)
         return random.randint(135, 150)
+
+    def _generate_vfr_aircraft(self, num_vfr: int, vfr_spawn_locations: List[str],
+                               active_runways: List[str], difficulty_list: List[str],
+                               difficulty_index: int) -> List[Aircraft]:
+        """
+        Generate VFR GA aircraft at specified or random FRD positions.
+
+        Args:
+            num_vfr: Number of VFR aircraft to generate
+            vfr_spawn_locations: Optional list of FRD strings (e.g., ["KABQ020010", "KABQ090012"])
+            active_runways: List of active runways
+            difficulty_list: List of difficulty levels for assignment
+            difficulty_index: Current index in difficulty list
+
+        Returns:
+            List of generated VFR Aircraft objects
+        """
+        from utils.geo_utils import calculate_destination, calculate_bearing
+
+        vfr_aircraft = []
+
+        # Determine spawn locations
+        if vfr_spawn_locations and len(vfr_spawn_locations) > 0:
+            # User provided FRD locations - parse them
+            spawn_frds = []
+            for frd_string in vfr_spawn_locations:
+                try:
+                    frd = self._parse_frd_string(frd_string)
+                    spawn_frds.append(frd)
+                except ValueError as e:
+                    logger.warning(f"Invalid FRD string '{frd_string}': {e}")
+                    continue
+
+            if not spawn_frds:
+                logger.warning("No valid FRD locations provided, using random generation")
+                spawn_frds = [self._generate_random_frd() for _ in range(num_vfr)]
+        else:
+            # Generate random FRD locations
+            spawn_frds = [self._generate_random_frd() for _ in range(num_vfr)]
+
+        # Distribute aircraft across spawn locations
+        for i in range(num_vfr):
+            # Select spawn location (distribute evenly across available locations)
+            frd = spawn_frds[i % len(spawn_frds)]
+
+            aircraft = self._create_vfr_aircraft(frd, active_runways)
+            if aircraft:
+                difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                vfr_aircraft.append(aircraft)
+
+        logger.info(f"Generated {len(vfr_aircraft)} VFR aircraft at {len(spawn_frds)} spawn location(s)")
+        return vfr_aircraft
+
+    def _create_vfr_aircraft(self, frd: tuple, active_runways: List[str] = None) -> Aircraft:
+        """
+        Create a single VFR GA aircraft at the specified FRD position.
+
+        Args:
+            frd: Tuple of (fix_name, radial, distance_nm)
+            active_runways: List of active runways (for destination selection)
+
+        Returns:
+            Aircraft object or None if creation failed
+        """
+        from utils.geo_utils import calculate_destination, calculate_bearing
+        from utils.constants import COMMON_GA_AIRCRAFT
+
+        fix_name, radial, distance_nm = frd
+
+        # Generate GA callsign
+        callsign = self._generate_ga_callsign()
+
+        # Check callsign uniqueness
+        with self.callsign_lock:
+            if callsign in self.used_callsigns:
+                logger.warning(f"Duplicate VFR callsign: {callsign}, skipping")
+                return None
+            self.used_callsigns.add(callsign)
+
+        # Random GA aircraft type
+        aircraft_type_base = random.choice(COMMON_GA_AIRCRAFT)
+        aircraft_type = self._add_equipment_suffix(aircraft_type_base, is_ga=True)
+
+        # Get fix coordinates
+        try:
+            fix_lat, fix_lon = self._get_fix_coordinates(fix_name)
+        except ValueError as e:
+            logger.error(f"Cannot create VFR aircraft: {e}")
+            return None
+
+        # Calculate aircraft position from FRD
+        # Aircraft is at distance_nm from fix on the specified radial
+        aircraft_lat, aircraft_lon = calculate_destination(fix_lat, fix_lon, radial, distance_nm)
+
+        # Get airport center for heading calculation
+        airport_lat, airport_lon = self.geojson_parser.get_airport_center()
+
+        # Calculate heading TO airport (direct)
+        heading_to_airport = calculate_bearing(aircraft_lat, aircraft_lon, airport_lat, airport_lon)
+
+        # Altitude: 1000 ft AGL
+        field_elevation = self.geojson_parser.field_elevation
+        altitude = field_elevation + 1000
+
+        # VFR speeds (90-120 kts)
+        ground_speed = random.randint(90, 120)
+        cruise_speed = random.randint(100, 130)
+
+        # Random departure airport
+        departure = self._get_random_destination(exclude=self.airport_icao, less_common=True)
+
+        # Construct FRD string for spawn point (e.g., "KPHX020010")
+        frd_string = f"{fix_name}{radial:03d}{distance_nm:03d}"
+
+        # Create aircraft
+        aircraft = Aircraft(
+            callsign=callsign,
+            aircraft_type=aircraft_type,
+            latitude=aircraft_lat,
+            longitude=aircraft_lon,
+            altitude=altitude,
+            heading=heading_to_airport,
+            ground_speed=ground_speed,
+            departure=departure,
+            arrival=self.airport_icao,
+            route='DCT',  # Direct
+            cruise_speed=cruise_speed,
+            cruise_altitude=str(altitude),
+            flight_rules='V',  # VFR
+            engine_type='P',  # Piston
+            fix=frd_string,  # Spawn point - FRD string showing where aircraft spawned
+            navigation_path=self.airport_icao,  # Route - airport where aircraft is going
+            starting_conditions_type="Standard"  # Using actual lat/lon
+        )
+
+        logger.debug(f"Created VFR aircraft {callsign} at {fix_name} radial {radial:03d}, {distance_nm}NM, heading {heading_to_airport:03d}° to {self.airport_icao}")
+        return aircraft
