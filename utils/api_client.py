@@ -24,6 +24,43 @@ class FlightDataAPIClient:
         self.cache: Dict[str, tuple] = {}
         self.cache_timeout = cache_timeout
 
+    @staticmethod
+    def _strip_procedure_numbers(procedure: str) -> str:
+        """
+        Strip numeric suffixes from procedure names (e.g., 'EAGUL6' -> 'EAGUL')
+
+        Args:
+            procedure: Procedure name with optional numeric suffix
+
+        Returns:
+            Procedure name without numeric suffix
+        """
+        import re
+        # Remove trailing digits from procedure name
+        return re.sub(r'\d+$', '', procedure)
+
+    @staticmethod
+    def _format_procedures_for_api(procedures: Optional[List[str]]) -> Optional[str]:
+        """
+        Format a list of procedures for API query parameter ('+' separator, requests will URL-encode)
+
+        Args:
+            procedures: List of procedure names (with or without numbers)
+
+        Returns:
+            '+'-separated string of procedures without numbers, or None if empty
+        """
+        if not procedures:
+            return None
+
+        # Strip numbers from all procedures and join with '+'
+        # requests.get() will URL-encode this to '%2B' automatically
+        stripped_procs = [FlightDataAPIClient._strip_procedure_numbers(proc) for proc in procedures]
+        # Remove any empty strings and duplicates
+        stripped_procs = list(dict.fromkeys([p for p in stripped_procs if p]))
+
+        return '+'.join(stripped_procs) if stripped_procs else None
+
     def _calculate_cruise_speed(self, aircraft_type: str) -> int:
         """
         Return default cruise speed fallback (used only when API doesn't provide speed)
@@ -43,7 +80,9 @@ class FlightDataAPIClient:
         departure: Optional[str] = None,
         arrival: Optional[str] = None,
         limit: int = 200,
-        retries: int = 3
+        retries: int = 3,
+        depproc: Optional[str] = None,
+        arrproc: Optional[str] = None
     ) -> Optional[List[Dict[str, Any]]]:
         """
         Fetch flights from the API
@@ -53,6 +92,8 @@ class FlightDataAPIClient:
             arrival: Arrival airport ICAO code (use "any" for all arrivals)
             limit: Maximum number of flights to request (API returns up to this many)
             retries: Number of retries if request fails
+            depproc: URL-encoded departure procedures filter (e.g., 'EAGUL%2BZZULU')
+            arrproc: URL-encoded arrival procedures filter (e.g., 'STAR1%2BSTAR2')
 
         Returns:
             List of flight dictionaries or None if request fails
@@ -60,7 +101,9 @@ class FlightDataAPIClient:
         # Build cache key
         dep = departure or "any"
         arr = arrival or "any"
-        cache_key = f"{dep}:{arr}:{limit}"
+        dep_proc = depproc or "none"
+        arr_proc = arrproc or "none"
+        cache_key = f"{dep}:{arr}:{limit}:{dep_proc}:{arr_proc}"
 
         # Check cache
         if cache_key in self.cache:
@@ -75,11 +118,25 @@ class FlightDataAPIClient:
             params['departure'] = departure
         if arrival:
             params['arrival'] = arrival
+        if depproc:
+            params['depproc'] = depproc
+        if arrproc:
+            params['arrproc'] = arrproc
 
         # Try to fetch from API
         for attempt in range(retries):
             try:
-                logger.info(f"Fetching flights: departure={dep}, arrival={arr}, limit={limit} (attempt {attempt + 1}/{retries})")
+                # Log all parameters including procedures
+                log_msg = f"Fetching flights: departure={dep}, arrival={arr}, limit={limit}"
+                if depproc:
+                    log_msg += f", depproc={depproc}"
+                if arrproc:
+                    log_msg += f", arrproc={arrproc}"
+                log_msg += f" (attempt {attempt + 1}/{retries})"
+                logger.info(log_msg)
+
+                # Log the full URL for debugging
+                logger.debug(f"API URL: {self.BASE_URL}, params: {params}")
 
                 response = requests.get(self.BASE_URL, params=params, timeout=15)
 
@@ -142,31 +199,59 @@ class FlightDataAPIClient:
         logger.error(f"Failed to fetch flights after {retries} attempts")
         return None
 
-    def fetch_departures(self, airport_icao: str, limit: int = 200) -> Optional[List[Dict[str, Any]]]:
+    def fetch_departures(
+        self,
+        airport_icao: str,
+        limit: int = 200,
+        sids: Optional[List[str]] = None
+    ) -> Optional[List[Dict[str, Any]]]:
         """
-        Fetch all departures from a specific airport
+        Fetch departures from a specific airport, optionally filtered by SIDs
 
         Args:
             airport_icao: Airport ICAO code
             limit: Maximum number of flights to fetch
+            sids: Optional list of SID names to filter by (numbers will be stripped automatically)
 
         Returns:
             List of departure flight dictionaries or None if request fails
         """
-        return self.fetch_flights(departure=airport_icao, arrival=None, limit=limit)
+        # Format SIDs for API if provided
+        depproc = self._format_procedures_for_api(sids)
 
-    def fetch_arrivals(self, airport_icao: str, limit: int = 200) -> Optional[List[Dict[str, Any]]]:
+        return self.fetch_flights(
+            departure=airport_icao,
+            arrival=None,
+            limit=limit,
+            depproc=depproc
+        )
+
+    def fetch_arrivals(
+        self,
+        airport_icao: str,
+        limit: int = 200,
+        stars: Optional[List[str]] = None
+    ) -> Optional[List[Dict[str, Any]]]:
         """
-        Fetch all arrivals to a specific airport
+        Fetch arrivals to a specific airport, optionally filtered by STARs
 
         Args:
             airport_icao: Airport ICAO code
             limit: Maximum number of flights to fetch
+            stars: Optional list of STAR names to filter by (numbers will be stripped automatically)
 
         Returns:
             List of arrival flight dictionaries or None if request fails
         """
-        return self.fetch_flights(departure=None, arrival=airport_icao, limit=limit)
+        # Format STARs for API if provided
+        arrproc = self._format_procedures_for_api(stars)
+
+        return self.fetch_flights(
+            departure=None,
+            arrival=airport_icao,
+            limit=limit,
+            arrproc=arrproc
+        )
 
     def clear_cache(self):
         """Clear all cached flight data"""

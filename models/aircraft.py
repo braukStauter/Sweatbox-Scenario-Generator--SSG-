@@ -41,6 +41,10 @@ class Aircraft:
     arrival_runway: Optional[str] = None
     arrival_distance_nm: Optional[float] = None
 
+    # FixOrFrd starting conditions (for TRACON arrivals)
+    fix: Optional[str] = None  # Fix name or FRD format (e.g., "HOMRR020003")
+    starting_conditions_type: Optional[str] = None  # "Parking", "FixOrFrd", etc.
+
     # Advanced vNAS features
     # Spawn control
     spawn_delay: Optional[int] = None  # seconds

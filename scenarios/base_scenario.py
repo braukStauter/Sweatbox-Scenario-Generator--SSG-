@@ -17,8 +17,7 @@ from parsers.cifp_parser import CIFPParser
 from utils.api_client import FlightDataAPIClient
 from utils.constants import POPULAR_US_AIRPORTS, LESS_COMMON_AIRPORTS, COMMON_JETS, COMMON_GA_AIRCRAFT
 from utils.flight_data_filter import (
-    filter_valid_flights, categorize_flights, filter_departures_by_sid,
-    filter_arrivals_by_waypoint, filter_arrivals_by_stars, filter_by_parking_airline, is_ga_aircraft,
+    filter_valid_flights, categorize_flights, filter_by_parking_airline, is_ga_aircraft,
     get_airline_from_callsign, clean_route_string
 )
 
@@ -53,7 +52,9 @@ class BaseScenario(ABC):
         # Cached flight data from API
         self.cached_flights = cached_flights or {'departures': [], 'arrivals': []}
         self.departure_flight_pool = []
-        self.arrival_flight_pool = []
+
+        # Store current procedure filters for consistent refetching
+        self.current_sids = None  # List of SID names used for filtering departures
 
         # Thread safety locks
         self.callsign_lock = threading.Lock()
@@ -623,22 +624,31 @@ class BaseScenario(ABC):
                                         enable_cifp_sids: bool = False,
                                         manual_sids: List[str] = None):
         """
-        Prepare the pool of departure flights from cached data
+        Prepare the pool of departure flights, using API filtering when possible
 
         Args:
             active_runways: List of active runway names
             enable_cifp_sids: Whether to filter by SID/runway compatibility
             manual_sids: Manual SID list if specified
         """
-        # Start with cached departures
-        valid_flights = filter_valid_flights(self.cached_flights['departures'])
-        logger.info(f"Filtered {len(valid_flights)} valid departures from {len(self.cached_flights['departures'])} cached")
+        # Store SIDs for later refetching if pool depletes
+        self.current_sids = manual_sids if (enable_cifp_sids and manual_sids) else None
 
-        # Apply SID filtering if enabled
-        if enable_cifp_sids and self.cifp_parser and active_runways:
-            available_sids = manual_sids if manual_sids else self.cifp_parser.get_available_sids()
-            valid_flights = filter_departures_by_sid(valid_flights, available_sids, active_runways)
-            logger.info(f"After SID filtering: {len(valid_flights)} departures remain")
+        # If SIDs are specified, fetch directly from API with procedure filtering
+        if self.current_sids:
+            logger.info(f"Fetching departures from API with SID filtering: {self.current_sids}")
+            api_flights = self.api_client.fetch_departures(self.airport_icao, limit=200, sids=self.current_sids)
+
+            if api_flights:
+                valid_flights = filter_valid_flights(api_flights)
+                logger.info(f"Fetched {len(valid_flights)} valid departures from API with SID filter")
+            else:
+                logger.warning("API fetch with SID filter failed, using cached flights")
+                valid_flights = filter_valid_flights(self.cached_flights['departures'])
+        else:
+            # Use cached flights when no specific SIDs are requested
+            valid_flights = filter_valid_flights(self.cached_flights['departures'])
+            logger.info(f"Filtered {len(valid_flights)} valid departures from {len(self.cached_flights['departures'])} cached")
 
         self.departure_flight_pool = valid_flights
 
@@ -654,9 +664,13 @@ class BaseScenario(ABC):
             Flight dictionary or None if pool is empty
         """
         if not self.departure_flight_pool:
-            # Pool depleted, fetch more
+            # Pool depleted, fetch more using the same SID filter
             logger.warning("Departure flight pool depleted, fetching more from API...")
-            additional_flights = self.api_client.fetch_departures(self.airport_icao, limit=50)
+            additional_flights = self.api_client.fetch_departures(
+                self.airport_icao,
+                limit=50,
+                sids=self.current_sids
+            )
             if additional_flights:
                 valid_flights = filter_valid_flights(additional_flights)
                 self.departure_flight_pool.extend(valid_flights)
@@ -927,52 +941,6 @@ class BaseScenario(ABC):
         )
 
         return aircraft
-
-    def _prepare_arrival_flight_pool(self, waypoint: str = None, star_name: str = None, star_transitions: List[Tuple[str, str]] = None):
-        """
-        Prepare the pool of arrival flights from cached data
-
-        Args:
-            waypoint: Optional single waypoint to filter by (legacy)
-            star_name: Optional single STAR name to filter by (legacy)
-            star_transitions: Optional list of (waypoint, STAR) tuples for filtering by multiple STARs
-        """
-        # Start with cached arrivals
-        valid_flights = filter_valid_flights(self.cached_flights['arrivals'])
-        logger.info(f"Filtered {len(valid_flights)} valid arrivals from {len(self.cached_flights['arrivals'])} cached")
-
-        # Apply STAR filtering if multiple transitions specified
-        if star_transitions:
-            valid_flights = filter_arrivals_by_stars(valid_flights, star_transitions)
-            logger.info(f"After STAR filtering: {len(valid_flights)} arrivals remain")
-        # Legacy: Apply waypoint filtering if specified
-        elif waypoint:
-            valid_flights = filter_arrivals_by_waypoint(valid_flights, waypoint, star_name)
-            logger.info(f"After waypoint filtering ({waypoint}): {len(valid_flights)} arrivals remain")
-
-        self.arrival_flight_pool = valid_flights
-
-    def _get_next_arrival_flight(self) -> Dict:
-        """
-        Get the next arrival flight from the pool
-
-        Returns:
-            Flight dictionary or None if pool is empty
-        """
-        if not self.arrival_flight_pool:
-            # Pool depleted, fetch more
-            logger.warning("Arrival flight pool depleted, fetching more from API...")
-            additional_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=50)
-            if additional_flights:
-                valid_flights = filter_valid_flights(additional_flights)
-                self.arrival_flight_pool.extend(valid_flights)
-                logger.info(f"Added {len(valid_flights)} more arrivals to pool")
-            else:
-                logger.error("Failed to fetch additional arrivals from API")
-                return None
-
-        # Return first available flight
-        return self.arrival_flight_pool.pop(0) if self.arrival_flight_pool else None
 
     def get_aircraft(self) -> List[Aircraft]:
         """Get generated aircraft list"""
