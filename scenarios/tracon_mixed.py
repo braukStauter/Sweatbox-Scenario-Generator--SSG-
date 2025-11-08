@@ -302,13 +302,13 @@ class TraconMixedScenario(BaseScenario):
         if is_ga:
             # General aviation speeds are lower
             # Base: 120 kts, increases to ~180 kts at high altitude
-            base_speed = 120
-            max_speed = 180
+            base_speed = 110
+            max_speed = 170
         else:
             # Jet/turboprop speeds
             # Base: 180 kts (approach speed), increases to ~290 kts at cruise descent
-            base_speed = 180
-            max_speed = 290
+            base_speed = 140
+            max_speed = 380
 
         # Exponential formula: speed = base + (max - base) * (1 - e^(-altitude / scale))
         # Scale factor controls how quickly speed increases with altitude
