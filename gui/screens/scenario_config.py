@@ -703,7 +703,7 @@ class ScenarioConfigScreen(tk.Frame):
 
         enable_vfr_checkbox = tk.Checkbutton(
             vfr_header_frame,
-            text="Dynamic Tower Approach Scenarios",
+            text="Dynamic Tower Arrivals",
             variable=enable_vfr_var,
             bg=DarkTheme.BG_PRIMARY,
             fg=DarkTheme.FG_PRIMARY,
@@ -720,7 +720,7 @@ class ScenarioConfigScreen(tk.Frame):
         # Hint text
         vfr_hint = ThemedLabel(
             section,
-            text="Generate VFR GA aircraft for Class D / tower training scenarios",
+            text="Generate inbound VFR GA aircraft",
             fg=DarkTheme.FG_DISABLED,
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
         )

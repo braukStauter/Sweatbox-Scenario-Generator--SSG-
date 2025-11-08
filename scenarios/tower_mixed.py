@@ -344,10 +344,19 @@ class TowerMixedScenario(BaseScenario):
             # Select spawn location (distribute evenly across available locations)
             frd = spawn_frds[i % len(spawn_frds)]
 
-            aircraft = self._create_vfr_aircraft(frd, active_runways)
+            # Retry up to 10 times if aircraft creation fails (e.g., duplicate callsign)
+            aircraft = None
+            attempts = 0
+            max_attempts = 10
+            while aircraft is None and attempts < max_attempts:
+                aircraft = self._create_vfr_aircraft(frd, active_runways)
+                attempts += 1
+
             if aircraft:
                 difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
                 vfr_aircraft.append(aircraft)
+            else:
+                logger.warning(f"Failed to create VFR aircraft at FRD position {i+1} after {max_attempts} attempts")
 
         logger.info(f"Generated {len(vfr_aircraft)} VFR aircraft at {len(spawn_frds)} spawn location(s)")
         return vfr_aircraft
