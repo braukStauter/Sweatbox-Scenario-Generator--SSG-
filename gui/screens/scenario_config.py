@@ -159,8 +159,126 @@ class ScenarioConfigScreen(tk.Frame):
         self.scenario_has_tracon_arrivals = has_tracon_arrivals
         self.scenario_has_tower_arrivals = has_tower_arrivals
 
+    def _validate_current_category(self):
+        """Validate the current category before allowing navigation away from it"""
+        if not hasattr(self, 'current_category_index') or self.current_category_index is None:
+            return True  # No current category, allow navigation
+
+        current_category_id = self.category_order[self.current_category_index]
+        errors = []
+
+        # Get current configuration
+        config = self.get_config_values()
+        scenario_type = self.scenario_type
+
+        # Validate based on current category
+        if current_category_id == "aircraft_traffic":
+            # Validate aircraft counts
+            difficulty_enabled = config.get('enable_difficulty', False)
+            if difficulty_enabled:
+                try:
+                    easy_count = int(config.get('difficulty_easy', '0') or '0')
+                    medium_count = int(config.get('difficulty_medium', '0') or '0')
+                    hard_count = int(config.get('difficulty_hard', '0') or '0')
+
+                    if easy_count < 0 or medium_count < 0 or hard_count < 0:
+                        errors.append("Difficulty counts cannot be negative")
+
+                    total_aircraft = easy_count + medium_count + hard_count
+                    if total_aircraft == 0:
+                        errors.append("Must specify at least one aircraft in difficulty levels")
+                except ValueError:
+                    errors.append("Difficulty counts must be valid numbers")
+            else:
+                num_departures = config.get('num_departures', '')
+                num_arrivals = config.get('num_arrivals', '')
+
+                try:
+                    num_dep = int(num_departures) if num_departures else 0
+                    num_arr = int(num_arrivals) if num_arrivals else 0
+
+                    if num_dep < 0:
+                        errors.append("Number of departures cannot be negative")
+                    if num_arr < 0:
+                        errors.append("Number of arrivals cannot be negative")
+                    if num_dep == 0 and num_arr == 0:
+                        errors.append("Must generate at least one departure or arrival")
+                except ValueError:
+                    errors.append("Aircraft counts must be valid numbers")
+
+        elif current_category_id == "runway_airport":
+            # Validate runways
+            active_runways = config.get('active_runways', '').strip()
+            if not active_runways:
+                errors.append("Active runways are required")
+
+        elif current_category_id == "arrivals_approach":
+            # Validate TRACON arrival waypoints if applicable
+            if scenario_type in ['tracon_arrivals', 'tracon_mixed']:
+                arrival_waypoints = config.get('arrival_waypoints', '').strip()
+                if not arrival_waypoints:
+                    errors.append("STAR Waypoints are required (e.g., EAGUL.EAGUL6, PINNG.PINNG1)")
+
+        elif current_category_id == "timing_spawning":
+            # Validate spawn delay values if enabled
+            if config.get('enable_spawn_delays'):
+                mode = config.get('spawn_delay_mode', 'incremental')
+                if mode == 'incremental':
+                    delay_value = config.get('incremental_delay_value', '')
+                    if not delay_value:
+                        errors.append("Incremental delay value is required when spawn delays are enabled")
+                elif mode == 'total':
+                    total_minutes = config.get('total_session_minutes', '')
+                    if not total_minutes:
+                        errors.append("Total session minutes is required when using total spawn delay mode")
+                    else:
+                        try:
+                            minutes = int(total_minutes)
+                            if minutes <= 0:
+                                errors.append("Total session minutes must be positive")
+                        except ValueError:
+                            errors.append("Total session minutes must be a valid number")
+
+        # Show errors if any
+        if errors:
+            from tkinter import messagebox
+            error_message = "Please fix the following issues before continuing:\n\n" + "\n".join(f"• {error}" for error in errors)
+            messagebox.showerror("Validation Error", error_message)
+            return False
+
+        return True
+
     def on_category_select(self, category_id):
         """Handle category selection from sidebar"""
+        # Only validate if we have a current panel (not initial load)
+        # and if we're actually changing categories AND moving forward
+        should_validate = False
+        if (hasattr(self, 'current_panel') and
+            self.current_panel is not None and
+            hasattr(self, 'current_category_index') and
+            self.current_category_index is not None and
+            category_id in self.category_order):
+
+            current_index = self.current_category_index
+            new_index = self.category_order.index(category_id)
+
+            # Only validate if moving forward (to a higher index)
+            should_validate = new_index > current_index
+
+        if should_validate and not self._validate_current_category():
+            # Validation failed, re-select the current category
+            current_id = self.category_order[self.current_category_index]
+            # Re-select current item in sidebar
+            for item in self.sidebar.items:
+                if hasattr(item, 'category_id') and item.category_id == current_id:
+                    if self.sidebar.selected_item != item:
+                        if self.sidebar.selected_item:
+                            self.sidebar.selected_item.deselect()
+                        item.select()
+                        self.sidebar.selected_item = item
+                    break
+            return
+
         # Hide current panel
         if self.current_panel:
             self.current_panel.pack_forget()
@@ -242,14 +360,25 @@ class ScenarioConfigScreen(tk.Frame):
         section = ThemedFrame(panel)
         section.pack(fill='x', pady=(0, DarkTheme.PADDING_MEDIUM))
 
-        label = ThemedLabel(
-            section,
+        # Create label with red asterisk for required field
+        label_frame = tk.Frame(section, bg=DarkTheme.BG_PRIMARY)
+        label_frame.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        ThemedLabel(
+            label_frame,
             text="Active Runways:",
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
-        )
-        label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+        ).pack(side='left')
 
-        entry = ThemedEntry(section, placeholder="e.g., 7L, 25R")
+        tk.Label(
+            label_frame,
+            text=" *",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
+            fg='#FF4444',
+            bg=DarkTheme.BG_PRIMARY
+        ).pack(side='left')
+
+        entry = ThemedEntry(section, placeholder="e.g., 7L, 25R", validate_type="runway")
         entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
         self.inputs['active_runways'] = entry
 
@@ -398,32 +527,59 @@ class ScenarioConfigScreen(tk.Frame):
         grid = ThemedFrame(difficulty_frame)
         grid.pack(fill='x', padx=(DarkTheme.PADDING_LARGE, 0))
 
-        # Easy difficulty
-        easy_label = ThemedLabel(grid, text="Easy:")
-        easy_label.grid(row=0, column=0, sticky='w',
-                       padx=(0, DarkTheme.PADDING_SMALL))
+        # Easy difficulty - Required field with red asterisk
+        easy_label_frame = tk.Frame(grid, bg=DarkTheme.BG_PRIMARY)
+        easy_label_frame.grid(row=0, column=0, sticky='w',
+                             padx=(0, DarkTheme.PADDING_SMALL))
 
-        easy_entry = ThemedEntry(grid, placeholder="0")
+        ThemedLabel(easy_label_frame, text="Easy:").pack(side='left')
+        tk.Label(
+            easy_label_frame,
+            text=" *",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
+            fg='#FF4444',
+            bg=DarkTheme.BG_PRIMARY
+        ).pack(side='left')
+
+        easy_entry = ThemedEntry(grid, placeholder="0", validate_type="integer")
         easy_entry.grid(row=0, column=1, sticky='ew',
                        padx=(0, DarkTheme.PADDING_LARGE))
         self.inputs['difficulty_easy'] = easy_entry
 
-        # Medium difficulty
-        medium_label = ThemedLabel(grid, text="Medium:")
-        medium_label.grid(row=0, column=2, sticky='w',
-                         padx=(0, DarkTheme.PADDING_SMALL))
+        # Medium difficulty - Required field with red asterisk
+        medium_label_frame = tk.Frame(grid, bg=DarkTheme.BG_PRIMARY)
+        medium_label_frame.grid(row=0, column=2, sticky='w',
+                               padx=(0, DarkTheme.PADDING_SMALL))
 
-        medium_entry = ThemedEntry(grid, placeholder="0")
+        ThemedLabel(medium_label_frame, text="Medium:").pack(side='left')
+        tk.Label(
+            medium_label_frame,
+            text=" *",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
+            fg='#FF4444',
+            bg=DarkTheme.BG_PRIMARY
+        ).pack(side='left')
+
+        medium_entry = ThemedEntry(grid, placeholder="0", validate_type="integer")
         medium_entry.grid(row=0, column=3, sticky='ew',
                          padx=(0, DarkTheme.PADDING_LARGE))
         self.inputs['difficulty_medium'] = medium_entry
 
-        # Hard difficulty
-        hard_label = ThemedLabel(grid, text="Hard:")
-        hard_label.grid(row=0, column=4, sticky='w',
-                       padx=(0, DarkTheme.PADDING_SMALL))
+        # Hard difficulty - Required field with red asterisk
+        hard_label_frame = tk.Frame(grid, bg=DarkTheme.BG_PRIMARY)
+        hard_label_frame.grid(row=0, column=4, sticky='w',
+                             padx=(0, DarkTheme.PADDING_SMALL))
 
-        hard_entry = ThemedEntry(grid, placeholder="0")
+        ThemedLabel(hard_label_frame, text="Hard:").pack(side='left')
+        tk.Label(
+            hard_label_frame,
+            text=" *",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
+            fg='#FF4444',
+            bg=DarkTheme.BG_PRIMARY
+        ).pack(side='left')
+
+        hard_entry = ThemedEntry(grid, placeholder="0", validate_type="integer")
         hard_entry.grid(row=0, column=5, sticky='ew')
         self.inputs['difficulty_hard'] = hard_entry
 
@@ -458,11 +614,21 @@ class ScenarioConfigScreen(tk.Frame):
 
         # Departures (if applicable)
         if has_departures:
-            dep_label = ThemedLabel(grid_frame, text="Departures:")
-            dep_label.grid(row=0, column=col, sticky='w',
-                          padx=(0, DarkTheme.PADDING_SMALL))
+            # Create label with red asterisk for required field
+            dep_label_frame = tk.Frame(grid_frame, bg=DarkTheme.BG_PRIMARY)
+            dep_label_frame.grid(row=0, column=col, sticky='w',
+                                padx=(0, DarkTheme.PADDING_SMALL))
 
-            dep_entry = ThemedEntry(grid_frame, placeholder="e.g., 10")
+            ThemedLabel(dep_label_frame, text="Departures:").pack(side='left')
+            tk.Label(
+                dep_label_frame,
+                text=" *",
+                font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
+                fg='#FF4444',
+                bg=DarkTheme.BG_PRIMARY
+            ).pack(side='left')
+
+            dep_entry = ThemedEntry(grid_frame, placeholder="e.g., 10", validate_type="integer")
             dep_entry.grid(row=0, column=col+1, sticky='ew',
                           padx=(0, DarkTheme.PADDING_LARGE))
             self.inputs['num_departures'] = dep_entry
@@ -472,11 +638,21 @@ class ScenarioConfigScreen(tk.Frame):
 
         # Arrivals (if applicable)
         if has_arrivals:
-            arr_label = ThemedLabel(grid_frame, text="Arrivals:")
-            arr_label.grid(row=0, column=col, sticky='w',
-                          padx=(0, DarkTheme.PADDING_SMALL))
+            # Create label with red asterisk for required field
+            arr_label_frame = tk.Frame(grid_frame, bg=DarkTheme.BG_PRIMARY)
+            arr_label_frame.grid(row=0, column=col, sticky='w',
+                                padx=(0, DarkTheme.PADDING_SMALL))
 
-            arr_entry = ThemedEntry(grid_frame, placeholder="e.g., 5")
+            ThemedLabel(arr_label_frame, text="Arrivals:").pack(side='left')
+            tk.Label(
+                arr_label_frame,
+                text=" *",
+                font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
+                fg='#FF4444',
+                bg=DarkTheme.BG_PRIMARY
+            ).pack(side='left')
+
+            arr_entry = ThemedEntry(grid_frame, placeholder="e.g., 5", validate_type="integer")
             arr_entry.grid(row=0, column=col+1, sticky='ew',
                           padx=(0, DarkTheme.PADDING_LARGE if has_departures else 0))
             self.inputs['num_arrivals'] = arr_entry
@@ -498,7 +674,7 @@ class ScenarioConfigScreen(tk.Frame):
         )
         label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
-        entry = ThemedEntry(section, placeholder="3-6")
+        entry = ThemedEntry(section, placeholder="3-6", validate_type="range")
         entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
         self.inputs['separation_range'] = entry
 
@@ -621,15 +797,27 @@ class ScenarioConfigScreen(tk.Frame):
         self.incremental_input_frame = ThemedFrame(inputs_grid)
         self.incremental_input_frame.pack(fill='x')
 
-        incremental_label = ThemedLabel(
-            self.incremental_input_frame,
+        # Create label with red asterisk for required field
+        incremental_label_frame = tk.Frame(self.incremental_input_frame, bg=DarkTheme.BG_PRIMARY)
+        incremental_label_frame.grid(row=0, column=0, sticky='w',
+                                    padx=(0, DarkTheme.PADDING_SMALL))
+
+        ThemedLabel(
+            incremental_label_frame,
             text="Delay between aircraft (min):"
-        )
-        incremental_label.grid(row=0, column=0, sticky='w',
-                              padx=(0, DarkTheme.PADDING_SMALL))
+        ).pack(side='left')
+
+        tk.Label(
+            incremental_label_frame,
+            text=" *",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
+            fg='#FF4444',
+            bg=DarkTheme.BG_PRIMARY
+        ).pack(side='left')
 
         incremental_entry = ThemedEntry(self.incremental_input_frame,
-                                       placeholder="2-5 or 3")
+                                       placeholder="2-5 or 3",
+                                       validate_type="range")
         incremental_entry.grid(row=0, column=1, sticky='ew')
         self.inputs['incremental_delay_value'] = incremental_entry
 
@@ -649,12 +837,25 @@ class ScenarioConfigScreen(tk.Frame):
         self.total_input_frame.pack(fill='x')
         self.total_input_frame.pack_forget()  # Hide initially
 
-        total_label = ThemedLabel(self.total_input_frame,
-                                 text="Total session length (min):")
-        total_label.grid(row=0, column=0, sticky='w',
-                        padx=(0, DarkTheme.PADDING_SMALL))
+        # Create label with red asterisk for required field
+        total_label_frame = tk.Frame(self.total_input_frame, bg=DarkTheme.BG_PRIMARY)
+        total_label_frame.grid(row=0, column=0, sticky='w',
+                              padx=(0, DarkTheme.PADDING_SMALL))
 
-        total_entry = ThemedEntry(self.total_input_frame, placeholder="30")
+        ThemedLabel(
+            total_label_frame,
+            text="Total session length (min):"
+        ).pack(side='left')
+
+        tk.Label(
+            total_label_frame,
+            text=" *",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
+            fg='#FF4444',
+            bg=DarkTheme.BG_PRIMARY
+        ).pack(side='left')
+
+        total_entry = ThemedEntry(self.total_input_frame, placeholder="30", validate_type="integer")
         total_entry.grid(row=0, column=1, sticky='ew')
         self.inputs['total_session_minutes'] = total_entry
 
@@ -674,16 +875,27 @@ class ScenarioConfigScreen(tk.Frame):
         section = ThemedFrame(parent)
         section.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
 
-        # STAR Waypoints
-        waypoint_label = ThemedLabel(
-            section,
+        # STAR Waypoints - Required field with red asterisk
+        label_frame = tk.Frame(section, bg=DarkTheme.BG_PRIMARY)
+        label_frame.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        ThemedLabel(
+            label_frame,
             text="STAR Waypoints:",
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
-        )
-        waypoint_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+        ).pack(side='left')
+
+        tk.Label(
+            label_frame,
+            text=" *",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
+            fg='#FF4444',
+            bg=DarkTheme.BG_PRIMARY
+        ).pack(side='left')
 
         waypoints_entry = ThemedEntry(section,
-                                     placeholder="e.g., EAGUL.JESSE3, PINNG.PINNG1, etc.")
+                                     placeholder="e.g., EAGUL.JESSE3, PINNG.PINNG1, etc.",
+                                     validate_type="waypoint")
         waypoints_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
         self.inputs['arrival_waypoints'] = waypoints_entry
 
@@ -746,7 +958,8 @@ class ScenarioConfigScreen(tk.Frame):
 
         num_vfr_entry = ThemedEntry(
             self.vfr_frame,
-            placeholder="e.g., 5"
+            placeholder="e.g., 5",
+            validate_type="integer"
         )
         num_vfr_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
         self.inputs['num_vfr'] = num_vfr_entry
@@ -1137,6 +1350,34 @@ class ScenarioConfigScreen(tk.Frame):
                             errors.append("Total session minutes must be positive")
                     except ValueError:
                         errors.append("Total session minutes must be a valid number")
+
+        # Validate TRACON arrival waypoints (required for TRACON arrivals/mixed scenarios)
+        if scenario_type in ['tracon_arrivals', 'tracon_mixed']:
+            # Check if arrivals are being generated
+            num_arrivals = config.get('num_arrivals', '')
+            difficulty_enabled = config.get('enable_difficulty', False)
+
+            has_arrivals = False
+            if difficulty_enabled:
+                try:
+                    easy_count = int(config.get('difficulty_easy', '0') or '0')
+                    medium_count = int(config.get('difficulty_medium', '0') or '0')
+                    hard_count = int(config.get('difficulty_hard', '0') or '0')
+                    has_arrivals = (easy_count + medium_count + hard_count) > 0
+                except ValueError:
+                    pass
+            else:
+                try:
+                    num_arr = int(num_arrivals) if num_arrivals else 0
+                    has_arrivals = num_arr > 0
+                except ValueError:
+                    pass
+
+            # If generating arrivals, waypoints are required
+            if has_arrivals:
+                arrival_waypoints = config.get('arrival_waypoints', '').strip()
+                if not arrival_waypoints:
+                    errors.append("STAR Waypoints are required for TRACON scenarios with arrivals (e.g., EAGUL.EAGUL6, PINNG.PINNG1)")
 
         return errors
 

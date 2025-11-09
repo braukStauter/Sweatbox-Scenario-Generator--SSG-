@@ -40,9 +40,9 @@ class ThemedButton(tk.Button):
 
 
 class ThemedEntry(tk.Frame):
-    """Themed entry widget with internal padding"""
+    """Themed entry widget with internal padding and optional validation"""
 
-    def __init__(self, parent, placeholder="", **kwargs):
+    def __init__(self, parent, placeholder="", validate_type=None, **kwargs):
         super().__init__(parent, bg=DarkTheme.BG_SECONDARY)
 
         self.configure(
@@ -68,9 +68,15 @@ class ThemedEntry(tk.Frame):
 
         self.placeholder = placeholder
         self.placeholder_active = False
+        self.validate_type = validate_type
 
         if placeholder:
             self._show_placeholder()
+
+        # Set up validation if specified
+        if validate_type:
+            vcmd = (self.entry.register(self._validate_input), '%P')
+            self.entry.config(validate='key', validatecommand=vcmd)
 
         self.entry.bind('<FocusIn>', self._on_focus_in)
         self.entry.bind('<FocusOut>', self._on_focus_out)
@@ -120,6 +126,54 @@ class ThemedEntry(tk.Frame):
             # If empty value, show placeholder
             if self.placeholder:
                 self._show_placeholder()
+
+    def _validate_input(self, new_value):
+        """Validate input based on validation type"""
+        # Allow empty input
+        if not new_value:
+            return True
+
+        # Skip validation if placeholder is active
+        if self.placeholder_active:
+            return True
+
+        if self.validate_type == "integer":
+            # Allow only digits
+            return new_value.isdigit()
+
+        elif self.validate_type == "number":
+            # Allow digits, decimal point, and negative sign
+            try:
+                float(new_value)
+                return True
+            except ValueError:
+                return False
+
+        elif self.validate_type == "runway":
+            # Runways: comma-separated list of runway identifiers (e.g., "7L, 25R")
+            # Allow digits, letters, commas, spaces
+            import re
+            return bool(re.match(r'^[0-9A-Za-z,\s]*$', new_value))
+
+        elif self.validate_type == "range":
+            # Range or single number (e.g., "3-6" or "5")
+            # Allow digits, dash, and spaces
+            import re
+            return bool(re.match(r'^[0-9\-\s]*$', new_value))
+
+        elif self.validate_type == "waypoint":
+            # Waypoints: period-separated format (e.g., "EAGUL.EAGUL6, PINNG.PINNG1")
+            # Allow uppercase letters, digits, periods, commas, spaces
+            import re
+            return bool(re.match(r'^[A-Z0-9.,\s]*$', new_value))
+
+        elif self.validate_type == "alphanumeric":
+            # Letters, numbers, spaces only
+            import re
+            return bool(re.match(r'^[A-Za-z0-9\s]*$', new_value))
+
+        # No validation specified or unknown type - allow all
+        return True
 
     def _scroll_to_view(self):
         """Scroll the entry into view when focused"""
@@ -349,18 +403,24 @@ class ProgressIndicator(tk.Frame):
         self.label = ThemedLabel(self, text="Processing...")
         self.label.pack(pady=DarkTheme.PADDING_MEDIUM)
 
-        self.progressbar = ttk.Progressbar(self, mode='indeterminate')
-        self.progressbar.pack(fill='x', padx=DarkTheme.PADDING_LARGE)
-
+        # Configure custom progress bar style
         style = ttk.Style()
         style.theme_use('default')
         style.configure(
-            "TProgressbar",
+            "Dark.Horizontal.TProgressbar",
             background=DarkTheme.ACCENT_PRIMARY,
             troughcolor=DarkTheme.BG_SECONDARY,
             borderwidth=0,
-            thickness=4
+            thickness=8
         )
+
+        self.progressbar = ttk.Progressbar(
+            self,
+            style="Dark.Horizontal.TProgressbar",
+            mode='indeterminate',
+            length=400
+        )
+        self.progressbar.pack(fill='x', padx=DarkTheme.PADDING_LARGE)
 
     def start(self, message="Processing..."):
         """Start the progress animation"""
