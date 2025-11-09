@@ -13,70 +13,77 @@ from models.preset_command import PresetCommandRule
 
 
 # Variable mapping: variable name -> aircraft attribute name
+# Note: Aliases are supported for backward compatibility but only primary names are shown in UI
 VARIABLE_MAP = {
     # Primary identification
     "$aid": "callsign",
-    "$callsign": "callsign",
     "$type": "aircraft_type",
-    "$actype": "aircraft_type",
+    "$operator": "operator",
 
     # Airports
-    "$dep": "departure",
     "$departure": "departure",
-    "$arr": "arrival",
     "$arrival": "arrival",
-    "$dest": "arrival",
-    "$destination": "arrival",
-    "$origin": "departure",
 
-    # Operator/Airline
-    "$operator": "operator",
-    "$airline": "operator",
-
-    # Position
-    "$lat": "latitude",
+    # Position & Navigation
     "$latitude": "latitude",
-    "$lon": "longitude",
     "$longitude": "longitude",
-    "$alt": "altitude",
     "$altitude": "altitude",
-    "$hdg": "heading",
     "$heading": "heading",
-
-    # Speed
-    "$spd": "ground_speed",
     "$speed": "ground_speed",
-    "$gs": "ground_speed",
-    "$groundspeed": "ground_speed",
     "$mach": "mach",
 
-    # Flight plan
+    # Flight Plan
     "$route": "route",
-    "$cruise_alt": "cruise_altitude",
     "$cruise_altitude": "cruise_altitude",
-    "$cruise_spd": "cruise_speed",
     "$cruise_speed": "cruise_speed",
-    "$remarks": "remarks",
-    "$rules": "flight_rules",
     "$flight_rules": "flight_rules",
+    "$remarks": "remarks",
 
-    # Airport operations
+    # Procedures (SID/STAR)
+    "$sid": "sid",
+    "$star": "star",
+
+    # Airport Operations
     "$gate": "parking_spot_name",
-    "$parking": "parking_spot_name",
-    "$spot": "parking_spot_name",
     "$runway": "arrival_runway",
-    "$rwy": "arrival_runway",
-    "$arrival_runway": "arrival_runway",
 
-    # Advanced
+    # Aircraft Details
     "$registration": "registration",
-    "$tail": "registration",
-    "$gufi": "gufi",
     "$wake": "wake_turbulence",
     "$engine": "engine_type",
+
+    # Scenario
     "$difficulty": "difficulty",
     "$fix": "fix",
     "$approach": "expected_approach",
+
+    # Advanced/Internal
+    "$gufi": "gufi",
+
+    # === ALIASES (for backward compatibility) ===
+    "$callsign": "callsign",
+    "$actype": "aircraft_type",
+    "$airline": "operator",
+    "$dep": "departure",
+    "$origin": "departure",
+    "$arr": "arrival",
+    "$dest": "arrival",
+    "$destination": "arrival",
+    "$lat": "latitude",
+    "$lon": "longitude",
+    "$alt": "altitude",
+    "$hdg": "heading",
+    "$spd": "ground_speed",
+    "$gs": "ground_speed",
+    "$groundspeed": "ground_speed",
+    "$cruise_alt": "cruise_altitude",
+    "$cruise_spd": "cruise_speed",
+    "$rules": "flight_rules",
+    "$parking": "parking_spot_name",
+    "$spot": "parking_spot_name",
+    "$rwy": "arrival_runway",
+    "$arrival_runway": "arrival_runway",
+    "$tail": "registration",
 }
 
 
@@ -156,6 +163,25 @@ def _expand_gate_range(range_str: str) -> List[str]:
         gates.append(f"{prefix1}{i}")
 
     return gates
+
+
+def _normalize_procedure_name(procedure: str) -> str:
+    """
+    Normalize a procedure name by removing trailing digits.
+
+    This allows matching both "EAGUL" and "EAGUL6" as the same procedure.
+
+    Args:
+        procedure: Procedure name (e.g., "EAGUL6", "EAGUL", "PINNG1")
+
+    Returns:
+        Normalized procedure name without trailing digits (e.g., "EAGUL", "EAGUL", "PINNG")
+    """
+    if not procedure:
+        return ""
+
+    # Remove trailing digits
+    return re.sub(r'\d+$', '', procedure.upper())
 
 
 def _matches_parking_pattern(parking_spot: str, pattern: str) -> bool:
@@ -238,6 +264,20 @@ def matches_rule(aircraft: Aircraft, rule: PresetCommandRule) -> bool:
         # Match by parking spot pattern (exact, range, or wildcard)
         return _matches_parking_pattern(aircraft.parking_spot_name, rule.group_value)
 
+    elif rule.group_type == "sid":
+        # Match by SID (departure procedure)
+        # Normalize both values to match "RDRNR" with "RDRNR3", etc.
+        if not aircraft.sid:
+            return False
+        return _normalize_procedure_name(aircraft.sid) == _normalize_procedure_name(rule.group_value)
+
+    elif rule.group_type == "star":
+        # Match by STAR (arrival procedure)
+        # Normalize both values to match "EAGUL" with "EAGUL6", etc.
+        if not aircraft.star:
+            return False
+        return _normalize_procedure_name(aircraft.star) == _normalize_procedure_name(rule.group_value)
+
     elif rule.group_type == "random":
         # Random matching handled separately in apply_preset_commands
         return False
@@ -293,14 +333,42 @@ def apply_preset_commands(aircraft_list: List[Aircraft], command_rules: List[Pre
 
 def get_available_variables() -> List[str]:
     """
-    Get a list of all available variable names for display in the GUI.
+    Get a list of PRIMARY variable names for display in the GUI (excludes aliases).
 
     Returns:
-        List of variable names sorted alphabetically
+        List of primary variable names in alphabetical order
     """
-    # Get unique variable names (remove duplicates like $aid and $callsign)
-    unique_vars = sorted(set(VARIABLE_MAP.keys()))
-    return unique_vars
+    # Primary variables only (aliases excluded) - alphabetically sorted
+    primary_vars = [
+        "$aid",
+        "$altitude",
+        "$approach",
+        "$arrival",
+        "$cruise_altitude",
+        "$cruise_speed",
+        "$departure",
+        "$difficulty",
+        "$engine",
+        "$fix",
+        "$flight_rules",
+        "$gate",
+        "$gufi",
+        "$heading",
+        "$latitude",
+        "$longitude",
+        "$mach",
+        "$operator",
+        "$registration",
+        "$remarks",
+        "$route",
+        "$runway",
+        "$sid",
+        "$speed",
+        "$star",
+        "$type",
+        "$wake",
+    ]
+    return primary_vars
 
 
 def get_variable_description(variable: str) -> str:
@@ -314,53 +382,33 @@ def get_variable_description(variable: str) -> str:
         Description string
     """
     descriptions = {
-        "$aid": "Aircraft ID / Callsign",
-        "$callsign": "Aircraft Callsign",
-        "$type": "Aircraft Type",
-        "$actype": "Aircraft Type",
-        "$dep": "Departure Airport",
-        "$departure": "Departure Airport",
-        "$arr": "Arrival Airport",
-        "$arrival": "Arrival Airport",
-        "$dest": "Destination Airport",
-        "$destination": "Destination Airport",
-        "$origin": "Origin Airport",
-        "$operator": "Airline / Operator Code",
-        "$airline": "Airline Code",
-        "$lat": "Latitude",
-        "$latitude": "Latitude",
-        "$lon": "Longitude",
-        "$longitude": "Longitude",
-        "$alt": "Altitude",
-        "$altitude": "Altitude",
-        "$hdg": "Heading",
-        "$heading": "Heading",
-        "$spd": "Ground Speed",
-        "$speed": "Ground Speed",
-        "$gs": "Ground Speed",
-        "$groundspeed": "Ground Speed",
-        "$mach": "Mach Number",
-        "$route": "Flight Route",
-        "$cruise_alt": "Cruise Altitude",
-        "$cruise_altitude": "Cruise Altitude",
-        "$cruise_spd": "Cruise Speed",
-        "$cruise_speed": "Cruise Speed",
-        "$remarks": "Flight Plan Remarks",
-        "$rules": "Flight Rules (I/V)",
-        "$flight_rules": "Flight Rules",
-        "$gate": "Gate / Parking Spot",
-        "$parking": "Parking Spot Name",
-        "$spot": "Parking Spot",
-        "$runway": "Arrival Runway",
-        "$rwy": "Runway",
-        "$arrival_runway": "Arrival Runway",
-        "$registration": "Aircraft Registration",
-        "$tail": "Tail Number",
-        "$gufi": "Global Unique Flight ID",
-        "$wake": "Wake Turbulence Category",
-        "$engine": "Engine Type",
-        "$difficulty": "Difficulty Level",
-        "$fix": "Fix / Waypoint",
+        # Primary variables (alphabetical order)
+        "$aid": "Callsign",
+        "$altitude": "Altitude (feet MSL)",
         "$approach": "Expected Approach",
+        "$arrival": "Arrival Airport (e.g., KDEN)",
+        "$cruise_altitude": "Cruise Altitude (feet)",
+        "$cruise_speed": "Cruise Speed (knots)",
+        "$departure": "Departure Airport (e.g., KORD)",
+        "$difficulty": "Difficulty Level",
+        "$engine": "Engine Type (J/P/T)",
+        "$fix": "Fix/Waypoint (FRD format)",
+        "$flight_rules": "Flight Rules (I/V)",
+        "$gate": "Gate/Parking Spot (e.g., B3)",
+        "$gufi": "Global Unique Flight ID",
+        "$heading": "Heading (degrees)",
+        "$latitude": "Latitude (decimal)",
+        "$longitude": "Longitude (decimal)",
+        "$mach": "Mach Number",
+        "$operator": "Airline/Operator Code (e.g., AAL, UAL)",
+        "$registration": "Aircraft Registration/Tail",
+        "$remarks": "Flight Plan Remarks",
+        "$route": "Flight Route",
+        "$runway": "Arrival Runway (e.g., 08L)",
+        "$sid": "Departure Procedure (e.g., RDRNR3)",
+        "$speed": "Ground Speed (knots)",
+        "$star": "Arrival Procedure (e.g., EAGUL6)",
+        "$type": "Aircraft Type (e.g., B738/L)",
+        "$wake": "Wake Turbulence (L/M/H/J)",
     }
     return descriptions.get(variable, variable)

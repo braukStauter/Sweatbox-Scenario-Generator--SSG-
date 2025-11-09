@@ -683,16 +683,16 @@ class ScenarioConfigScreen(tk.Frame):
         waypoint_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
         waypoints_entry = ThemedEntry(section,
-                                     placeholder="e.g., EAGUL.JESSE3, PINNG.PINNG1 (or leave blank for random)")
+                                     placeholder="e.g., EAGUL.JESSE3, PINNG.PINNG1, etc.")
         waypoints_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
         self.inputs['arrival_waypoints'] = waypoints_entry
 
         waypoint_hint = ThemedLabel(
             section,
-            text="Format: WAYPOINT.STAR, WAYPOINT. (any STAR with waypoint), or WAYPOINT (waypoint only). Leave blank to auto-select random STAR transitions.",
+            text="Format: WAYPOINT.STAR. The aircraft will spawn 3NM prior to that fix along the lateral course of the arrival. The generation will only function appropriately if you pick a waypoint prior to any runway-specific splits.",
             fg=DarkTheme.FG_DISABLED,
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
-            wraplength=600
+            wraplength=550
         )
         waypoint_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM))
 
@@ -1160,7 +1160,8 @@ class ScenarioConfigScreen(tk.Frame):
             section,
             text="Apply vNAS commands to groups of aircraft. Commands are applied cumulatively (aircraft can receive multiple commands).",
             fg=DarkTheme.FG_SECONDARY,
-            wraplength=900
+            wraplength=600,
+            justify='left'
         )
         desc.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM), fill='x')
 
@@ -1190,6 +1191,7 @@ class ScenarioConfigScreen(tk.Frame):
             relief='flat',
             borderwidth=0,
             highlightthickness=0,
+            activestyle='none',
             yscrollcommand=scrollbar.set,
             height=8
         )
@@ -1227,10 +1229,11 @@ class ScenarioConfigScreen(tk.Frame):
         # Info about variables
         var_info = ThemedLabel(
             section,
-            text="Variables: Use $aid (callsign), $type (aircraft), $operator (airline), $gate, $departure, $arrival, etc. Missing values → 'N/A'",
+            text="Available Variables: $aid, $type, $operator, $gate, $departure, $arrival, $altitude, $heading, $speed, $procedure, and more. Click 'Add Command' to see full list. Missing values show as 'N/A'.",
             fg=DarkTheme.FG_DISABLED,
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
-            wraplength=900
+            wraplength=550,
+            justify='left'
         )
         var_info.pack(anchor='w', pady=(DarkTheme.PADDING_SMALL, 0), fill='x')
 
@@ -1247,7 +1250,9 @@ class ScenarioConfigScreen(tk.Frame):
             "random": "Random",
             "departures": "Departures",
             "arrivals": "Arrivals",
-            "parking": "Parking Spot"
+            "parking": "Parking Spot",
+            "sid": "SID",
+            "star": "STAR"
         }
 
         for rule in self.preset_command_rules:
@@ -1297,8 +1302,8 @@ class ScenarioConfigScreen(tk.Frame):
         dialog = tk.Toplevel(self)
         dialog.title("Add Preset Command" if rule is None else "Edit Preset Command")
         dialog.configure(bg=DarkTheme.BG_PRIMARY)
-        dialog.geometry("600x500")
-        dialog.resizable(False, False)
+        dialog.geometry("650x650")
+        dialog.resizable(True, True)
 
         # Make dialog modal
         dialog.transient(self)
@@ -1324,11 +1329,13 @@ class ScenarioConfigScreen(tk.Frame):
 
         group_types = [
             ("All Aircraft", "all"),
-            ("Airline / Operator", "airline"),
+            ("Airline/Operator", "airline"),
             ("Destination Airport", "destination"),
             ("Origin Airport", "origin"),
             ("Aircraft Type", "aircraft_type"),
-            ("Parking Spot / Gate", "parking"),
+            ("Parking Spot/Gate", "parking"),
+            ("SID (Departure Procedure)", "sid"),
+            ("STAR (Arrival Procedure)", "star"),
             ("Random Count", "random"),
             ("All Departures", "departures"),
             ("All Arrivals", "arrivals")
@@ -1375,39 +1382,42 @@ class ScenarioConfigScreen(tk.Frame):
         else:
             group_type_combo.set("All Aircraft")
 
-        # Group Value (conditional)
-        group_value_label = ThemedLabel(content, text="Value:")
-        group_value_entry = ThemedEntry(content, placeholder="e.g., AAL, KJFK, B738, B3, B1-B11, B#, 5")
+        # Group Value (conditional) - frame to hold label and entry
+        group_value_frame = ThemedFrame(content)
+
+        group_value_label = ThemedLabel(group_value_frame, text="Variable Group Condition:")
+        group_value_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        group_value_entry = ThemedEntry(group_value_frame, placeholder="Enter a value which coorresponds to the selected variable type.")
+        group_value_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_MEDIUM))
 
         if rule and rule.group_value:
-            group_value_entry.entry.delete(0, tk.END)
-            group_value_entry.entry.insert(0, rule.group_value)
+            group_value_entry.set_value(rule.group_value)
 
-        def update_group_value_visibility(*args):
+        # Command Template - declare this BEFORE the visibility function so we can pack group_value_frame before it
+        command_label = ThemedLabel(content, text="Command Template:")
+        command_entry = ThemedEntry(content, placeholder="e.g., SAYF THIS IS $aid OUT OF $altitude.")
+
+        # Now pack the command template widgets FIRST
+        command_label.pack(anchor='w', pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL))
+        command_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        def update_group_value_visibility(*_args):
             """Show/hide group value field based on group type"""
             selected_label = group_type_var.get()
             selected_value = type_map.get(selected_label, "all")
 
-            if selected_value in ["airline", "destination", "origin", "aircraft_type", "parking", "random"]:
-                group_value_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
-                group_value_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_MEDIUM))
+            if selected_value in ["airline", "destination", "origin", "aircraft_type", "parking", "random", "sid", "star"]:
+                # Pack before command_label to maintain proper order (command_label is already packed now)
+                group_value_frame.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, 0), before=command_label)
             else:
-                group_value_label.pack_forget()
-                group_value_entry.pack_forget()
+                group_value_frame.pack_forget()
 
         group_type_combo.bind('<<ComboboxSelected>>', update_group_value_visibility)
-        update_group_value_visibility()  # Initial call
-
-        # Command Template
-        command_label = ThemedLabel(content, text="Command Template:")
-        command_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
-
-        command_entry = ThemedEntry(content, placeholder="e.g., SAYF THIS IS $aid, HD270, CAAA$aid")
-        command_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+        update_group_value_visibility()  # Initial call - command_label is now packed so this works
 
         if rule:
-            command_entry.entry.delete(0, tk.END)
-            command_entry.entry.insert(0, rule.command_template)
+            command_entry.set_value(rule.command_template)
 
         # Available variables info
         vars_label = ThemedLabel(
@@ -1440,14 +1450,17 @@ class ScenarioConfigScreen(tk.Frame):
         )
         vars_text.pack(fill='both', expand=True, padx=8, pady=8)
 
-        # Populate variables
-        common_vars = [
-            "$aid (callsign)", "$type (aircraft type)", "$operator (airline)",
-            "$gate (parking spot)", "$departure (origin)", "$arrival (destination)",
-            "$runway (arrival runway)", "$altitude", "$heading", "$speed"
-        ]
-        vars_text.insert('1.0', "Common: " + ", ".join(common_vars) + "\n\n")
-        vars_text.insert('end', "All variables: " + ", ".join(get_available_variables()[:30]))
+        # Populate variables with descriptions in a nicely formatted table
+        all_vars = get_available_variables()
+
+        # Build formatted output
+        output_lines = []
+        for var in all_vars:
+            description = get_variable_description(var)
+            # Format: $variable - Description
+            output_lines.append(f"{var:<20} {description}")
+
+        vars_text.insert('1.0', "\n".join(output_lines))
         vars_text.config(state='disabled')
 
         # Buttons
@@ -1458,7 +1471,7 @@ class ScenarioConfigScreen(tk.Frame):
             """Save the preset command rule"""
             selected_label = group_type_var.get()
             selected_type = type_map.get(selected_label, "all")
-            value = group_value_entry.get_value().strip() if selected_type in ["airline", "destination", "origin", "aircraft_type", "parking", "random"] else None
+            value = group_value_entry.get_value().strip() if selected_type in ["airline", "destination", "origin", "aircraft_type", "parking", "random", "sid", "star"] else None
             command = command_entry.get_value().strip()
 
             # Validation
@@ -1466,7 +1479,7 @@ class ScenarioConfigScreen(tk.Frame):
                 messagebox.showerror("Validation Error", "Command template is required")
                 return
 
-            if selected_type in ["airline", "destination", "origin", "aircraft_type", "parking", "random"] and not value:
+            if selected_type in ["airline", "destination", "origin", "aircraft_type", "parking", "random", "sid", "star"] and not value:
                 messagebox.showerror("Validation Error", f"Value is required for {selected_label}")
                 return
 
@@ -1494,8 +1507,8 @@ class ScenarioConfigScreen(tk.Frame):
         def on_cancel():
             dialog.destroy()
 
-        cancel_btn = ThemedButton(button_frame, text="Cancel", command=on_cancel, primary=False, width=10)
-        cancel_btn.pack(side='right', padx=(0, DarkTheme.PADDING_SMALL))
+        cancel_btn = ThemedButton(button_frame, text="Cancel", command=on_cancel, primary=False)
+        cancel_btn.pack(side='right', padx=(DarkTheme.PADDING_SMALL, 0))
 
-        save_btn = ThemedButton(button_frame, text="Save", command=on_save, primary=True, width=10)
-        save_btn.pack(side='right')
+        save_btn = ThemedButton(button_frame, text="Save", command=on_save, primary=True)
+        save_btn.pack(side='right', padx=(0, DarkTheme.PADDING_SMALL))

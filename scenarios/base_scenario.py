@@ -803,7 +803,10 @@ class BaseScenario(ABC):
             registration=flight_data.get('registration'),
             operator=flight_data.get('operator'),
             estimated_arrival_time=flight_data.get('estimatedArrivalTime'),
-            wake_turbulence=flight_data.get('wakeTurbulence')
+            wake_turbulence=flight_data.get('wakeTurbulence'),
+            # Procedures
+            sid=flight_data.get('departureProcedure'),
+            star=flight_data.get('arrivalProcedure')
         )
 
         return aircraft

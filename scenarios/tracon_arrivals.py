@@ -268,7 +268,9 @@ class TraconArrivalsScenario(BaseScenario):
             cruise_altitude=str(altitude),
             navigation_path=initial_path,
             fix=frd_fix,
-            starting_conditions_type="FixOrFrd"
+            starting_conditions_type="FixOrFrd",
+            # Procedures
+            star=star_name  # Store the STAR name
         )
 
         return aircraft

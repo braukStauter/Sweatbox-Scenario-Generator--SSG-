@@ -10,6 +10,12 @@ class ThemedButton(tk.Button):
     """Themed button widget"""
 
     def __init__(self, parent, text="", command=None, primary=True, **kwargs):
+        # Remove any padding/size overrides from kwargs to ensure consistent button sizing
+        kwargs.pop('padx', None)
+        kwargs.pop('pady', None)
+        kwargs.pop('width', None)
+        kwargs.pop('height', None)
+
         style = DarkTheme.get_button_style() if primary else DarkTheme.get_secondary_button_style()
         style.update(kwargs)
 
@@ -20,7 +26,8 @@ class ThemedButton(tk.Button):
             **style
         )
 
-        self.configure(height=2, padx=DarkTheme.PADDING_LARGE, pady=DarkTheme.PADDING_SMALL)
+        # Set fixed padding that cannot be overridden - ensures consistent button appearance
+        self.configure(height=2, padx=DarkTheme.PADDING_XLARGE, pady=DarkTheme.PADDING_MEDIUM)
 
         self.bind('<Enter>', self._on_enter)
         self.bind('<Leave>', self._on_leave)
@@ -97,6 +104,22 @@ class ThemedEntry(tk.Frame):
         if self.placeholder_active:
             return ""
         return self.entry.get()
+
+    def set_value(self, value: str):
+        """Set the entry value, clearing placeholder if active"""
+        # Clear any existing content
+        self.entry.delete(0, tk.END)
+
+        if value:
+            # Insert the new value
+            self.entry.insert(0, value)
+            # Ensure text color is correct (not placeholder color)
+            self.entry['fg'] = DarkTheme.FG_PRIMARY
+            self.placeholder_active = False
+        else:
+            # If empty value, show placeholder
+            if self.placeholder:
+                self._show_placeholder()
 
     def _scroll_to_view(self):
         """Scroll the entry into view when focused"""

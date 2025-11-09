@@ -24,7 +24,9 @@ class PresetCommandRule:
             - "random": Random selection of aircraft
             - "departures": All departures (aircraft with parking spots)
             - "arrivals": All arrivals (aircraft without parking spots)
-        group_value: Value for the group filter (e.g., "AAL" for airline, "5" for random count).
+            - "sid": Filter by SID (departure procedure)
+            - "star": Filter by STAR (arrival procedure)
+        group_value: Value for the group filter (e.g., "AAL" for airline, "PINNG1" for STAR, "5" for random count).
                     Not used for "all", "departures", "arrivals".
         command_template: vNAS command with optional variables (e.g., "SAYF THIS IS $aid")
     """
@@ -36,14 +38,14 @@ class PresetCommandRule:
         """Validate the preset command rule"""
         valid_group_types = [
             "all", "airline", "destination", "origin", "aircraft_type",
-            "random", "departures", "arrivals", "parking"
+            "random", "departures", "arrivals", "parking", "sid", "star"
         ]
 
         if self.group_type not in valid_group_types:
             raise ValueError(f"Invalid group_type: {self.group_type}. Must be one of {valid_group_types}")
 
         # Validate that group_value is provided when required
-        if self.group_type in ["airline", "destination", "origin", "aircraft_type", "random", "parking"]:
+        if self.group_type in ["airline", "destination", "origin", "aircraft_type", "random", "parking", "sid", "star"]:
             if not self.group_value:
                 raise ValueError(f"group_value is required for group_type '{self.group_type}'")
 
@@ -76,7 +78,7 @@ class PresetCommandRule:
             0: all aircraft
             1: departures/arrivals (operation type)
             2: random (subset)
-            3: airline, destination, origin, aircraft_type (specific criteria)
+            3: airline, destination, origin, aircraft_type, sid, star (specific criteria)
             4: parking (most specific - exact location)
         """
         specificity_map = {
@@ -88,6 +90,8 @@ class PresetCommandRule:
             "destination": 3,
             "origin": 3,
             "aircraft_type": 3,
+            "sid": 3,
+            "star": 3,
             "parking": 4
         }
         return specificity_map.get(self.group_type, 0)

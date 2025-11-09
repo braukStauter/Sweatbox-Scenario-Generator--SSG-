@@ -57,6 +57,10 @@ class Aircraft:
     navigation_path: Optional[str] = None
     final_approach_course_offset: Optional[int] = None  # degrees
 
+    # Procedures (SID/STAR)
+    sid: Optional[str] = None  # Departure procedure (e.g., "RDRNR3")
+    star: Optional[str] = None  # Arrival procedure (e.g., "EAGUL6")
+
     # Preset commands
     preset_commands: List[str] = field(default_factory=list)
 
