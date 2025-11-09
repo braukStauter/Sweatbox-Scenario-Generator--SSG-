@@ -88,7 +88,11 @@ class AirportSelectionScreen(tk.Frame):
 
         # Create grid for airport cards
         for i, geojson_file in enumerate(geojson_files):
-            icao = "K" + geojson_file.stem.upper()
+            # Format ICAO code: add "K" prefix only for 3-letter codes (US airports)
+            # 4-letter codes already have their proper prefix (e.g., PHOG, PHNL, CYYZ)
+            base_code = geojson_file.stem.upper()
+            icao = base_code if len(base_code) == 4 else "K" + base_code
+
             card = SelectableCard(
                 self.airport_container,
                 title=icao,
@@ -103,7 +107,9 @@ class AirportSelectionScreen(tk.Frame):
 
         # If only one airport, auto-select it
         if len(geojson_files) == 1:
-            self.select_airport("K" + geojson_files[0].stem.upper(), self.airport_cards[0])
+            base_code = geojson_files[0].stem.upper()
+            icao = base_code if len(base_code) == 4 else "K" + base_code
+            self.select_airport(icao, self.airport_cards[0])
 
     def select_airport(self, icao, card):
         """Handle airport selection"""
