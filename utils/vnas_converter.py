@@ -120,11 +120,12 @@ class VNASConverter:
             aircraft: Aircraft object
 
         Returns:
-            List of command objects
+            List of command objects with id and command fields
         """
         commands = []
         for command_str in aircraft.preset_commands:
             commands.append({
+                "id": generate_ulid(),
                 "command": command_str
             })
         return commands

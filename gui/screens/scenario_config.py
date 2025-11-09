@@ -2,10 +2,12 @@
 Dynamic scenario configuration screen with accordion sidebar navigation
 """
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import ttk, messagebox
 from gui.theme import DarkTheme
 from gui.widgets import (ThemedLabel, ThemedButton, ThemedEntry, ThemedFrame,
                          Card, ScrollableFrame, Footer, AccordionSidebar)
+from models.preset_command import PresetCommandRule
+from utils.preset_command_processor import get_available_variables, get_variable_description
 
 
 class ScenarioConfigScreen(tk.Frame):
@@ -90,6 +92,9 @@ class ScenarioConfigScreen(tk.Frame):
         self.current_panel = None
         self.current_category_index = 0
         self.category_order = []  # Will be populated based on scenario type
+
+        # Store preset command rules
+        self.preset_command_rules = []
 
         # Initialize sidebar categories
         self._init_sidebar_categories()
@@ -311,7 +316,8 @@ class ScenarioConfigScreen(tk.Frame):
         )
         title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
 
-        # Advanced options go here (difficulty is in Aircraft & Traffic tab)
+        # Preset Commands Section
+        self._add_preset_commands_section(panel)
 
     def _build_output_export_panel(self, panel):
         """Build Output & Export configuration panel"""
@@ -939,6 +945,9 @@ class ScenarioConfigScreen(tk.Frame):
         self.current_panel = None
         self.inputs.clear()
 
+        # Reset preset command rules for new scenario
+        self.preset_command_rules = []
+
         # Rebuild sidebar based on scenario type
         self._rebuild_sidebar_for_scenario(scenario_type)
 
@@ -962,6 +971,10 @@ class ScenarioConfigScreen(tk.Frame):
                 values[key] = widget.get()
             elif isinstance(widget, tk.StringVar):
                 values[key] = widget.get()
+
+        # Include preset command rules
+        values['preset_command_rules'] = self.preset_command_rules
+
         return values
 
     def on_back(self):
@@ -1126,3 +1139,363 @@ class ScenarioConfigScreen(tk.Frame):
                         errors.append("Total session minutes must be a valid number")
 
         return errors
+
+    # ==================== PRESET COMMANDS SECTION ====================
+
+    def _add_preset_commands_section(self, parent):
+        """Add preset commands configuration section"""
+        section = ThemedFrame(parent)
+        section.pack(fill='x', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # Section header
+        header = ThemedLabel(
+            section,
+            text="Preset Commands (vNAS)",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        header.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Description
+        desc = ThemedLabel(
+            section,
+            text="Apply vNAS commands to groups of aircraft. Commands are applied cumulatively (aircraft can receive multiple commands).",
+            fg=DarkTheme.FG_SECONDARY,
+            wraplength=900
+        )
+        desc.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM), fill='x')
+
+        # List frame with border
+        list_frame = tk.Frame(
+            section,
+            bg=DarkTheme.BG_SECONDARY,
+            relief='solid',
+            borderwidth=1,
+            highlightthickness=1,
+            highlightbackground=DarkTheme.BORDER,
+            highlightcolor=DarkTheme.BORDER
+        )
+        list_frame.pack(fill='both', expand=True, pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Listbox with scrollbar
+        scrollbar = tk.Scrollbar(list_frame, bg=DarkTheme.BG_SECONDARY)
+        scrollbar.pack(side='right', fill='y')
+
+        self.preset_commands_listbox = tk.Listbox(
+            list_frame,
+            bg=DarkTheme.BG_SECONDARY,
+            fg=DarkTheme.FG_PRIMARY,
+            selectbackground=DarkTheme.ACCENT_PRIMARY,
+            selectforeground=DarkTheme.FG_PRIMARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            relief='flat',
+            borderwidth=0,
+            highlightthickness=0,
+            yscrollcommand=scrollbar.set,
+            height=8
+        )
+        self.preset_commands_listbox.pack(side='left', fill='both', expand=True, padx=8, pady=8)
+        scrollbar.config(command=self.preset_commands_listbox.yview)
+
+        # Buttons frame
+        buttons_frame = ThemedFrame(section)
+        buttons_frame.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        add_btn = ThemedButton(
+            buttons_frame,
+            text="Add Command",
+            command=self._add_preset_command,
+            primary=True
+        )
+        add_btn.pack(side='left', padx=(0, DarkTheme.PADDING_SMALL))
+
+        edit_btn = ThemedButton(
+            buttons_frame,
+            text="Edit",
+            command=self._edit_preset_command,
+            primary=False
+        )
+        edit_btn.pack(side='left', padx=(0, DarkTheme.PADDING_SMALL))
+
+        remove_btn = ThemedButton(
+            buttons_frame,
+            text="Remove",
+            command=self._remove_preset_command,
+            primary=False
+        )
+        remove_btn.pack(side='left')
+
+        # Info about variables
+        var_info = ThemedLabel(
+            section,
+            text="Variables: Use $aid (callsign), $type (aircraft), $operator (airline), $gate, $departure, $arrival, etc. Missing values → 'N/A'",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=900
+        )
+        var_info.pack(anchor='w', pady=(DarkTheme.PADDING_SMALL, 0), fill='x')
+
+    def _refresh_preset_commands_list(self):
+        """Refresh the preset commands listbox display"""
+        self.preset_commands_listbox.delete(0, tk.END)
+
+        group_type_labels = {
+            "all": "All Aircraft",
+            "airline": "Airline",
+            "destination": "Destination",
+            "origin": "Origin",
+            "aircraft_type": "Aircraft Type",
+            "random": "Random",
+            "departures": "Departures",
+            "arrivals": "Arrivals",
+            "parking": "Parking Spot"
+        }
+
+        for rule in self.preset_command_rules:
+            group_label = group_type_labels.get(rule.group_type, rule.group_type)
+
+            if rule.group_value:
+                display_text = f"[{group_label}: {rule.group_value}] → {rule.command_template}"
+            else:
+                display_text = f"[{group_label}] → {rule.command_template}"
+
+            self.preset_commands_listbox.insert(tk.END, display_text)
+
+    def _add_preset_command(self):
+        """Open dialog to add a new preset command"""
+        self._open_preset_command_dialog()
+
+    def _edit_preset_command(self):
+        """Open dialog to edit the selected preset command"""
+        selection = self.preset_commands_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select a command to edit")
+            return
+
+        index = selection[0]
+        rule = self.preset_command_rules[index]
+        self._open_preset_command_dialog(rule, index)
+
+    def _remove_preset_command(self):
+        """Remove the selected preset command"""
+        selection = self.preset_commands_listbox.curselection()
+        if not selection:
+            messagebox.showwarning("No Selection", "Please select a command to remove")
+            return
+
+        index = selection[0]
+        del self.preset_command_rules[index]
+        self._refresh_preset_commands_list()
+
+    def _open_preset_command_dialog(self, rule=None, edit_index=None):
+        """
+        Open dialog to add or edit a preset command rule
+
+        Args:
+            rule: PresetCommandRule to edit (None for new)
+            edit_index: Index of rule being edited (None for new)
+        """
+        dialog = tk.Toplevel(self)
+        dialog.title("Add Preset Command" if rule is None else "Edit Preset Command")
+        dialog.configure(bg=DarkTheme.BG_PRIMARY)
+        dialog.geometry("600x500")
+        dialog.resizable(False, False)
+
+        # Make dialog modal
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Content frame
+        content = ThemedFrame(dialog)
+        content.pack(fill='both', expand=True, padx=DarkTheme.PADDING_LARGE, pady=DarkTheme.PADDING_LARGE)
+
+        # Title
+        title = ThemedLabel(
+            content,
+            text="Configure Preset Command",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # Group Type
+        group_type_label = ThemedLabel(content, text="Apply to:")
+        group_type_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        group_type_var = tk.StringVar()
+
+        group_types = [
+            ("All Aircraft", "all"),
+            ("Airline / Operator", "airline"),
+            ("Destination Airport", "destination"),
+            ("Origin Airport", "origin"),
+            ("Aircraft Type", "aircraft_type"),
+            ("Parking Spot / Gate", "parking"),
+            ("Random Count", "random"),
+            ("All Departures", "departures"),
+            ("All Arrivals", "arrivals")
+        ]
+
+        group_frame = ThemedFrame(content)
+        group_frame.pack(fill='x', pady=(0, DarkTheme.PADDING_MEDIUM))
+
+        # Style the combobox
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure(
+            'Preset.TCombobox',
+            fieldbackground=DarkTheme.BG_SECONDARY,
+            background=DarkTheme.BG_SECONDARY,
+            foreground=DarkTheme.FG_PRIMARY,
+            arrowcolor=DarkTheme.FG_PRIMARY,
+            borderwidth=1,
+            relief='solid'
+        )
+        style.map('Preset.TCombobox',
+                  fieldbackground=[('readonly', DarkTheme.BG_SECONDARY)],
+                  selectbackground=[('readonly', DarkTheme.BG_SECONDARY)],
+                  selectforeground=[('readonly', DarkTheme.FG_PRIMARY)])
+
+        group_type_combo = ttk.Combobox(
+            group_frame,
+            textvariable=group_type_var,
+            values=[label for label, _ in group_types],
+            state='readonly',
+            style='Preset.TCombobox',
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            width=30
+        )
+        group_type_combo.pack(fill='x')
+
+        # Map display names to values
+        type_map = {label: value for label, value in group_types}
+        reverse_type_map = {value: label for label, value in group_types}
+
+        # Set initial selection
+        if rule:
+            group_type_combo.set(reverse_type_map.get(rule.group_type, "All Aircraft"))
+        else:
+            group_type_combo.set("All Aircraft")
+
+        # Group Value (conditional)
+        group_value_label = ThemedLabel(content, text="Value:")
+        group_value_entry = ThemedEntry(content, placeholder="e.g., AAL, KJFK, B738, B3, B1-B11, B#, 5")
+
+        if rule and rule.group_value:
+            group_value_entry.entry.delete(0, tk.END)
+            group_value_entry.entry.insert(0, rule.group_value)
+
+        def update_group_value_visibility(*args):
+            """Show/hide group value field based on group type"""
+            selected_label = group_type_var.get()
+            selected_value = type_map.get(selected_label, "all")
+
+            if selected_value in ["airline", "destination", "origin", "aircraft_type", "parking", "random"]:
+                group_value_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+                group_value_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_MEDIUM))
+            else:
+                group_value_label.pack_forget()
+                group_value_entry.pack_forget()
+
+        group_type_combo.bind('<<ComboboxSelected>>', update_group_value_visibility)
+        update_group_value_visibility()  # Initial call
+
+        # Command Template
+        command_label = ThemedLabel(content, text="Command Template:")
+        command_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        command_entry = ThemedEntry(content, placeholder="e.g., SAYF THIS IS $aid, HD270, CAAA$aid")
+        command_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        if rule:
+            command_entry.entry.delete(0, tk.END)
+            command_entry.entry.insert(0, rule.command_template)
+
+        # Available variables info
+        vars_label = ThemedLabel(
+            content,
+            text="Available Variables:",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL, 'bold'),
+            fg=DarkTheme.FG_SECONDARY
+        )
+        vars_label.pack(anchor='w', pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL))
+
+        # Variables list (read-only, no scrollbar)
+        vars_frame = tk.Frame(
+            content,
+            bg=DarkTheme.BG_SECONDARY,
+            relief='solid',
+            borderwidth=1
+        )
+        vars_frame.pack(fill='both', expand=True, pady=(0, DarkTheme.PADDING_MEDIUM))
+
+        vars_text = tk.Text(
+            vars_frame,
+            bg=DarkTheme.BG_SECONDARY,
+            fg=DarkTheme.FG_SECONDARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            relief='flat',
+            borderwidth=0,
+            highlightthickness=0,
+            height=8,
+            wrap='word'
+        )
+        vars_text.pack(fill='both', expand=True, padx=8, pady=8)
+
+        # Populate variables
+        common_vars = [
+            "$aid (callsign)", "$type (aircraft type)", "$operator (airline)",
+            "$gate (parking spot)", "$departure (origin)", "$arrival (destination)",
+            "$runway (arrival runway)", "$altitude", "$heading", "$speed"
+        ]
+        vars_text.insert('1.0', "Common: " + ", ".join(common_vars) + "\n\n")
+        vars_text.insert('end', "All variables: " + ", ".join(get_available_variables()[:30]))
+        vars_text.config(state='disabled')
+
+        # Buttons
+        button_frame = ThemedFrame(content)
+        button_frame.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, 0))
+
+        def on_save():
+            """Save the preset command rule"""
+            selected_label = group_type_var.get()
+            selected_type = type_map.get(selected_label, "all")
+            value = group_value_entry.get_value().strip() if selected_type in ["airline", "destination", "origin", "aircraft_type", "parking", "random"] else None
+            command = command_entry.get_value().strip()
+
+            # Validation
+            if not command:
+                messagebox.showerror("Validation Error", "Command template is required")
+                return
+
+            if selected_type in ["airline", "destination", "origin", "aircraft_type", "parking", "random"] and not value:
+                messagebox.showerror("Validation Error", f"Value is required for {selected_label}")
+                return
+
+            # Create or update rule
+            try:
+                new_rule = PresetCommandRule(
+                    group_type=selected_type,
+                    group_value=value,
+                    command_template=command
+                )
+
+                if edit_index is not None:
+                    # Update existing rule
+                    self.preset_command_rules[edit_index] = new_rule
+                else:
+                    # Add new rule
+                    self.preset_command_rules.append(new_rule)
+
+                self._refresh_preset_commands_list()
+                dialog.destroy()
+
+            except ValueError as e:
+                messagebox.showerror("Validation Error", str(e))
+
+        def on_cancel():
+            dialog.destroy()
+
+        cancel_btn = ThemedButton(button_frame, text="Cancel", command=on_cancel, primary=False, width=10)
+        cancel_btn.pack(side='right', padx=(0, DarkTheme.PADDING_SMALL))
+
+        save_btn = ThemedButton(button_frame, text="Save", command=on_save, primary=True, width=10)
+        save_btn.pack(side='right')

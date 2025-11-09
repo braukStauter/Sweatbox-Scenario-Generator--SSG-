@@ -14,6 +14,7 @@ from gui.screens.generation_screen import GenerationScreen
 from parsers.geojson_parser import GeoJSONParser
 from parsers.cifp_parser import CIFPParser
 from utils.api_client import FlightDataAPIClient
+from utils.preset_command_processor import apply_preset_commands
 from generators.backup_scenario_generator import BackupScenarioGenerator
 
 from scenarios.ground_departures import GroundDeparturesScenario
@@ -350,6 +351,13 @@ class MainWindow(tk.Tk):
 
             if not aircraft:
                 raise Exception("No aircraft generated")
+
+            # Apply preset commands if configured
+            preset_command_rules = config.get('preset_command_rules', [])
+            if preset_command_rules:
+                self._update_progress("Applying preset commands...")
+                apply_preset_commands(aircraft, preset_command_rules)
+                logger.info(f"Applied {len(preset_command_rules)} preset command rules to aircraft")
 
             # Update progress
             self._update_progress("Saving backup scenario file...")
