@@ -145,7 +145,7 @@ class TraconMixedScenario(BaseScenario):
 
             arrivals_created = 0
             attempts = 0
-            max_attempts = num_arrivals * 3  # Allow 3x attempts to handle missing data/waypoints
+            max_attempts = num_arrivals * 10  # Allow 10x attempts to handle missing data/waypoints
 
             while arrivals_created < num_arrivals and attempts < max_attempts:
                 waypoint_name, star_name = star_transitions[attempts % len(star_transitions)]
@@ -176,9 +176,27 @@ class TraconMixedScenario(BaseScenario):
                 # Get next unused flight for this STAR
                 flight_index = star_flight_indices[star_base]
                 if flight_index >= len(available_flights):
-                    logger.warning(f"Exhausted all flights for STAR {star_base}")
-                    attempts += 1
-                    continue
+                    # Try to fetch more flights from API
+                    logger.info(f"Flight pool exhausted for STAR {star_base}, fetching more from API...")
+                    additional_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=100, stars=[star_base])
+                    if additional_flights:
+                        valid_flights = filter_valid_flights(additional_flights)
+                        unique_flights = self._deduplicate_by_gufi(valid_flights)
+                        if unique_flights:
+                            # Add to the flight pool for this STAR
+                            if star_base not in flights_by_star:
+                                flights_by_star[star_base] = []
+                            flights_by_star[star_base].extend(unique_flights)
+                            available_flights = flights_by_star[star_base]
+                            logger.info(f"Added {len(unique_flights)} more flights for STAR {star_base}")
+                        else:
+                            logger.warning(f"No additional valid flights found for STAR {star_base}")
+                            attempts += 1
+                            continue
+                    else:
+                        logger.warning(f"Failed to fetch additional flights for STAR {star_base}")
+                        attempts += 1
+                        continue
 
                 flight_data = available_flights[flight_index]
                 star_flight_indices[star_base] += 1
@@ -209,7 +227,15 @@ class TraconMixedScenario(BaseScenario):
         if not spawn_delay_range:
             self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
 
-        logger.info(f"Generated {len(self.aircraft)} total aircraft (departures: {num_departures}, arrivals: {arrivals_created}, VFR: {num_vfr})")
+        # Count actual aircraft by type
+        num_departures_actual = sum(1 for a in self.aircraft if a.departure == self.airport_icao and a.flight_rules == 'I')
+        num_arrivals_actual = sum(1 for a in self.aircraft if a.arrival == self.airport_icao and a.flight_rules == 'I')
+        num_vfr_actual = sum(1 for a in self.aircraft if a.flight_rules == 'V')
+
+        logger.info(f"Generated {len(self.aircraft)} total aircraft: "
+                   f"{num_departures_actual} departures (requested {num_departures}), "
+                   f"{num_arrivals_actual} arrivals (requested {num_arrivals}), "
+                   f"{num_vfr_actual} VFR (requested {num_vfr})")
         return self.aircraft
 
     def _create_arrival_at_waypoint(self, waypoint, flight_data: Dict, star_name: str, active_runways: List[str] = None) -> Aircraft:

@@ -1058,6 +1058,88 @@ class BaseScenario(ABC):
 
         raise ValueError(f"Fix '{fix_name}' not found in airport or CIFP data")
 
+    def _calculate_runway_separation_increment(
+        self,
+        prev_runway: str,
+        next_runway: str,
+        parallel_info: Dict
+    ) -> int:
+        """
+        Calculate the distance increment needed between successive aircraft on different runways.
+
+        Implements FAA parallel runway separation standards:
+        - < 2,500 ft or > 9,000 ft: 3 NM (treat as same runway)
+        - 2,500-3,600 ft: 2 NM (rounded up from ~1.31 NM for 1 NM diagonal)
+        - 3,600-8,300 ft: 2 NM (rounded up from 1.31-1.99 NM for 1.5 NM diagonal)
+        - 8,300-9,000 ft: 2 NM (for 2 NM diagonal)
+
+        Args:
+            prev_runway: Previous runway end designator (e.g., '8')
+            next_runway: Next runway end designator (e.g., '7L')
+            parallel_info: Dict from get_parallel_runway_info() with parallel runway data
+
+        Returns:
+            Distance increment in NM (integer) to add to current distance
+        """
+        import math
+
+        # If same runway, add standard separation
+        if prev_runway == next_runway:
+            return 3
+
+        # Check if runways are parallel
+        if not parallel_info:
+            # No parallel info available, treat as independent runways
+            return 3
+
+        # Look up centerline spacing between these runways
+        centerline_spacing_nm = None
+        required_diagonal_nm = None
+
+        # Check if prev_runway has next_runway as a parallel
+        if prev_runway in parallel_info:
+            prev_data = parallel_info[prev_runway]
+            if next_runway in prev_data.get('parallels', []):
+                centerline_spacing_nm = prev_data['spacing_nm'].get(next_runway)
+                required_diagonal_nm = prev_data['required_sep_nm'].get(next_runway)
+
+        # Check if next_runway has prev_runway as a parallel
+        if centerline_spacing_nm is None and next_runway in parallel_info:
+            next_data = parallel_info[next_runway]
+            if prev_runway in next_data.get('parallels', []):
+                centerline_spacing_nm = next_data['spacing_nm'].get(prev_runway)
+                required_diagonal_nm = next_data['required_sep_nm'].get(prev_runway)
+
+        # If not parallel, treat as independent runways
+        if centerline_spacing_nm is None or required_diagonal_nm is None:
+            logger.debug(f"{prev_runway} and {next_runway} are not parallel, using 3 NM separation")
+            return 3
+
+        # Calculate minimum along-track separation needed for required diagonal
+        # Using inverse Pythagorean: along_track = sqrt(diagonal^2 - centerline^2)
+        if required_diagonal_nm <= centerline_spacing_nm:
+            # Centerline spacing alone satisfies diagonal requirement
+            min_along_track = 0.0
+        else:
+            min_along_track = math.sqrt(required_diagonal_nm**2 - centerline_spacing_nm**2)
+
+        # Round UP to nearest integer (vNAS requirement)
+        increment = math.ceil(min_along_track)
+
+        # Ensure at least 2 NM for parallel runways (common minimum)
+        if increment < 2:
+            increment = 2
+
+        logger.debug(
+            f"Runway pair {prev_runway}-{next_runway}: "
+            f"centerline={centerline_spacing_nm:.3f} NM, "
+            f"required diagonal={required_diagonal_nm:.1f} NM, "
+            f"min along-track={min_along_track:.2f} NM, "
+            f"increment={increment} NM"
+        )
+
+        return increment
+
     def get_aircraft(self) -> List[Aircraft]:
         """Get generated aircraft list"""
         return self.aircraft

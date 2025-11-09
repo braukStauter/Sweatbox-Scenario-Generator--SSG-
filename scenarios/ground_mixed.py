@@ -48,6 +48,12 @@ class GroundMixedScenario(BaseScenario):
         self._prepare_ga_flight_pool()
         self._prepare_arrival_flight_pool()
 
+        # Get parallel runway information for separation calculations
+        parallel_info = self.geojson_parser.get_parallel_runway_info()
+
+        # Get runway groups for per-group distance tracking
+        runway_groups = self.geojson_parser.get_runway_groups()
+
         # Setup difficulty assignment
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
 
@@ -98,34 +104,97 @@ class GroundMixedScenario(BaseScenario):
 
             attempts += 1
 
-        # Generate arrivals
-        # With spawn delay system, spacing is controlled by spawn delays
-        # When no spawn delay is used (NONE mode), stagger by distance instead
-        for i in range(num_arrivals):
-            runway_name = active_runways[i % len(active_runways)]
+        # Generate arrivals using simple iterative algorithm with per-group distance counters
+        # Each runway group maintains its own distance counter
+        num_arrivals_created = 0
+        attempts = 0
+        max_attempts = num_arrivals * 10  # Allow up to 10 attempts per aircraft
 
-            # If no spawn delay mode, stagger arrivals by distance (5 NM minimum spacing)
-            if spawn_delay_mode == SpawnDelayMode.NONE and not spawn_delay_range:
-                base_distance = 5
-                distance_nm = base_distance + (i // len(active_runways)) * 5
-            else:
-                # With spawn delays, use fixed 5 NM final approach position
+        # Initialize per-group distance counters and previous runway tracking
+        if spawn_delay_mode == SpawnDelayMode.NONE and not spawn_delay_range:
+            # Dictionary: group_id -> current_distance
+            group_distances = {}
+            # Dictionary: group_id -> previous_runway
+            group_prev_runway = {}
+
+            # Initialize starting distance (5 NM for ground scenarios) for each group
+            for group_id in set(runway_groups.values()):
+                group_distances[group_id] = 5
+                group_prev_runway[group_id] = None
+        else:
+            # With spawn delays, use fixed 5 NM final approach position
+            group_distances = {}
+            group_prev_runway = {}
+
+        while num_arrivals_created < num_arrivals and attempts < max_attempts:
+            runway_name = active_runways[num_arrivals_created % len(active_runways)]
+
+            # If using spawn delays, all aircraft at 5 NM (spacing controlled by spawn delays)
+            if spawn_delay_mode != SpawnDelayMode.NONE or spawn_delay_range:
                 distance_nm = 5
+            else:
+                # Determine which group this runway belongs to
+                group_id = runway_groups.get(runway_name)
+
+                # If runway not in any group, give it a unique group ID
+                if group_id is None:
+                    # Create unique group for this independent runway
+                    group_id = f"independent_{runway_name}"
+                    if group_id not in group_distances:
+                        group_distances[group_id] = 5
+                        group_prev_runway[group_id] = None
+                        logger.info(f"Runway {runway_name} is independent (not parallel/crossing), using its own distance counter")
+
+                # Get this group's current distance and previous runway
+                current_distance = group_distances[group_id]
+                prev_runway = group_prev_runway[group_id]
+
+                # Simple iterative algorithm:
+                # 1. First aircraft in group starts at current_distance (5 NM)
+                # 2. Each subsequent aircraft adds separation increment based on runway pairing
+                if prev_runway is not None:
+                    # Calculate increment based on runway transition
+                    increment = self._calculate_runway_separation_increment(
+                        prev_runway, runway_name, parallel_info
+                    )
+                    current_distance += increment
+                    logger.info(f"Group {group_id}: Runway transition {prev_runway} -> {runway_name}: adding {increment} NM (new distance: {current_distance} NM)")
+                else:
+                    logger.info(f"Group {group_id}: First aircraft on {runway_name} at {current_distance} NM")
+
+                distance_nm = current_distance
+
+                # Update group's distance and previous runway
+                group_distances[group_id] = current_distance
+                group_prev_runway[group_id] = runway_name
 
             aircraft = self._create_arrival_aircraft(runway_name, distance_nm)
-            # Legacy mode: apply random spawn delay
-            if spawn_delay_range and not delay_value:
-                aircraft.spawn_delay = random.randint(min_delay, max_delay)
-                logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
-            # Assign difficulty level
-            difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
-            self.aircraft.append(aircraft)
+            if aircraft is not None:
+                # Legacy mode: apply random spawn delay
+                if spawn_delay_range and not delay_value:
+                    aircraft.spawn_delay = random.randint(min_delay, max_delay)
+                    logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
+                # Assign difficulty level
+                difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                self.aircraft.append(aircraft)
+                num_arrivals_created += 1
+
+            attempts += 1
+
+        if num_arrivals_created < num_arrivals:
+            logger.warning(f"Only created {num_arrivals_created} of {num_arrivals} requested arrivals after {max_attempts} attempts")
 
         # Apply new spawn delay system
         if not spawn_delay_range:
             self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
 
-        logger.info(f"Generated {len(self.aircraft)} total aircraft")
+        # Count actual aircraft by type
+        num_departures_actual = sum(1 for a in self.aircraft if a.departure == self.airport_icao)
+        num_arrivals_actual = sum(1 for a in self.aircraft if a.arrival == self.airport_icao)
+
+        logger.info(f"Generated {len(self.aircraft)} total aircraft: "
+                   f"{num_departures_actual} departures (requested {num_departures}), "
+                   f"{num_arrivals_actual} arrivals (requested {num_arrivals})")
         return self.aircraft
 
     def _create_arrival_aircraft(self, runway_name: str, distance_nm: float) -> Aircraft:

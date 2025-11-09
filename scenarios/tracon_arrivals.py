@@ -104,9 +104,31 @@ class TraconArrivalsScenario(BaseScenario):
                 logger.warning(f"Waypoint {waypoint_name} not found in CIFP for {star_name}")
                 continue
 
-            # Generate aircraft
-            for i in range(min(num_for_this_star, len(available_flights))):
-                flight_data = available_flights[i]
+            # Generate aircraft with retry logic
+            created = 0
+            attempts = 0
+            max_attempts = num_for_this_star * 10
+
+            while created < num_for_this_star and attempts < max_attempts:
+                flight_index = attempts % len(available_flights)
+
+                # If we've exhausted the available flights, try to fetch more
+                if attempts > 0 and attempts % len(available_flights) == 0:
+                    logger.info(f"Flight pool exhausted for STAR {star_base}, fetching more from API...")
+                    additional_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=100, stars=[star_base.upper()])
+                    if additional_flights:
+                        valid_flights = filter_valid_flights(additional_flights)
+                        unique_flights = self._deduplicate_by_gufi(valid_flights)
+                        if unique_flights:
+                            available_flights.extend(unique_flights)
+                            flights_by_star[star_base.upper()] = available_flights
+                            logger.info(f"Added {len(unique_flights)} more flights for STAR {star_base}")
+
+                if flight_index >= len(available_flights):
+                    logger.warning(f"No more flights available for STAR {star_base}")
+                    break
+
+                flight_data = available_flights[flight_index]
 
                 aircraft = self._create_arrival_aircraft(
                     flight_data=flight_data,
@@ -118,11 +140,17 @@ class TraconArrivalsScenario(BaseScenario):
                 if aircraft:
                     difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
                     self.aircraft.append(aircraft)
+                    created += 1
+
+                attempts += 1
+
+            if created < num_for_this_star:
+                logger.warning(f"Only created {created} of {num_for_this_star} requested aircraft for {waypoint_name}.{star_name}")
 
         # Apply spawn delays
         self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
 
-        logger.info(f"Generated {len(self.aircraft)} arrival aircraft")
+        logger.info(f"Generated {len(self.aircraft)} arrival aircraft (requested {num_arrivals})")
         return self.aircraft
 
     def _parse_waypoint_star_input(self, arrival_waypoints: List[str]) -> List[tuple]:
