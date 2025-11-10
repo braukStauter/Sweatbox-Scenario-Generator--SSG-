@@ -403,15 +403,35 @@ class ProgressIndicator(tk.Frame):
         self.label = ThemedLabel(self, text="Processing...")
         self.label.pack(pady=DarkTheme.PADDING_MEDIUM)
 
-        # Configure custom progress bar style
+        # Configure custom progress bar style with dark theme colors
         style = ttk.Style()
         style.theme_use('default')
+
+        # Configure the progress bar with proper dark theme colors
         style.configure(
             "Dark.Horizontal.TProgressbar",
-            background=DarkTheme.ACCENT_PRIMARY,
-            troughcolor=DarkTheme.BG_SECONDARY,
+            background=DarkTheme.ACCENT_PRIMARY,  # The moving bar color
+            troughcolor=DarkTheme.BG_SECONDARY,   # The background trough
             borderwidth=0,
             thickness=8
+        )
+
+        # Also configure the layout to remove borders and ensure proper coloring
+        style.layout(
+            "Dark.Horizontal.TProgressbar",
+            [
+                ('Horizontal.Progressbar.trough',
+                 {'children': [('Horizontal.Progressbar.pbar',
+                                {'side': 'left', 'sticky': 'ns'})],
+                  'sticky': 'nswe'})
+            ]
+        )
+
+        # Map colors for different states
+        style.map(
+            "Dark.Horizontal.TProgressbar",
+            background=[('active', DarkTheme.ACCENT_PRIMARY), ('!active', DarkTheme.ACCENT_PRIMARY)],
+            troughcolor=[('active', DarkTheme.BG_SECONDARY), ('!active', DarkTheme.BG_SECONDARY)]
         )
 
         self.progressbar = ttk.Progressbar(
