@@ -1629,8 +1629,33 @@ class ScenarioConfigScreen(tk.Frame):
         group_value_label = ThemedLabel(group_value_frame, text="Variable Group Condition:")
         group_value_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
-        group_value_entry = ThemedEntry(group_value_frame, placeholder="Enter a value which coorresponds to the selected variable type.")
+        # Create entry with dynamic placeholder based on selected type
+        group_value_entry = ThemedEntry(group_value_frame, placeholder="Enter a value which corresponds to the selected variable type.")
         group_value_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_MEDIUM))
+
+        def update_placeholder(*_args):
+            """Update placeholder based on group type selection"""
+            selected_label = group_type_var.get()
+            selected_value = type_map.get(selected_label, "all")
+
+            placeholders = {
+                "airline": "e.g., UAL, AAL, DAL",
+                "destination": "e.g., KLAX, KORD",
+                "origin": "e.g., KDEN, KATL",
+                "aircraft_type": "e.g., B738, A320",
+                "parking": "e.g., B3, A1-A10, C#",
+                "sid": "e.g., BAYLR6, SLEEK2 (exact format as in route)",
+                "star": "e.g., EAGUL6, NIIXX4 (exact format as in route)",
+                "random": "e.g., 5 (number of aircraft)"
+            }
+
+            placeholder = placeholders.get(selected_value, "Enter a value which corresponds to the selected variable type.")
+            group_value_entry.entry.config(state='normal')
+            group_value_entry.entry.delete(0, 'end')
+            group_value_entry.placeholder = placeholder
+            if not group_value_entry.get_value():
+                group_value_entry.entry.config(state='normal', fg=DarkTheme.FG_SECONDARY)
+                group_value_entry.entry.insert(0, placeholder)
 
         if rule and rule.group_value:
             group_value_entry.set_value(rule.group_value)
@@ -1643,7 +1668,7 @@ class ScenarioConfigScreen(tk.Frame):
         command_label.pack(anchor='w', pady=(DarkTheme.PADDING_MEDIUM, DarkTheme.PADDING_SMALL))
         command_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
 
-        def update_group_value_visibility(*_args):
+        def update_group_value_visibility(*args):
             """Show/hide group value field based on group type"""
             selected_label = group_type_var.get()
             selected_value = type_map.get(selected_label, "all")
@@ -1654,7 +1679,12 @@ class ScenarioConfigScreen(tk.Frame):
             else:
                 group_value_frame.pack_forget()
 
-        group_type_combo.bind('<<ComboboxSelected>>', update_group_value_visibility)
+        # Bind both functions to combobox selection
+        def on_combobox_change(event):
+            update_group_value_visibility(event)
+            update_placeholder(event)
+
+        group_type_combo.bind('<<ComboboxSelected>>', on_combobox_change)
         update_group_value_visibility()  # Initial call - command_label is now packed so this works
 
         if rule:

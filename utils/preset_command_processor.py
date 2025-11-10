@@ -265,18 +265,48 @@ def matches_rule(aircraft: Aircraft, rule: PresetCommandRule) -> bool:
         return _matches_parking_pattern(aircraft.parking_spot_name, rule.group_value)
 
     elif rule.group_type == "sid":
-        # Match by SID (departure procedure)
-        # Normalize both values to match "RDRNR" with "RDRNR3", etc.
-        if not aircraft.sid:
+        # Match by SID (departure procedure) in the route string
+        # User specifies exact format (e.g., "BAYLR6") and we search for it in the route
+        if not aircraft.route:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"SID match failed for {aircraft.callsign}: aircraft.route is None/empty (rule expects {rule.group_value})")
             return False
-        return _normalize_procedure_name(aircraft.sid) == _normalize_procedure_name(rule.group_value)
+
+        # Check if the SID appears in the route (case-insensitive)
+        route_upper = aircraft.route.upper()
+        sid_upper = rule.group_value.upper()
+
+        # Look for the SID in the route string
+        # SIDs typically appear after "KDEN." at the start (e.g., "KDEN.BAYLR6.TEHRU")
+        match_result = sid_upper in route_upper
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"SID match for {aircraft.callsign}: route='{aircraft.route}', rule='{rule.group_value}', result={match_result}")
+        return match_result
 
     elif rule.group_type == "star":
-        # Match by STAR (arrival procedure)
-        # Normalize both values to match "EAGUL" with "EAGUL6", etc.
-        if not aircraft.star:
+        # Match by STAR (arrival procedure) in the route string
+        # User specifies exact format (e.g., "EAGUL6") and we search for it in the route
+        if not aircraft.route:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"STAR match failed for {aircraft.callsign}: aircraft.route is None/empty (rule expects {rule.group_value})")
             return False
-        return _normalize_procedure_name(aircraft.star) == _normalize_procedure_name(rule.group_value)
+
+        # Check if the STAR appears in the route (case-insensitive)
+        route_upper = aircraft.route.upper()
+        star_upper = rule.group_value.upper()
+
+        # Look for the STAR in the route string
+        # STARs typically appear before the arrival airport (e.g., "...BRWRY.LAWGR4.KDEN")
+        match_result = star_upper in route_upper
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"STAR match for {aircraft.callsign}: route='{aircraft.route}', rule='{rule.group_value}', result={match_result}")
+        return match_result
 
     elif rule.group_type == "random":
         # Random matching handled separately in apply_preset_commands
