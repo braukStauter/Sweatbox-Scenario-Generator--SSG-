@@ -2,8 +2,11 @@
 Splash screen for application startup
 """
 import tkinter as tk
+from PIL import Image, ImageTk
 from gui.theme import DarkTheme
 from utils.version_manager import VersionManager
+import os
+import sys
 
 
 class SplashScreen(tk.Toplevel):
@@ -16,15 +19,6 @@ class SplashScreen(tk.Toplevel):
         self.title("")
         self.overrideredirect(True)  # Remove window decorations
 
-        # Set size and center on screen
-        width = 600
-        height = 360
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        x = (screen_width - width) // 2
-        y = (screen_height - height) // 2
-        self.geometry(f"{width}x{height}+{x}+{y}")
-
         # Configure background
         self.configure(bg=DarkTheme.BG_PRIMARY)
 
@@ -32,26 +26,81 @@ class SplashScreen(tk.Toplevel):
         content = tk.Frame(self, bg=DarkTheme.BG_PRIMARY)
         content.pack(expand=True, fill='both', padx=DarkTheme.PADDING_XLARGE, pady=DarkTheme.PADDING_XLARGE)
 
-        # App title
-        title = tk.Label(
-            content,
-            text="Sweatbox Session Generator",
-            font=(DarkTheme.FONT_FAMILY, 24, 'bold'),
-            fg=DarkTheme.FG_PRIMARY,
-            bg=DarkTheme.BG_PRIMARY,
-            wraplength=550  # Wrap text if needed
-        )
-        title.pack(pady=(DarkTheme.PADDING_LARGE, 2))
+        # Load and display logo
+        try:
+            # Determine base path (different for PyInstaller vs normal Python)
+            if getattr(sys, 'frozen', False):
+                # Running as compiled executable
+                base_path = sys._MEIPASS
+            else:
+                # Running as normal Python script
+                base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-        # App subtitle (SSG)
-        subtitle = tk.Label(
-            content,
-            text="(SSG)",
-            font=(DarkTheme.FONT_FAMILY, 14),
-            fg=DarkTheme.FG_SECONDARY,
-            bg=DarkTheme.BG_PRIMARY
-        )
-        subtitle.pack(pady=(0, DarkTheme.PADDING_LARGE))
+            logo_path = os.path.join(base_path, 'gui', 'SSG_Logo.png')
+
+            if os.path.exists(logo_path):
+                # Load and resize logo to reasonable size (max width 400px, maintain aspect ratio)
+                pil_image = Image.open(logo_path)
+
+                # Calculate new size maintaining aspect ratio
+                max_width = 400
+                aspect_ratio = pil_image.height / pil_image.width
+                new_width = min(pil_image.width, max_width)
+                new_height = int(new_width * aspect_ratio)
+
+                # Resize image
+                resized_image = pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                logo_image = ImageTk.PhotoImage(resized_image)
+
+                # Keep reference to prevent garbage collection
+                self.logo_image = logo_image
+
+                logo_label = tk.Label(
+                    content,
+                    image=logo_image,
+                    bg=DarkTheme.BG_PRIMARY
+                )
+                logo_label.pack(pady=(DarkTheme.PADDING_SMALL, DarkTheme.PADDING_MEDIUM))
+            else:
+                # Fallback to text if image not found
+                title = tk.Label(
+                    content,
+                    text="Sweatbox Session Generator",
+                    font=(DarkTheme.FONT_FAMILY, 24, 'bold'),
+                    fg=DarkTheme.FG_PRIMARY,
+                    bg=DarkTheme.BG_PRIMARY,
+                    wraplength=550
+                )
+                title.pack(pady=(DarkTheme.PADDING_LARGE, 2))
+
+                subtitle = tk.Label(
+                    content,
+                    text="(SSG)",
+                    font=(DarkTheme.FONT_FAMILY, 14),
+                    fg=DarkTheme.FG_SECONDARY,
+                    bg=DarkTheme.BG_PRIMARY
+                )
+                subtitle.pack(pady=(0, DarkTheme.PADDING_LARGE))
+        except Exception as e:
+            # Fallback to text if image loading fails
+            title = tk.Label(
+                content,
+                text="Sweatbox Session Generator",
+                font=(DarkTheme.FONT_FAMILY, 24, 'bold'),
+                fg=DarkTheme.FG_PRIMARY,
+                bg=DarkTheme.BG_PRIMARY,
+                wraplength=550
+            )
+            title.pack(pady=(DarkTheme.PADDING_LARGE, 2))
+
+            subtitle = tk.Label(
+                content,
+                text="(SSG)",
+                font=(DarkTheme.FONT_FAMILY, 14),
+                fg=DarkTheme.FG_SECONDARY,
+                bg=DarkTheme.BG_PRIMARY
+            )
+            subtitle.pack(pady=(0, DarkTheme.PADDING_LARGE))
 
         # Status label
         self.status_label = tk.Label(
@@ -108,7 +157,21 @@ class SplashScreen(tk.Toplevel):
         # Add border
         self.configure(highlightbackground=DarkTheme.BORDER, highlightthickness=1)
 
-        # Center and show
+        # Update to calculate required size
+        self.update_idletasks()
+
+        # Get the required size based on content
+        width = 600  # Fixed width
+        required_height = self.winfo_reqheight()
+
+        # Set geometry with dynamic height and center on screen
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        x = (screen_width - width) // 2
+        y = (screen_height - required_height) // 2
+        self.geometry(f"{width}x{required_height}+{x}+{y}")
+
+        # Final update to show centered window
         self.update()
 
     def update_status(self, message, progress=None):
