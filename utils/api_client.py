@@ -253,6 +253,104 @@ class FlightDataAPIClient:
             arrproc=arrproc
         )
 
+    def fetch_artcc_flights(
+        self,
+        artcc_id: str,
+        limit: int = 1000
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch flights within a specific ARTCC
+
+        Args:
+            artcc_id: ARTCC identifier (e.g., "ZAB", "ZLA")
+            limit: Maximum number of flights to fetch
+
+        Returns:
+            List of flight dictionaries or None if request fails
+        """
+        # Build cache key
+        cache_key = f"artcc:{artcc_id}:{limit}"
+
+        # Check cache
+        if cache_key in self.cache:
+            cached_data, timestamp = self.cache[cache_key]
+            if time.time() - timestamp < self.cache_timeout:
+                logger.debug(f"Using cached data for ARTCC {artcc_id}")
+                return cached_data
+
+        # Build request parameters with ARTCC (prefix with K)
+        params = {
+            'artcc': f"K{artcc_id.upper()}"
+        }
+
+        # Try to fetch from API
+        retries = 3
+        for attempt in range(retries):
+            try:
+                logger.info(f"Fetching flights for ARTCC {artcc_id}, limit={limit} (attempt {attempt + 1}/{retries})")
+                logger.debug(f"API URL: {self.BASE_URL}, params: {params}")
+
+                response = requests.get(self.BASE_URL, params=params, timeout=30)
+
+                if response.status_code == 200:
+                    data = response.json()
+
+                    # Validate response structure
+                    if not isinstance(data, dict) or 'success' not in data:
+                        logger.error(f"Invalid API response structure: {data}")
+                        return None
+
+                    if not data.get('success'):
+                        logger.warning(f"API returned success=false: {data}")
+                        return None
+
+                    # Extract flight data
+                    flights = data.get('data', [])
+
+                    if not flights:
+                        logger.warning(f"No flights found for ARTCC {artcc_id}")
+                        return []
+
+                    # Limit to requested count
+                    flights = flights[:limit]
+
+                    logger.info(f"Fetched {len(flights)} flights for ARTCC {artcc_id}")
+
+                    # Cache the result
+                    self.cache[cache_key] = (flights, time.time())
+
+                    return flights
+
+                elif response.status_code == 429:
+                    # Rate limited, wait and retry
+                    wait_time = (attempt + 1) * 2
+                    logger.warning(f"Rate limited, waiting {wait_time}s before retry")
+                    time.sleep(wait_time)
+                else:
+                    logger.warning(f"API returned status code {response.status_code}")
+                    if attempt < retries - 1:
+                        time.sleep(1)
+
+            except requests.exceptions.Timeout:
+                logger.error(f"Request timeout (attempt {attempt + 1}/{retries})")
+                if attempt < retries - 1:
+                    time.sleep(2)
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Network error fetching ARTCC flights (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    time.sleep(2)
+            except (KeyError, ValueError, TypeError) as e:
+                logger.error(f"Error parsing API response (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    time.sleep(1)
+            except Exception as e:
+                logger.error(f"Unexpected error fetching ARTCC flights (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    time.sleep(1)
+
+        logger.error(f"Failed to fetch ARTCC flights after {retries} attempts")
+        return None
+
     def clear_cache(self):
         """Clear all cached flight data"""
         self.cache.clear()

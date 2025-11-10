@@ -17,6 +17,9 @@ class ScenarioConfigScreen(tk.Frame):
         super().__init__(parent, bg=DarkTheme.BG_PRIMARY)
         self.app_controller = app_controller
 
+        # Configure dark theme for comboboxes
+        self._setup_combobox_style()
+
         # Main container with sidebar and content area
         main_container = tk.Frame(self, bg=DarkTheme.BG_PRIMARY)
         main_container.pack(fill='both', expand=True)
@@ -99,6 +102,39 @@ class ScenarioConfigScreen(tk.Frame):
         # Initialize sidebar categories
         self._init_sidebar_categories()
 
+    def _setup_combobox_style(self):
+        """Setup dark-themed combobox styling"""
+        style = ttk.Style()
+        style.theme_use('clam')
+
+        # Configure the dark theme combobox
+        style.configure(
+            'Dark.TCombobox',
+            fieldbackground=DarkTheme.BG_SECONDARY,
+            background=DarkTheme.BG_SECONDARY,
+            foreground=DarkTheme.FG_PRIMARY,
+            arrowcolor=DarkTheme.FG_PRIMARY,
+            bordercolor=DarkTheme.BORDER,
+            lightcolor=DarkTheme.BG_SECONDARY,
+            darkcolor=DarkTheme.BG_SECONDARY,
+            borderwidth=1,
+            relief='solid'
+        )
+
+        # Configure combobox states
+        style.map('Dark.TCombobox',
+                  fieldbackground=[('readonly', DarkTheme.BG_SECONDARY), ('disabled', DarkTheme.BG_TERTIARY)],
+                  selectbackground=[('readonly', DarkTheme.BG_SECONDARY)],
+                  selectforeground=[('readonly', DarkTheme.FG_PRIMARY)],
+                  foreground=[('disabled', DarkTheme.FG_DISABLED)])
+
+        # Configure the dropdown list
+        self.option_add('*TCombobox*Listbox.background', DarkTheme.BG_SECONDARY)
+        self.option_add('*TCombobox*Listbox.foreground', DarkTheme.FG_PRIMARY)
+        self.option_add('*TCombobox*Listbox.selectBackground', DarkTheme.ACCENT_PRIMARY)
+        self.option_add('*TCombobox*Listbox.selectForeground', DarkTheme.FG_PRIMARY)
+        self.option_add('*TCombobox*Listbox.font', (DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL))
+
     def _init_sidebar_categories(self):
         """Initialize sidebar navigation categories (will be rebuilt based on scenario type)"""
         # Categories will be dynamically added in load_config_for_scenario
@@ -112,52 +148,78 @@ class ScenarioConfigScreen(tk.Frame):
         self.sidebar.items.clear()
         self.sidebar.selected_item = None
 
-        # Determine which features this scenario needs
-        has_departures = scenario_type in ['ground_departures', 'ground_mixed', 'tower_mixed', 'tracon_departures', 'tracon_mixed']
-        has_arrivals = scenario_type in ['ground_mixed', 'tower_mixed', 'tracon_arrivals', 'tracon_mixed']
-        has_tower_separation = scenario_type == 'tower_mixed'
-        has_tracon_arrivals = scenario_type in ['tracon_arrivals', 'tracon_mixed']  # TRACON scenarios have configurable STAR arrivals
-        has_tower_arrivals = scenario_type == 'tower_mixed'  # Tower scenarios have VFR arrivals
-
         # Build category order list for navigation
         self.category_order = []
 
-        # Category 1: Aircraft & Traffic (always shown)
-        self.sidebar.add_item("Aircraft & Traffic", "aircraft_traffic")
-        self.category_order.append("aircraft_traffic")
+        # Check if this is an enroute scenario
+        is_enroute = self.app_controller.is_enroute_scenario
 
-        # Category 2: Runway & Airport (always shown, but content varies)
-        self.sidebar.add_item("Runway & Airport", "runway_airport")
-        self.category_order.append("runway_airport")
+        if is_enroute:
+            # Enroute scenario sidebar
+            self.sidebar.add_item("ARTCC & Aircraft", "enroute_aircraft")
+            self.category_order.append("enroute_aircraft")
 
-        # Category 3: Timing & Spawning (always shown)
-        self.sidebar.add_item("Timing & Spawning", "timing_spawning")
-        self.category_order.append("timing_spawning")
+            self.sidebar.add_item("Airports & Routes", "enroute_airports")
+            self.category_order.append("enroute_airports")
 
-        # Category 4: Arrivals & Approach (for TRACON with STAR config, or Tower with VFR config)
-        if has_tracon_arrivals or has_tower_arrivals:
-            self.sidebar.add_item("Arrivals & Approach", "arrivals_approach")
-            self.category_order.append("arrivals_approach")
+            self.sidebar.add_item("Timing & Spawning", "timing_spawning")
+            self.category_order.append("timing_spawning")
 
-        # Category 5: Departures & Climb (only for scenarios with departures)
-        if has_departures:
-            self.sidebar.add_item("Departures & Climb", "departures_climb")
-            self.category_order.append("departures_climb")
+            self.sidebar.add_item("Custom Commands", "custom_commands")
+            self.category_order.append("custom_commands")
 
-        # Category 6: Advanced Options (always shown for future expansion)
-        self.sidebar.add_item("Advanced Options", "advanced")
-        self.category_order.append("advanced")
+            self.sidebar.add_item("Output & Export", "output_export")
+            self.category_order.append("output_export")
 
-        # Category 7: Output & Export (always shown)
-        self.sidebar.add_item("Output & Export", "output_export")
-        self.category_order.append("output_export")
+            # Store enroute flag
+            self.is_enroute_scenario = True
+        else:
+            # Regular airport-based scenario sidebar
+            self.is_enroute_scenario = False
 
-        # Store scenario features for use in panel building
-        self.scenario_has_departures = has_departures
-        self.scenario_has_arrivals = has_arrivals
-        self.scenario_has_tower_separation = has_tower_separation
-        self.scenario_has_tracon_arrivals = has_tracon_arrivals
-        self.scenario_has_tower_arrivals = has_tower_arrivals
+            # Determine which features this scenario needs
+            has_departures = scenario_type in ['ground_departures', 'ground_mixed', 'tower_mixed', 'tracon_departures', 'tracon_mixed']
+            has_arrivals = scenario_type in ['ground_mixed', 'tower_mixed', 'tracon_arrivals', 'tracon_mixed']
+            has_tower_separation = scenario_type == 'tower_mixed'
+            has_tracon_arrivals = scenario_type in ['tracon_arrivals', 'tracon_mixed']  # TRACON scenarios have configurable STAR arrivals
+            has_tower_arrivals = scenario_type == 'tower_mixed'  # Tower scenarios have VFR arrivals
+
+            # Category 1: Aircraft & Traffic (always shown)
+            self.sidebar.add_item("Aircraft & Traffic", "aircraft_traffic")
+            self.category_order.append("aircraft_traffic")
+
+            # Category 2: Runway & Airport (always shown, but content varies)
+            self.sidebar.add_item("Runway & Airport", "runway_airport")
+            self.category_order.append("runway_airport")
+
+            # Category 3: Timing & Spawning (always shown)
+            self.sidebar.add_item("Timing & Spawning", "timing_spawning")
+            self.category_order.append("timing_spawning")
+
+            # Category 4: Arrivals & Approach (for TRACON with STAR config, or Tower with VFR config)
+            if has_tracon_arrivals or has_tower_arrivals:
+                self.sidebar.add_item("Arrivals & Approach", "arrivals_approach")
+                self.category_order.append("arrivals_approach")
+
+            # Category 5: Departures & Climb (only for scenarios with departures)
+            if has_departures:
+                self.sidebar.add_item("Departures & Climb", "departures_climb")
+                self.category_order.append("departures_climb")
+
+            # Category 6: Advanced Options (always shown for future expansion)
+            self.sidebar.add_item("Advanced Options", "advanced")
+            self.category_order.append("advanced")
+
+            # Category 7: Output & Export (always shown)
+            self.sidebar.add_item("Output & Export", "output_export")
+            self.category_order.append("output_export")
+
+            # Store scenario features for use in panel building
+            self.scenario_has_departures = has_departures
+            self.scenario_has_arrivals = has_arrivals
+            self.scenario_has_tower_separation = has_tower_separation
+            self.scenario_has_tracon_arrivals = has_tracon_arrivals
+            self.scenario_has_tower_arrivals = has_tower_arrivals
 
     def _validate_current_category(self):
         """Validate the current category before allowing navigation away from it"""
@@ -218,6 +280,91 @@ class ScenarioConfigScreen(tk.Frame):
                 arrival_waypoints = config.get('arrival_waypoints', '').strip()
                 if not arrival_waypoints:
                     errors.append("STAR Waypoints are required (e.g., EAGUL.EAGUL6, PINNG.PINNG1)")
+
+        elif current_category_id == "enroute_aircraft":
+            # Validate enroute aircraft counts
+            difficulty_enabled = config.get('enable_difficulty_enroute', False)
+            if difficulty_enabled:
+                # Validate difficulty levels
+                try:
+                    enroute_easy = int(config.get('difficulty_enroute_easy', '0') or '0')
+                    enroute_medium = int(config.get('difficulty_enroute_medium', '0') or '0')
+                    enroute_hard = int(config.get('difficulty_enroute_hard', '0') or '0')
+
+                    arrivals_easy = int(config.get('difficulty_arrivals_easy', '0') or '0')
+                    arrivals_medium = int(config.get('difficulty_arrivals_medium', '0') or '0')
+                    arrivals_hard = int(config.get('difficulty_arrivals_hard', '0') or '0')
+
+                    departures_easy = int(config.get('difficulty_departures_easy', '0') or '0')
+                    departures_medium = int(config.get('difficulty_departures_medium', '0') or '0')
+                    departures_hard = int(config.get('difficulty_departures_hard', '0') or '0')
+
+                    if any(x < 0 for x in [enroute_easy, enroute_medium, enroute_hard,
+                                           arrivals_easy, arrivals_medium, arrivals_hard,
+                                           departures_easy, departures_medium, departures_hard]):
+                        errors.append("Difficulty counts cannot be negative")
+
+                    total_enroute = enroute_easy + enroute_medium + enroute_hard
+                    total_arrivals = arrivals_easy + arrivals_medium + arrivals_hard
+                    total_departures = departures_easy + departures_medium + departures_hard
+                    total_aircraft = total_enroute + total_arrivals + total_departures
+
+                    if total_aircraft == 0:
+                        errors.append("Must specify at least one aircraft across all difficulty levels and categories")
+
+                except ValueError:
+                    errors.append("Difficulty counts must be valid numbers")
+            else:
+                # Validate aircraft counts
+                try:
+                    num_enroute = int(config.get('num_enroute', '0') or '0')
+                    num_arrivals = int(config.get('num_arrivals_enroute', '0') or '0')
+                    num_departures = int(config.get('num_departures_enroute', '0') or '0')
+
+                    if num_enroute < 0:
+                        errors.append("Number of enroute aircraft cannot be negative")
+                    if num_arrivals < 0:
+                        errors.append("Number of arrivals cannot be negative")
+                    if num_departures < 0:
+                        errors.append("Number of departures cannot be negative")
+
+                    if num_enroute == 0 and num_arrivals == 0 and num_departures == 0:
+                        errors.append("Must generate at least one aircraft (enroute, arrival, or departure)")
+                except ValueError:
+                    errors.append("Aircraft counts must be valid numbers")
+
+        elif current_category_id == "enroute_airports":
+            # Validate arrival and departure airports if aircraft are specified
+            config_dict = config
+
+            # Check if any arrivals are specified
+            difficulty_enabled = config_dict.get('enable_difficulty_enroute', False)
+            if difficulty_enabled:
+                arrivals_count = (int(config_dict.get('difficulty_arrivals_easy', '0') or '0') +
+                                 int(config_dict.get('difficulty_arrivals_medium', '0') or '0') +
+                                 int(config_dict.get('difficulty_arrivals_hard', '0') or '0'))
+                departures_count = (int(config_dict.get('difficulty_departures_easy', '0') or '0') +
+                                   int(config_dict.get('difficulty_departures_medium', '0') or '0') +
+                                   int(config_dict.get('difficulty_departures_hard', '0') or '0'))
+            else:
+                arrivals_count = int(config_dict.get('num_arrivals_enroute', '0') or '0')
+                departures_count = int(config_dict.get('num_departures_enroute', '0') or '0')
+
+            # Validate arrival airports if arrivals are specified
+            if arrivals_count > 0:
+                arrival_airports = config_dict.get('arrival_airports_group', '').strip()
+                if not arrival_airports:
+                    arrival_manual = config_dict.get('arrival_airports_manual', '').strip()
+                    if not arrival_manual:
+                        errors.append("Arrival airports are required when generating arrival aircraft")
+
+            # Validate departure airports if departures are specified
+            if departures_count > 0:
+                departure_airports = config_dict.get('departure_airports_group', '').strip()
+                if not departure_airports:
+                    departure_manual = config_dict.get('departure_airports_manual', '').strip()
+                    if not departure_manual:
+                        errors.append("Departure airports are required when generating departure aircraft")
 
         elif current_category_id == "timing_spawning":
             # Validate spawn delay values if enabled
@@ -303,7 +450,15 @@ class ScenarioConfigScreen(tk.Frame):
         """Create content panel for a category"""
         panel = ThemedFrame(self.content_container)
 
-        if category_id == "aircraft_traffic":
+        # Enroute scenario panels
+        if category_id == "enroute_aircraft":
+            self._build_enroute_aircraft_panel(panel)
+        elif category_id == "enroute_airports":
+            self._build_enroute_airports_panel(panel)
+        elif category_id == "custom_commands":
+            self._build_custom_commands_panel(panel)
+        # Regular scenario panels
+        elif category_id == "aircraft_traffic":
             self._build_aircraft_traffic_panel(panel)
         elif category_id == "runway_airport":
             self._build_runway_airport_panel(panel)
@@ -464,6 +619,301 @@ class ScenarioConfigScreen(tk.Frame):
             fg=DarkTheme.FG_SECONDARY
         )
         info.pack(anchor='w', pady=DarkTheme.PADDING_MEDIUM)
+
+    # Enroute scenario panel builders
+
+    def _build_enroute_aircraft_panel(self, panel):
+        """Build ARTCC & Aircraft configuration panel for enroute scenarios"""
+        title = ThemedLabel(
+            panel,
+            text="ARTCC & Aircraft Configuration",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # ARTCC Info
+        artcc_id = getattr(self.app_controller, 'artcc_id', 'Unknown')
+        info = ThemedLabel(
+            panel,
+            text=f"Selected ARTCC: {artcc_id}",
+            fg=DarkTheme.FG_SECONDARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
+        )
+        info.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # Container for aircraft configuration (maintains position in layout)
+        aircraft_config_container = ThemedFrame(panel)
+        aircraft_config_container.pack(fill='x', pady=(0, DarkTheme.PADDING_MEDIUM))
+
+        # Aircraft counts section (will be hidden when difficulty is enabled)
+        counts_section = ThemedFrame(aircraft_config_container)
+        counts_section.pack(fill='x')
+
+        # Aircraft counts label with red asterisk (required field)
+        counts_label_frame = tk.Frame(counts_section, bg=DarkTheme.BG_PRIMARY)
+        counts_label_frame.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        ThemedLabel(
+            counts_label_frame,
+            text="Aircraft Counts",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
+        ).pack(side='left')
+
+        tk.Label(
+            counts_label_frame,
+            text=" *",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
+            fg='#FF4444',
+            bg=DarkTheme.BG_PRIMARY
+        ).pack(side='left')
+
+        # Grid for inputs
+        grid = ThemedFrame(counts_section)
+        grid.pack(fill='x')
+
+        # Enroute transient
+        enroute_label_frame = tk.Frame(grid, bg=DarkTheme.BG_PRIMARY)
+        enroute_label_frame.grid(row=0, column=0, sticky='w',
+                                 padx=(0, DarkTheme.PADDING_SMALL), pady=DarkTheme.PADDING_SMALL)
+        ThemedLabel(enroute_label_frame, text="Enroute (Transient):").pack(side='left')
+
+        enroute_entry = ThemedEntry(grid, placeholder="e.g., 5", validate_type="integer")
+        enroute_entry.grid(row=0, column=1, sticky='ew', pady=DarkTheme.PADDING_SMALL)
+        self.inputs['num_enroute'] = enroute_entry
+
+        # Arrivals
+        arrivals_label_frame = tk.Frame(grid, bg=DarkTheme.BG_PRIMARY)
+        arrivals_label_frame.grid(row=1, column=0, sticky='w',
+                                  padx=(0, DarkTheme.PADDING_SMALL), pady=DarkTheme.PADDING_SMALL)
+        ThemedLabel(arrivals_label_frame, text="Arrivals:").pack(side='left')
+
+        arrivals_entry = ThemedEntry(grid, placeholder="e.g., 3", validate_type="integer")
+        arrivals_entry.grid(row=1, column=1, sticky='ew', pady=DarkTheme.PADDING_SMALL)
+        self.inputs['num_arrivals_enroute'] = arrivals_entry
+
+        # Departures
+        departures_label_frame = tk.Frame(grid, bg=DarkTheme.BG_PRIMARY)
+        departures_label_frame.grid(row=2, column=0, sticky='w',
+                                    padx=(0, DarkTheme.PADDING_SMALL), pady=DarkTheme.PADDING_SMALL)
+        ThemedLabel(departures_label_frame, text="Departures:").pack(side='left')
+
+        departures_entry = ThemedEntry(grid, placeholder="e.g., 3", validate_type="integer")
+        departures_entry.grid(row=2, column=1, sticky='ew', pady=DarkTheme.PADDING_SMALL)
+        self.inputs['num_departures_enroute'] = departures_entry
+
+        # Note about at least one required
+        note_label = ThemedLabel(
+            counts_section,
+            text="Note: At least one aircraft category must have a count greater than 0",
+            fg=DarkTheme.FG_SECONDARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        note_label.pack(anchor='w', pady=(DarkTheme.PADDING_SMALL, 0))
+
+        grid.columnconfigure(1, weight=1)
+
+        # Difficulty levels section (collapsible) - in same container
+        difficulty_divider = tk.Frame(aircraft_config_container, bg=DarkTheme.DIVIDER, height=1)
+        difficulty_divider.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
+
+        difficulty_section = ThemedFrame(aircraft_config_container)
+        difficulty_section.pack(fill='x', pady=(DarkTheme.PADDING_MEDIUM, 0))
+
+        # Collapsible header with checkbox
+        header_frame = ThemedFrame(difficulty_section)
+        header_frame.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        enable_difficulty_var = tk.BooleanVar(value=False)
+
+        # Toggle indicator
+        toggle_label = ThemedLabel(
+            header_frame,
+            text="▶",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        toggle_label.pack(side='left', padx=(0, DarkTheme.PADDING_SMALL))
+
+        # Checkbox
+        enable_checkbox = tk.Checkbutton(
+            header_frame,
+            text="Configure by difficulty level (Easy/Medium/Hard)",
+            variable=enable_difficulty_var,
+            bg=DarkTheme.BG_PRIMARY,
+            fg=DarkTheme.FG_PRIMARY,
+            selectcolor=DarkTheme.BG_TERTIARY,
+            activebackground=DarkTheme.BG_PRIMARY,
+            activeforeground=DarkTheme.FG_PRIMARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            cursor='hand2',
+            command=lambda: self._toggle_enroute_difficulty_inputs(
+                enable_difficulty_var.get(), difficulty_content_frame, toggle_label,
+                counts_section, difficulty_divider
+            )
+        )
+        enable_checkbox.pack(side='left')
+        self.inputs['enable_difficulty_enroute'] = enable_difficulty_var
+
+        # Hint text
+        hint = ThemedLabel(
+            header_frame,
+            text="(splits aircraft counts into difficulty tiers per category)",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        hint.pack(side='left', padx=(DarkTheme.PADDING_SMALL, 0))
+
+        # Container for difficulty inputs (hidden by default)
+        difficulty_content_frame = ThemedFrame(difficulty_section)
+        difficulty_content_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
+        difficulty_content_frame.pack_forget()  # Hide initially
+
+        # Helper to create difficulty section for a category
+        def create_category_difficulty(parent, category_name, key_prefix):
+            section = ThemedFrame(parent)
+            section.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0), padx=(DarkTheme.PADDING_LARGE, 0))
+
+            section_title = ThemedLabel(
+                section,
+                text=category_name,
+                fg=DarkTheme.FG_SECONDARY,
+                font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            )
+            section_title.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+            grid = ThemedFrame(section)
+            grid.pack(fill='x')
+
+            # Easy
+            ThemedLabel(grid, text="Easy:", fg=DarkTheme.SUCCESS).grid(
+                row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL)
+            )
+            easy_entry = ThemedEntry(grid, placeholder="0", validate_type="integer")
+            easy_entry.grid(row=0, column=1, sticky='ew', padx=(0, DarkTheme.PADDING_MEDIUM))
+            self.inputs[f'{key_prefix}_easy'] = easy_entry
+
+            # Medium
+            ThemedLabel(grid, text="Medium:", fg=DarkTheme.WARNING).grid(
+                row=0, column=2, sticky='w', padx=(0, DarkTheme.PADDING_SMALL)
+            )
+            medium_entry = ThemedEntry(grid, placeholder="0", validate_type="integer")
+            medium_entry.grid(row=0, column=3, sticky='ew', padx=(0, DarkTheme.PADDING_MEDIUM))
+            self.inputs[f'{key_prefix}_medium'] = medium_entry
+
+            # Hard
+            ThemedLabel(grid, text="Hard:", fg=DarkTheme.ERROR).grid(
+                row=0, column=4, sticky='w', padx=(0, DarkTheme.PADDING_SMALL)
+            )
+            hard_entry = ThemedEntry(grid, placeholder="0", validate_type="integer")
+            hard_entry.grid(row=0, column=5, sticky='ew')
+            self.inputs[f'{key_prefix}_hard'] = hard_entry
+
+            grid.columnconfigure(1, weight=1)
+            grid.columnconfigure(3, weight=1)
+            grid.columnconfigure(5, weight=1)
+
+        # Create difficulty sections for each category
+        create_category_difficulty(difficulty_content_frame, "Enroute (Transient)", "difficulty_enroute")
+        create_category_difficulty(difficulty_content_frame, "Arrivals", "difficulty_arrivals")
+        create_category_difficulty(difficulty_content_frame, "Departures", "difficulty_departures")
+
+    def _build_enroute_airports_panel(self, panel):
+        """Build Airports & Routes configuration panel for enroute scenarios"""
+        title = ThemedLabel(
+            panel,
+            text="Airports & Routes Configuration",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # Get ARTCC airport groups from config
+        artcc_id = getattr(self.app_controller, 'artcc_id', 'Unknown')
+        import json
+        from pathlib import Path
+        try:
+            config_path = Path('config.json')
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    airport_groups = config.get('artcc_airport_groups', {})
+                    artcc_airport_groups = airport_groups.get(artcc_id, {})
+            else:
+                artcc_airport_groups = {}
+        except:
+            artcc_airport_groups = {}
+
+        # Combined airports section (applies to both arrivals and departures)
+        airports_section = ThemedFrame(panel)
+        airports_section.pack(fill='x', pady=(0, DarkTheme.PADDING_MEDIUM))
+
+        # Airports label with red asterisk (required field)
+        airports_label_frame = tk.Frame(airports_section, bg=DarkTheme.BG_PRIMARY)
+        airports_label_frame.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        ThemedLabel(
+            airports_label_frame,
+            text="Airports Configuration",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
+        ).pack(side='left')
+
+        tk.Label(
+            airports_label_frame,
+            text=" *",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
+            fg='#FF4444',
+            bg=DarkTheme.BG_PRIMARY
+        ).pack(side='left')
+
+        airports_info = ThemedLabel(
+            airports_section,
+            text="Select airport configuration (applies to both arrivals and departures)",
+            fg=DarkTheme.FG_SECONDARY
+        )
+        airports_info.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        if artcc_airport_groups:
+            airports_dropdown_var = tk.StringVar(value="")
+            airports_dropdown = ttk.Combobox(
+                airports_section,
+                textvariable=airports_dropdown_var,
+                state='readonly',
+                style='Dark.TCombobox',
+                font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL)
+            )
+            # Format: "Group Name: ICAO,ICAO,ICAO"
+            airports_values = [f"{name}: {airports}" for name, airports in artcc_airport_groups.items()]
+            airports_dropdown['values'] = airports_values
+            airports_dropdown.pack(fill='x', pady=DarkTheme.PADDING_SMALL)
+            # Store in both keys for backward compatibility with validation logic
+            self.inputs['airports_group'] = airports_dropdown_var
+            self.inputs['arrival_airports_group'] = airports_dropdown_var
+            self.inputs['departure_airports_group'] = airports_dropdown_var
+        else:
+            # Manual entry fallback
+            airports_entry = ThemedEntry(airports_section, placeholder="e.g., KPHX,KTUS,KABQ")
+            airports_entry.pack(fill='x', pady=DarkTheme.PADDING_SMALL)
+            # Store in both keys for backward compatibility
+            self.inputs['airports_manual'] = airports_entry
+            self.inputs['arrival_airports_manual'] = airports_entry
+            self.inputs['departure_airports_manual'] = airports_entry
+
+    def _build_custom_commands_panel(self, panel):
+        """Build Custom Commands panel (reuses preset commands section)"""
+        title = ThemedLabel(
+            panel,
+            text="Custom Commands",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        title.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        info = ThemedLabel(
+            panel,
+            text="Configure automatic command assignments for aircraft based on conditions",
+            fg=DarkTheme.FG_SECONDARY
+        )
+        info.pack(anchor='w', pady=(0, DarkTheme.PADDING_LARGE))
+
+        # Reuse the preset commands section
+        self._add_preset_commands_section(panel)
 
     # Helper methods for building sections
 
@@ -1117,8 +1567,24 @@ class ScenarioConfigScreen(tk.Frame):
 
         # Update scroll region multiple times to ensure it catches the layout changes
         self.after_idle(self._update_scroll_region)
-        self.after(100, self._update_scroll_region)
-        self.after(300, self._update_scroll_region)
+
+    def _toggle_enroute_difficulty_inputs(self, enabled, difficulty_frame, toggle_label, counts_section, difficulty_divider):
+        """Toggle between aircraft counts and difficulty distribution for enroute scenarios"""
+        if enabled:
+            # Show difficulty inputs
+            difficulty_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
+            toggle_label.config(text="▼")
+            # Hide aircraft counts
+            counts_section.pack_forget()
+        else:
+            # Hide difficulty inputs
+            difficulty_frame.pack_forget()
+            toggle_label.config(text="▶")
+            # Show aircraft counts back in correct position (before the divider)
+            counts_section.pack(fill='x', before=difficulty_divider)
+
+        # Update scroll region to show new content
+        self.after(50, self._update_scroll_region)
 
     def _update_spawn_delay_mode_inputs(self, mode):
         """Show/hide spawn delay inputs based on selected mode"""
@@ -1165,14 +1631,15 @@ class ScenarioConfigScreen(tk.Frame):
         self._rebuild_sidebar_for_scenario(scenario_type)
 
         # Select first category by default
-        if self.sidebar.items:
+        if self.sidebar.items and self.category_order:
             first_item = self.sidebar.items[0]
             first_item.select()
             self.sidebar.selected_item = first_item
             # Reset to first category
             self.current_category_index = 0
-            # Trigger category selection
-            self.on_category_select("aircraft_traffic")
+            # Trigger category selection with first category from order
+            first_category_id = self.category_order[0]
+            self.on_category_select(first_category_id)
 
     def get_config_values(self):
         """Get all configuration values from inputs"""
@@ -1284,46 +1751,100 @@ class ScenarioConfigScreen(tk.Frame):
         # Get scenario type from stored value
         scenario_type = self.scenario_type
 
-        # Validate runways - required for all scenarios
-        active_runways = config.get('active_runways', '').strip()
-        if not active_runways:
-            errors.append("Active runways are required (needed for CIFP SID filtering and arrival procedures)")
+        # Validate runways - required for all scenarios EXCEPT enroute
+        if not self.is_enroute_scenario:
+            active_runways = config.get('active_runways', '').strip()
+            if not active_runways:
+                errors.append("Active runways are required (needed for CIFP SID filtering and arrival procedures)")
 
-        # Check if difficulty levels are enabled
-        difficulty_enabled = config.get('enable_difficulty', False)
+        # Check if difficulty levels are enabled (different for enroute vs other scenarios)
+        if self.is_enroute_scenario:
+            difficulty_enabled = config.get('enable_difficulty_enroute', False)
+        else:
+            difficulty_enabled = config.get('enable_difficulty', False)
 
         if difficulty_enabled:
-            # Validate difficulty counts
-            try:
-                easy_count = int(config.get('difficulty_easy', '0') or '0')
-                medium_count = int(config.get('difficulty_medium', '0') or '0')
-                hard_count = int(config.get('difficulty_hard', '0') or '0')
+            if self.is_enroute_scenario:
+                # Validate enroute difficulty counts
+                try:
+                    enroute_easy = int(config.get('difficulty_enroute_easy', '0') or '0')
+                    enroute_medium = int(config.get('difficulty_enroute_medium', '0') or '0')
+                    enroute_hard = int(config.get('difficulty_enroute_hard', '0') or '0')
 
-                if easy_count < 0 or medium_count < 0 or hard_count < 0:
-                    errors.append("Difficulty counts cannot be negative")
+                    arrivals_easy = int(config.get('difficulty_arrivals_easy', '0') or '0')
+                    arrivals_medium = int(config.get('difficulty_arrivals_medium', '0') or '0')
+                    arrivals_hard = int(config.get('difficulty_arrivals_hard', '0') or '0')
 
-                total_aircraft = easy_count + medium_count + hard_count
-                if total_aircraft == 0:
-                    errors.append("Must specify at least one aircraft in difficulty levels")
-            except ValueError:
-                errors.append("Difficulty counts must be valid numbers")
+                    departures_easy = int(config.get('difficulty_departures_easy', '0') or '0')
+                    departures_medium = int(config.get('difficulty_departures_medium', '0') or '0')
+                    departures_hard = int(config.get('difficulty_departures_hard', '0') or '0')
+
+                    if any(x < 0 for x in [enroute_easy, enroute_medium, enroute_hard,
+                                           arrivals_easy, arrivals_medium, arrivals_hard,
+                                           departures_easy, departures_medium, departures_hard]):
+                        errors.append("Difficulty counts cannot be negative")
+
+                    total_aircraft = (enroute_easy + enroute_medium + enroute_hard +
+                                    arrivals_easy + arrivals_medium + arrivals_hard +
+                                    departures_easy + departures_medium + departures_hard)
+                    if total_aircraft == 0:
+                        errors.append("Must specify at least one aircraft in difficulty levels")
+                except ValueError:
+                    errors.append("Difficulty counts must be valid numbers")
+            else:
+                # Validate airport scenario difficulty counts
+                try:
+                    easy_count = int(config.get('difficulty_easy', '0') or '0')
+                    medium_count = int(config.get('difficulty_medium', '0') or '0')
+                    hard_count = int(config.get('difficulty_hard', '0') or '0')
+
+                    if easy_count < 0 or medium_count < 0 or hard_count < 0:
+                        errors.append("Difficulty counts cannot be negative")
+
+                    total_aircraft = easy_count + medium_count + hard_count
+                    if total_aircraft == 0:
+                        errors.append("Must specify at least one aircraft in difficulty levels")
+                except ValueError:
+                    errors.append("Difficulty counts must be valid numbers")
         else:
-            # Validate manual aircraft counts
-            num_departures = config.get('num_departures', '')
-            num_arrivals = config.get('num_arrivals', '')
+            if self.is_enroute_scenario:
+                # Validate enroute manual aircraft counts
+                num_enroute = config.get('num_enroute', '')
+                num_arrivals = config.get('num_arrivals_enroute', '')
+                num_departures = config.get('num_departures_enroute', '')
 
-            try:
-                num_dep = int(num_departures) if num_departures else 0
-                num_arr = int(num_arrivals) if num_arrivals else 0
+                try:
+                    num_en = int(num_enroute) if num_enroute else 0
+                    num_arr = int(num_arrivals) if num_arrivals else 0
+                    num_dep = int(num_departures) if num_departures else 0
 
-                if num_dep < 0:
-                    errors.append("Number of departures cannot be negative")
-                if num_arr < 0:
-                    errors.append("Number of arrivals cannot be negative")
-                if num_dep == 0 and num_arr == 0:
-                    errors.append("Must generate at least one departure or arrival")
-            except ValueError:
-                errors.append("Aircraft counts must be valid numbers")
+                    if num_en < 0:
+                        errors.append("Number of enroute aircraft cannot be negative")
+                    if num_arr < 0:
+                        errors.append("Number of arrivals cannot be negative")
+                    if num_dep < 0:
+                        errors.append("Number of departures cannot be negative")
+                    if num_en == 0 and num_arr == 0 and num_dep == 0:
+                        errors.append("Must generate at least one aircraft (enroute, arrival, or departure)")
+                except ValueError:
+                    errors.append("Aircraft counts must be valid numbers")
+            else:
+                # Validate manual aircraft counts for airport scenarios
+                num_departures = config.get('num_departures', '')
+                num_arrivals = config.get('num_arrivals', '')
+
+                try:
+                    num_dep = int(num_departures) if num_departures else 0
+                    num_arr = int(num_arrivals) if num_arrivals else 0
+
+                    if num_dep < 0:
+                        errors.append("Number of departures cannot be negative")
+                    if num_arr < 0:
+                        errors.append("Number of arrivals cannot be negative")
+                    if num_dep == 0 and num_arr == 0:
+                        errors.append("Must generate at least one departure or arrival")
+                except ValueError:
+                    errors.append("Aircraft counts must be valid numbers")
 
         # Validate ranges
         if config.get('separation_range'):

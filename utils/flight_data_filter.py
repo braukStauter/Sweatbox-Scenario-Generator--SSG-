@@ -29,11 +29,6 @@ def is_valid_flight(flight: Dict[str, Any]) -> bool:
         logger.debug(f"Flight {flight.get('aircraftIdentification')} missing route")
         return False
 
-    # Exclude ACTIVE flights
-    if flight.get('flightStatus') == 'ACTIVE':
-        logger.debug(f"Flight {flight.get('aircraftIdentification')} has ACTIVE status")
-        return False
-
     # Must have aircraft type
     if not flight.get('aircraftType'):
         logger.debug(f"Flight {flight.get('aircraftIdentification')} missing aircraftType")

@@ -288,7 +288,7 @@ class SelectableCard(tk.Frame):
         title_label.configure(bg=DarkTheme.BG_SECONDARY)
         title_label.pack(anchor='w', padx=DarkTheme.PADDING_LARGE, pady=(DarkTheme.PADDING_LARGE, 4))
 
-        desc_label = ThemedLabel(self, text=description, fg=DarkTheme.FG_SECONDARY)
+        desc_label = ThemedLabel(self, text=description, fg=DarkTheme.FG_SECONDARY, wraplength=600, justify='left')
         desc_label.configure(bg=DarkTheme.BG_SECONDARY)
         desc_label.pack(anchor='w', padx=DarkTheme.PADDING_LARGE, pady=(0, DarkTheme.PADDING_LARGE))
 
