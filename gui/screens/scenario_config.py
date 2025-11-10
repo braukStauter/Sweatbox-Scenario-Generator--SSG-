@@ -1205,10 +1205,14 @@ class ScenarioConfigScreen(tk.Frame):
             if prev_index >= 0:
                 prev_category = self.category_order[prev_index]
 
-                # Select the previous sidebar item
+                # Deselect previous item and select the previous sidebar item
+                if self.sidebar.selected_item:
+                    self.sidebar.selected_item.deselect()
+
                 for item in self.sidebar.items:
                     if item.category_id == prev_category:
                         item.select()
+                        self.sidebar.selected_item = item
                         break
 
                 # Trigger category selection (which updates button text)
@@ -1244,10 +1248,14 @@ class ScenarioConfigScreen(tk.Frame):
             if next_index < len(self.category_order):
                 next_category = self.category_order[next_index]
 
-                # Select the next sidebar item
+                # Deselect previous item and select the next sidebar item
+                if self.sidebar.selected_item:
+                    self.sidebar.selected_item.deselect()
+
                 for item in self.sidebar.items:
                     if item.category_id == next_category:
                         item.select()
+                        self.sidebar.selected_item = item
                         break
 
                 # Trigger category selection (which updates button text)
