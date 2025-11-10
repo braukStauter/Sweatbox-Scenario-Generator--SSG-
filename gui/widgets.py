@@ -403,53 +403,56 @@ class ProgressIndicator(tk.Frame):
         self.label = ThemedLabel(self, text="Processing...")
         self.label.pack(pady=DarkTheme.PADDING_MEDIUM)
 
-        # Configure custom progress bar style with dark theme colors
-        style = ttk.Style()
-        style.theme_use('default')
-
-        # Configure the progress bar with proper dark theme colors
-        style.configure(
-            "Dark.Horizontal.TProgressbar",
-            background=DarkTheme.ACCENT_PRIMARY,  # The moving bar color
-            troughcolor=DarkTheme.BG_SECONDARY,   # The background trough
-            borderwidth=0,
-            thickness=8
-        )
-
-        # Also configure the layout to remove borders and ensure proper coloring
-        style.layout(
-            "Dark.Horizontal.TProgressbar",
-            [
-                ('Horizontal.Progressbar.trough',
-                 {'children': [('Horizontal.Progressbar.pbar',
-                                {'side': 'left', 'sticky': 'ns'})],
-                  'sticky': 'nswe'})
-            ]
-        )
-
-        # Map colors for different states
-        style.map(
-            "Dark.Horizontal.TProgressbar",
-            background=[('active', DarkTheme.ACCENT_PRIMARY), ('!active', DarkTheme.ACCENT_PRIMARY)],
-            troughcolor=[('active', DarkTheme.BG_SECONDARY), ('!active', DarkTheme.BG_SECONDARY)]
-        )
-
-        self.progressbar = ttk.Progressbar(
+        # Create canvas-based progress bar for better control
+        self.canvas = tk.Canvas(
             self,
-            style="Dark.Horizontal.TProgressbar",
-            mode='indeterminate',
-            length=400
+            width=400,
+            height=8,
+            bg=DarkTheme.BG_SECONDARY,
+            highlightthickness=0,
+            bd=0
         )
-        self.progressbar.pack(fill='x', padx=DarkTheme.PADDING_LARGE)
+        self.canvas.pack(padx=DarkTheme.PADDING_LARGE)
+
+        # Create moving bar
+        self.bar_width = 80
+        self.bar = self.canvas.create_rectangle(
+            0, 0, self.bar_width, 8,
+            fill=DarkTheme.ACCENT_PRIMARY,
+            outline=""
+        )
+
+        self.animation_id = None
+        self.position = 0
+        self.direction = 1
 
     def start(self, message="Processing..."):
         """Start the progress animation"""
         self.label['text'] = message
-        self.progressbar.start(10)
+        self._animate()
+
+    def _animate(self):
+        """Animate the progress bar"""
+        # Move the bar
+        self.position += self.direction * 5
+
+        # Reverse direction at edges
+        if self.position >= 400 - self.bar_width:
+            self.direction = -1
+        elif self.position <= 0:
+            self.direction = 1
+
+        # Update bar position
+        self.canvas.coords(self.bar, self.position, 0, self.position + self.bar_width, 8)
+
+        # Schedule next frame
+        self.animation_id = self.after(20, self._animate)
 
     def stop(self):
         """Stop the progress animation"""
-        self.progressbar.stop()
+        if self.animation_id:
+            self.after_cancel(self.animation_id)
+            self.animation_id = None
 
 
 class AccordionItem(tk.Frame):

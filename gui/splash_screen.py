@@ -2,7 +2,6 @@
 Splash screen for application startup
 """
 import tkinter as tk
-from tkinter import ttk
 from gui.theme import DarkTheme
 from utils.version_manager import VersionManager
 
@@ -64,26 +63,24 @@ class SplashScreen(tk.Toplevel):
         )
         self.status_label.pack(pady=(DarkTheme.PADDING_LARGE, DarkTheme.PADDING_SMALL))
 
-        # Progress bar
-        style = ttk.Style()
-        style.theme_use('default')
-        style.configure(
-            "Splash.Horizontal.TProgressbar",
-            background=DarkTheme.ACCENT_PRIMARY,
-            troughcolor=DarkTheme.BG_SECONDARY,
-            borderwidth=0,
-            thickness=6
-        )
-
-        self.progress = ttk.Progressbar(
+        # Progress bar (canvas-based for better theme control)
+        self.progress_canvas = tk.Canvas(
             content,
-            style="Splash.Horizontal.TProgressbar",
-            mode='determinate',
-            maximum=100,
-            value=0,
-            length=400
+            width=400,
+            height=6,
+            bg=DarkTheme.BG_SECONDARY,
+            highlightthickness=0,
+            bd=0
         )
-        self.progress.pack(pady=(DarkTheme.PADDING_SMALL, DarkTheme.PADDING_MEDIUM))
+        self.progress_canvas.pack(pady=(DarkTheme.PADDING_SMALL, DarkTheme.PADDING_MEDIUM))
+
+        # Create progress bar rectangle
+        self.progress_bar = self.progress_canvas.create_rectangle(
+            0, 0, 0, 6,
+            fill=DarkTheme.ACCENT_PRIMARY,
+            outline=""
+        )
+        self.progress_value = 0
 
         # Copyright label (pack first when using side='bottom')
         copyright_label = tk.Label(
@@ -124,7 +121,7 @@ class SplashScreen(tk.Toplevel):
         """
         self.status_label['text'] = message
         if progress is not None:
-            self.progress['value'] = progress
+            self.set_progress(progress)
         self.update()
 
     def set_progress(self, value):
@@ -134,7 +131,10 @@ class SplashScreen(tk.Toplevel):
         Args:
             value: Progress value (0-100)
         """
-        self.progress['value'] = value
+        self.progress_value = max(0, min(100, value))  # Clamp between 0-100
+        # Calculate bar width based on percentage
+        bar_width = int((self.progress_value / 100) * 400)
+        self.progress_canvas.coords(self.progress_bar, 0, 0, bar_width, 6)
         self.update_idletasks()
 
     def update_version_display(self):
