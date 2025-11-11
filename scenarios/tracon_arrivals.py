@@ -1,13 +1,16 @@
 """
-TRACON (Arrivals) scenario
+TRACON (Arrivals) scenario - Simplified implementation
 """
-import random
+import re
 import logging
-from typing import List, Tuple
+from typing import List, Dict
+from collections import defaultdict
 
 from scenarios.base_scenario import BaseScenario
 from models.aircraft import Aircraft
 from models.spawn_delay_mode import SpawnDelayMode
+from utils.flight_data_filter import filter_valid_flights, clean_route_string
+from utils.geo_utils import calculate_bearing, calculate_destination, get_reciprocal_heading
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +19,7 @@ class TraconArrivalsScenario(BaseScenario):
     """Scenario for TRACON with arrivals only"""
 
     def generate(self, num_arrivals: int, arrival_waypoints: List[str],
-                 altitude_range: Tuple[int, int] = (7000, 18000),
-                 delay_range: Tuple[int, int] = (4, 7),
-                 spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
+                 delay_range=None, spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
                  delay_value: str = None, total_session_minutes: int = None,
                  spawn_delay_range: str = None, difficulty_config=None, active_runways: List[str] = None) -> List[Aircraft]:
         """
@@ -26,16 +27,11 @@ class TraconArrivalsScenario(BaseScenario):
 
         Args:
             num_arrivals: Number of arrival aircraft
-            arrival_waypoints: List of STAR waypoints in format "WAYPOINT.STAR"
-                              Can be ANY waypoint along the STAR, not just transitions
-                              (e.g., "EAGUL.JESSE3", "PINNG.PINNG1", "HOTTT.PINNG1")
-            altitude_range: Tuple of (min, max) altitude in feet (used as fallback only)
-            delay_range: DEPRECATED - not used (kept for backward compatibility)
+            arrival_waypoints: List in format "WAYPOINT.STAR" (e.g., ["HOMRR.EAGUL6", "HYDRR.HYDRR1"])
             spawn_delay_mode: SpawnDelayMode enum (NONE, INCREMENTAL, or TOTAL)
-            delay_value: For INCREMENTAL mode: delay range/value in minutes (e.g., "2-5" or "3")
+            delay_value: For INCREMENTAL mode: delay range/value in minutes
             total_session_minutes: For TOTAL mode: total session length in minutes
-            spawn_delay_range: LEGACY parameter - kept for backward compatibility
-            difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
+            difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts
             active_runways: List of active runway designators
 
         Returns:
@@ -44,318 +40,545 @@ class TraconArrivalsScenario(BaseScenario):
         # Reset tracking for new generation
         self._reset_tracking()
 
+        logger.info(f"Generating TRACON arrival scenario: {num_arrivals} arrivals")
+
+        # Parse waypoint.STAR input
+        waypoint_star_pairs = self._parse_waypoint_star_input(arrival_waypoints)
+        if not waypoint_star_pairs:
+            logger.error("No valid STAR waypoints provided")
+            return []
+
+        # Extract unique STAR base names for API call
+        star_names = list(set([self._strip_numbers(star) for _, star in waypoint_star_pairs]))
+        logger.info(f"Fetching flights for STARs: {star_names}")
+
+        # Single API call to get ALL arrival flights
+        all_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=619, stars=star_names)
+        if not all_flights:
+            logger.error("Failed to fetch arrival flights from API")
+            return []
+
+        # Filter valid flights (removes ACTIVE status, missing data, etc.)
+        valid_flights = filter_valid_flights(all_flights)
+        logger.info(f"Got {len(valid_flights)} valid flights from API")
+
+        # Deduplicate by GUFI
+        unique_flights = self._deduplicate_by_gufi(valid_flights)
+        logger.info(f"After deduplication: {len(unique_flights)} unique flights")
+
+        # Separate flights by STAR procedure
+        flights_by_star = self._group_flights_by_star(unique_flights)
+
+        # Log what we have
+        for star, flights in flights_by_star.items():
+            logger.info(f"  {star}: {len(flights)} flights")
+
+        # Calculate how many aircraft per STAR
+        num_stars = len(waypoint_star_pairs)
+        aircraft_per_star = num_arrivals // num_stars
+        remainder = num_arrivals % num_stars
+
+        logger.info(f"Will generate {aircraft_per_star} aircraft per STAR (+ {remainder} extra)")
+
         # Setup difficulty assignment
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
 
-        # Handle legacy spawn_delay_range parameter
-        if spawn_delay_range and not delay_value:
-            logger.warning("Using legacy spawn_delay_range parameter. Consider upgrading to spawn_delay_mode.")
-            min_delay, max_delay = self._parse_spawn_delay_range(spawn_delay_range)
+        # Generate aircraft for each waypoint.STAR pair
+        for idx, (waypoint_name, star_name) in enumerate(waypoint_star_pairs):
+            star_base = self._strip_numbers(star_name)
 
-        logger.info(f"Generating TRACON arrival scenario: {num_arrivals} arrivals")
-        logger.info(f"Spawn delay mode: {spawn_delay_mode.value}")
+            # Calculate how many for this STAR (distribute remainder to first STARs)
+            num_for_this_star = aircraft_per_star + (1 if idx < remainder else 0)
 
-        # Parse STAR transitions from input
-        star_transitions = self._parse_star_transitions(arrival_waypoints)
+            logger.info(f"Generating {num_for_this_star} aircraft for {waypoint_name}.{star_name}")
 
-        if not star_transitions:
-            logger.error("No valid STAR transitions provided")
-            return self.aircraft
+            # Get flights for this STAR
+            available_flights = flights_by_star.get(star_base.upper(), [])
+            if not available_flights:
+                logger.warning(f"No flights available for STAR {star_base}")
+                continue
 
-        # Distribute aircraft across STAR transitions
-        for i in range(num_arrivals):
-            transition_name, star_name = star_transitions[i % len(star_transitions)]
-
-            # Get waypoint for this transition
-            waypoint = self.cifp_parser.get_transition_waypoint(transition_name, star_name)
-
+            # Get waypoint from CIFP
+            waypoint = self.cifp_parser.get_transition_waypoint(waypoint_name, star_name)
             if not waypoint:
-                logger.warning(f"Transition waypoint {transition_name}.{star_name} not found in CIFP data")
+                logger.warning(f"Waypoint {waypoint_name} not found in CIFP for {star_name}")
                 continue
 
-            # Check if waypoint has valid coordinates
-            if waypoint.latitude == 0.0 and waypoint.longitude == 0.0:
-                logger.warning(f"Waypoint {waypoint.name} has no coordinate data")
-                continue
+            # Generate aircraft with retry logic
+            created = 0
+            attempts = 0
+            max_attempts = num_for_this_star * 10
 
-            aircraft = self._create_arrival_at_waypoint(waypoint, altitude_range, 0, active_runways, star_name)
-            # Legacy mode: apply random spawn delay
-            if spawn_delay_range and not delay_value:
-                aircraft.spawn_delay = random.randint(min_delay, max_delay)
-                logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
-            difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
-            self.aircraft.append(aircraft)
+            while created < num_for_this_star and attempts < max_attempts:
+                flight_index = attempts % len(available_flights)
 
-        # Apply new spawn delay system
-        if not spawn_delay_range:
-            self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
+                # If we've exhausted the available flights, try to fetch more
+                if attempts > 0 and attempts % len(available_flights) == 0:
+                    logger.info(f"Flight pool exhausted for STAR {star_base}, fetching more from API...")
+                    additional_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=100, stars=[star_base.upper()])
+                    if additional_flights:
+                        valid_flights = filter_valid_flights(additional_flights)
+                        unique_flights = self._deduplicate_by_gufi(valid_flights)
+                        if unique_flights:
+                            available_flights.extend(unique_flights)
+                            flights_by_star[star_base.upper()] = available_flights
+                            logger.info(f"Added {len(unique_flights)} more flights for STAR {star_base}")
 
-        logger.info(f"Generated {len(self.aircraft)} arrival aircraft")
+                if flight_index >= len(available_flights):
+                    logger.warning(f"No more flights available for STAR {star_base}")
+                    break
+
+                flight_data = available_flights[flight_index]
+
+                aircraft = self._create_arrival_aircraft(
+                    flight_data=flight_data,
+                    waypoint=waypoint,
+                    star_name=star_name,
+                    active_runways=active_runways
+                )
+
+                if aircraft:
+                    difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                    self.aircraft.append(aircraft)
+                    created += 1
+
+                attempts += 1
+
+            if created < num_for_this_star:
+                logger.warning(f"Only created {created} of {num_for_this_star} requested aircraft for {waypoint_name}.{star_name}")
+
+        # Apply spawn delays
+        self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
+
+        logger.info(f"Generated {len(self.aircraft)} arrival aircraft (requested {num_arrivals})")
         return self.aircraft
 
-    def _parse_star_transitions(self, arrival_waypoints: List[str]) -> List[Tuple[str, str]]:
+    def _parse_waypoint_star_input(self, arrival_waypoints: List[str]) -> List[tuple]:
         """
-        Parse STAR waypoint input format
-
-        Users can specify ANY waypoint along a STAR procedure, not just transition points.
+        Parse waypoint.STAR input format
 
         Args:
-            arrival_waypoints: List of strings in format "WAYPOINT.STAR"
-                              (e.g., "EAGUL.JESSE3", "PINNG.PINNG1", "HOTTT.PINNG1")
+            arrival_waypoints: List like ["HOMRR.EAGUL6", "HYDRR.HYDRR1"]
 
         Returns:
-            List of (waypoint_name, star_name) tuples
+            List of (waypoint, star) tuples
         """
-        star_transitions = []
-
-        for entry in arrival_waypoints:
-            entry = entry.strip()
-
-            # Check if it's in WAYPOINT.STAR format
-            if '.' in entry:
-                parts = entry.split('.')
+        pairs = []
+        for item in arrival_waypoints:
+            if '.' in item:
+                parts = item.split('.')
                 if len(parts) == 2:
-                    waypoint_name = parts[0].strip()
-                    star_name = parts[1].strip()
-                    star_transitions.append((waypoint_name, star_name))
-                    logger.debug(f"Parsed STAR waypoint: {waypoint_name}.{star_name}")
+                    waypoint, star = parts
+                    pairs.append((waypoint.strip().upper(), star.strip().upper()))
                 else:
-                    logger.warning(f"Invalid STAR waypoint format: {entry} (expected WAYPOINT.STAR)")
+                    logger.warning(f"Invalid format: {item} (expected WAYPOINT.STAR)")
             else:
-                # Legacy support: treat as waypoint name, try to infer STAR
-                waypoint = self.cifp_parser.get_waypoint(entry)
-                if waypoint and waypoint.arrival_name:
-                    star_transitions.append((entry, waypoint.arrival_name))
-                    logger.warning(f"Legacy format detected: {entry} - inferred as {entry}.{waypoint.arrival_name}")
-                else:
-                    logger.warning(f"Cannot parse entry: {entry} (use WAYPOINT.STAR format)")
+                logger.warning(f"Invalid format: {item} (expected WAYPOINT.STAR)")
 
-        return star_transitions
+        return pairs
 
-    def _create_arrival_at_waypoint(self, waypoint, altitude_range: Tuple[int, int], delay_seconds: int = 0, active_runways: List[str] = None, star_name: str = None) -> Aircraft:
+    def _strip_numbers(self, procedure: str) -> str:
+        """Strip trailing numbers from procedure name (EAGUL6 -> EAGUL)"""
+        return re.sub(r'\d+$', '', procedure)
+
+    def _deduplicate_by_gufi(self, flights: List[Dict]) -> List[Dict]:
+        """Remove duplicate flights by GUFI"""
+        seen = set()
+        unique = []
+        for flight in flights:
+            gufi = flight.get('gufi', '')
+            if gufi and gufi not in seen:
+                seen.add(gufi)
+                unique.append(flight)
+            elif not gufi:
+                unique.append(flight)  # Keep flights without GUFI
+        return unique
+
+    def _group_flights_by_star(self, flights: List[Dict]) -> Dict[str, List[Dict]]:
+        """Group flights by their arrivalProcedure field"""
+        groups = defaultdict(list)
+        for flight in flights:
+            star = flight.get('arrivalProcedure', 'UNKNOWN').upper()
+            groups[star].append(flight)
+        return dict(groups)
+
+    def _create_arrival_aircraft(self, flight_data: Dict, waypoint, star_name: str,
+                                  active_runways: List[str] = None) -> Aircraft:
         """
-        Create an arrival aircraft at a waypoint
+        Create arrival aircraft from flight data
 
         Args:
-            waypoint: Waypoint object
-            altitude_range: Tuple of (min, max) altitude (used as fallback only)
-            delay_seconds: Spawn delay in seconds
-            active_runways: List of active runway designators
-            star_name: STAR name for looking up next waypoint
+            flight_data: Flight dictionary from API
+            waypoint: Waypoint object from CIFP
+            star_name: STAR name (with numbers)
+            active_runways: List of active runways
 
         Returns:
-            Aircraft object
+            Aircraft object or None
         """
-        # Get random departure airport and flight plan
-        departure = self._get_random_destination(exclude=self.airport_icao)
-        flight_plan = self.api_client.get_random_flight_plan(departure, self.airport_icao)
+        # Extract flight data
+        departure = flight_data.get('departureAirport', 'KORD')
+        callsign = flight_data.get('aircraftIdentification', '')
+        aircraft_type = flight_data.get('aircraftType', 'B738')
+        route = clean_route_string(flight_data.get('route', ''))
 
-        # Use callsign from API if available, otherwise generate
-        callsign = flight_plan.get('callsign') or self._generate_callsign()
+        # Check callsign uniqueness
+        with self.callsign_lock:
+            if callsign in self.used_callsigns:
+                logger.warning(f"Duplicate callsign {callsign}, skipping")
+                return None
+            self.used_callsigns.add(callsign)
 
-        # Ensure callsign is unique - if it's already used, generate a new one
-        if callsign in self.used_callsigns:
-            callsign = self._generate_callsign()
+        # Add equipment suffix
+        is_ga = self._is_ga_aircraft_type(aircraft_type)
+        aircraft_type = self._add_equipment_suffix(aircraft_type, is_ga)
 
-        # Add callsign to used set
-        self.used_callsigns.add(callsign)
+        # Get altitude from CIFP
+        altitude = self._get_altitude_from_cifp(waypoint, star_name)
 
-        # Determine altitude - STRICTLY ENFORCE CIFP CONSTRAINTS
-        altitude = self._get_altitude_from_cifp(waypoint, altitude_range)
+        # Get cruise speed (for flight plan only, not initial speed)
+        cruise_speed = self._get_cruise_speed(flight_data, aircraft_type)
 
-        # Determine inbound course to the waypoint
-        from utils.geo_utils import calculate_bearing
+        # Calculate realistic initial speed based on altitude
+        initial_speed = self._calculate_realistic_arrival_speed(altitude, aircraft_type)
 
-        inbound_course = None
-        prev_waypoint = None
+        # Determine runway
+        runway = self._select_arrival_runway(active_runways, star_name) if active_runways else "08L"
 
-        # Try to get inbound course from CIFP first
-        if waypoint.inbound_course:
-            inbound_course = waypoint.inbound_course
-            logger.debug(f"Using CIFP inbound course {inbound_course}° for {waypoint.name}")
-        else:
-            # Calculate from previous waypoint in STAR sequence
-            # Note: TF (Track to Fix) and IF (Initial Fix) legs don't have explicit courses in CIFP
-            if star_name and waypoint.sequence_number:
-                prev_waypoint = self.cifp_parser.get_previous_waypoint_in_star(star_name, waypoint.sequence_number)
+        # Calculate FRD fix string (FIX/RADIAL/DISTANCE format)
+        frd_fix = self._calculate_frd_fix(waypoint, star_name, runway)
 
-            if prev_waypoint and prev_waypoint.latitude != 0.0 and prev_waypoint.longitude != 0.0:
-                inbound_course = calculate_bearing(prev_waypoint.latitude, prev_waypoint.longitude, waypoint.latitude, waypoint.longitude)
-                logger.debug(f"{prev_waypoint.name} -> {waypoint.name}: calculated inbound course {inbound_course}°")
-            else:
-                # No previous waypoint - use next waypoint to determine lateral course
-                next_waypoint = None
-                if star_name and waypoint.sequence_number:
-                    next_waypoint = self.cifp_parser.get_next_waypoint_in_star(star_name, waypoint.sequence_number)
+        # Calculate initial path (spawn waypoint.STAR.RUNWAY)
+        initial_path = self._calculate_initial_path(waypoint, star_name, runway)
 
-                if next_waypoint and next_waypoint.latitude != 0.0 and next_waypoint.longitude != 0.0:
-                    # Calculate the outbound course and use its reciprocal as inbound
-                    outbound_course = calculate_bearing(waypoint.latitude, waypoint.longitude, next_waypoint.latitude, next_waypoint.longitude)
-                    from utils.geo_utils import get_reciprocal_heading
-                    inbound_course = get_reciprocal_heading(outbound_course)
-                    logger.debug(f"{waypoint.name} is first waypoint, using reciprocal of outbound course to {next_waypoint.name}: {inbound_course}°")
-                else:
-                    # Final fallback: use bearing to airport
-                    airport_lat, airport_lon = self.geojson_parser.get_airport_center()
-                    inbound_course = calculate_bearing(waypoint.latitude, waypoint.longitude, airport_lat, airport_lon)
-                    logger.debug(f"{waypoint.name} has no previous/next waypoint, using bearing to airport: {inbound_course}°")
-
-        # Set heading (direction aircraft is flying) to the inbound course
-        heading = inbound_course
-
-        # Ground speed - STRICTLY ENFORCE CIFP SPEED RESTRICTIONS
-        ground_speed = self._get_speed_from_cifp(waypoint, altitude)
-
-        # Build route from waypoint and STAR
-        # Format: "WAYPOINT ARRIVAL.RUNWAY"
-        route = waypoint.name
-        if waypoint.arrival_name:
-            # Get available runways for this arrival, filtered by active runways
-            available_runways = self._get_runways_for_arrival(waypoint.arrival_name, active_runways)
-            if available_runways:
-                # Pick a random runway from those available for this STAR
-                runway = random.choice(available_runways)
-                route = f"{waypoint.name} {waypoint.arrival_name}.{runway}"
-                logger.debug(f"Set route for {callsign}: {route}")
-            else:
-                # No runways found, just use waypoint and STAR
-                route = f"{waypoint.name} {waypoint.arrival_name}"
-                logger.warning(f"No runways found for arrival {waypoint.arrival_name}, using STAR only")
-        else:
-            logger.warning(f"Waypoint {waypoint.name} has no arrival procedure associated")
-
-        # Calculate actual spawn position 2NM BEFORE the waypoint along the inbound course
-        # Aircraft spawn on approach TO the specified waypoint
-        from utils.geo_utils import calculate_destination, get_reciprocal_heading
-
-        reciprocal_heading = get_reciprocal_heading(heading)
-        spawn_distance = 2  # nautical miles
-        spawn_lat, spawn_lon = calculate_destination(
-            waypoint.latitude,
-            waypoint.longitude,
-            reciprocal_heading,
-            spawn_distance
-        )
-
-        logger.debug(f"Spawn position: {spawn_distance}NM from {waypoint.name} on {reciprocal_heading}° radial (inbound course: {heading}°)")
-        logger.debug(f"  Waypoint: {waypoint.latitude:.6f}, {waypoint.longitude:.6f}")
-        logger.debug(f"  Spawn: {spawn_lat:.6f}, {spawn_lon:.6f}")
-
-        # Set Fix/Radial/Distance navigation path
-        # Format: FIXNAME + RADIAL (reciprocal of inbound course) + DISTANCE (2NM)
-        # Example: XMRKS232002 means "2NM from XMRKS on the 232 radial"
-        navigation_path = f"{waypoint.name}{reciprocal_heading:03d}{int(spawn_distance):03d}"
-
+        # Create aircraft with FixOrFrd starting conditions
+        # vNAS will calculate lat/lon/heading from the FRD fix
         aircraft = Aircraft(
             callsign=callsign,
-            aircraft_type=flight_plan['aircraft_type'],
-            latitude=spawn_lat,      # Use calculated spawn position
-            longitude=spawn_lon,      # Use calculated spawn position
+            aircraft_type=aircraft_type,
+            latitude=0.0,  # vNAS calculates from FRD
+            longitude=0.0,  # vNAS calculates from FRD
             altitude=altitude,
-            heading=heading,
-            ground_speed=ground_speed,
+            heading=0,  # vNAS calculates from FRD
+            ground_speed=initial_speed,  # Realistic speed based on altitude
             departure=departure,
             arrival=self.airport_icao,
             route=route,
-            cruise_altitude=flight_plan['altitude'],
-            cruise_speed=flight_plan.get('cruise_speed'),
-            flight_rules="I",
-            engine_type="J",
-            navigation_path=navigation_path  # Set Fix/Radial/Distance
+            cruise_speed=cruise_speed,
+            cruise_altitude=str(altitude),
+            navigation_path=initial_path,
+            fix=frd_fix,
+            starting_conditions_type="FixOrFrd",
+            # Procedures
+            star=star_name  # Store the STAR name
         )
-
-        logger.debug(f"Set navigation path for {callsign}: {navigation_path}")
 
         return aircraft
 
-    def _get_altitude_from_cifp(self, waypoint, altitude_range: Tuple[int, int]) -> int:
+    def _get_altitude_from_cifp(self, waypoint, star_name: str) -> int:
         """
-        Get altitude based on CIFP constraints, strictly enforcing altitude descriptors
+        Get altitude from CIFP waypoint data
 
         Args:
-            waypoint: Waypoint object with CIFP data
-            altitude_range: Fallback altitude range (min, max)
+            waypoint: Waypoint object from CIFP
+            star_name: STAR name
 
         Returns:
-            Altitude in feet
+            Altitude in feet MSL
         """
-        # Check altitude descriptor for constraint type
-        if waypoint.altitude_descriptor:
-            descriptor = waypoint.altitude_descriptor
+        # If waypoint has both min and max, use max (aircraft typically enter at top of window)
+        if waypoint.max_altitude:
+            return waypoint.max_altitude
 
-            if descriptor == '@':
-                # AT altitude - mandatory, use exact altitude
-                if waypoint.min_altitude:
-                    logger.debug(f"CIFP: CROSS {waypoint.name} AT {waypoint.min_altitude} ft")
-                    return waypoint.min_altitude
-                elif waypoint.max_altitude:
-                    return waypoint.max_altitude
+        # If only min_altitude, use that
+        if waypoint.min_altitude:
+            return waypoint.min_altitude
 
-            elif descriptor == '+':
-                # AT or ABOVE altitude
-                if waypoint.min_altitude:
-                    logger.debug(f"CIFP: CROSS {waypoint.name} AT OR ABOVE {waypoint.min_altitude} ft")
-                    # Spawn at the minimum or slightly above
-                    return waypoint.min_altitude + random.randint(0, 1000)
+        # Default for TRACON arrivals (typically 11,000 ft)
+        return 11000
 
-            elif descriptor == '-':
-                # AT or BELOW altitude
-                if waypoint.max_altitude:
-                    logger.debug(f"CIFP: CROSS {waypoint.name} AT OR BELOW {waypoint.max_altitude} ft")
-                    # Spawn at the maximum or slightly below
-                    return waypoint.max_altitude - random.randint(0, 1000)
-
-            elif descriptor == 'B':
-                # BETWEEN altitudes
-                if waypoint.min_altitude and waypoint.max_altitude:
-                    logger.debug(f"CIFP: CROSS {waypoint.name} BETWEEN {waypoint.min_altitude} and {waypoint.max_altitude} ft")
-                    return random.randint(waypoint.min_altitude, waypoint.max_altitude)
-
-        # Legacy handling - if no descriptor but altitudes exist
-        if waypoint.min_altitude and waypoint.max_altitude:
-            # If they're the same, it's a mandatory crossing altitude
-            if waypoint.min_altitude == waypoint.max_altitude:
-                logger.debug(f"CIFP: CROSS {waypoint.name} AT {waypoint.min_altitude} ft (inferred from equal min/max)")
-                return waypoint.min_altitude
-            # Otherwise, range
-            logger.debug(f"CIFP: CROSS {waypoint.name} BETWEEN {waypoint.min_altitude}-{waypoint.max_altitude} ft")
-            return random.randint(waypoint.min_altitude, waypoint.max_altitude)
-        elif waypoint.min_altitude:
-            logger.debug(f"CIFP: CROSS {waypoint.name} AT OR ABOVE {waypoint.min_altitude} ft")
-            return waypoint.min_altitude + random.randint(0, 1000)
-        elif waypoint.max_altitude:
-            logger.debug(f"CIFP: CROSS {waypoint.name} AT OR BELOW {waypoint.max_altitude} ft")
-            return waypoint.max_altitude - random.randint(0, 1000)
-
-        # No CIFP data - use fallback range
-        logger.warning(f"No CIFP altitude constraint for {waypoint.name}, using fallback range {altitude_range[0]}-{altitude_range[1]} ft")
-        return random.randint(altitude_range[0], altitude_range[1])
-
-    def _get_speed_from_cifp(self, waypoint, altitude: int) -> int:
+    def _calculate_realistic_arrival_speed(self, altitude: int, aircraft_type: str) -> int:
         """
-        Get ground speed based on CIFP speed restrictions, strictly enforcing them
+        Calculate realistic arrival speed based on altitude.
+
+        Uses an exponential relationship where speed increases with altitude.
+        Higher altitudes = higher speeds (descending jets at 280-300 kts)
+        Lower altitudes = lower speeds (approach speeds 140-180 kts)
 
         Args:
-            waypoint: Waypoint object with CIFP data
-            altitude: Aircraft altitude in feet
+            altitude: Altitude in feet MSL
+            aircraft_type: Aircraft type code
 
         Returns:
-            Ground speed in knots
+            Speed in knots
         """
-        # Check for CIFP speed restriction
-        if waypoint.speed_limit:
-            logger.debug(f"CIFP: SPEED RESTRICTION at {waypoint.name}: {waypoint.speed_limit} knots")
-            # Add slight variation (±5 knots) for realism but stay within restriction
-            variation = random.randint(-5, 5)
-            return max(180, min(waypoint.speed_limit + variation, waypoint.speed_limit))
+        # Determine if this is a GA aircraft
+        is_ga = self._is_ga_aircraft_type(aircraft_type.split('/')[0])
 
-        # No speed restriction from CIFP - use altitude-based logic
-        if altitude > 10000:
-            speed = random.randint(280, 320)
-            logger.debug(f"No CIFP speed restriction for {waypoint.name}, using high-altitude speed: {speed} knots")
+        if is_ga:
+            # General aviation speeds are lower
+            # Base: 120 kts, increases to ~180 kts at high altitude
+            base_speed = 110
+            max_speed = 170
         else:
-            # Below 10,000 ft, generally 250 knots max
-            speed = random.randint(220, 250)
-            logger.debug(f"No CIFP speed restriction for {waypoint.name}, using low-altitude speed: {speed} knots")
+            # Jet/turboprop speeds
+            # Base: 180 kts (approach speed), increases to ~290 kts at cruise descent
+            base_speed = 140
+            max_speed = 380
 
+        # Exponential formula: speed = base + (max - base) * (1 - e^(-altitude / scale))
+        # Scale factor controls how quickly speed increases with altitude
+        scale_factor = 8000  # Altitude in feet where speed reaches ~63% of max
+
+        import math
+        speed_ratio = 1 - math.exp(-altitude / scale_factor)
+        calculated_speed = base_speed + (max_speed - base_speed) * speed_ratio
+
+        # Round to nearest 5 knots for realism
+        speed = int(round(calculated_speed / 5) * 5)
+
+        logger.debug(f"Calculated arrival speed: {speed} kts for altitude {altitude} ft (aircraft: {aircraft_type})")
         return speed
+
+    def _find_next_waypoint_for_runway(self, star_name: str, current_waypoint, runway: str):
+        """
+        Find the correct next waypoint in a STAR based on the runway assignment.
+
+        Uses CIFP transition_name field to determine which waypoint path serves
+        the specified runway. Works for any STAR procedure at any airport.
+
+        Args:
+            star_name: STAR name (with numbers)
+            current_waypoint: Current waypoint object
+            runway: Target runway (e.g., "08L", "25R")
+
+        Returns:
+            Next waypoint object, or None if not found
+        """
+        if not current_waypoint.sequence_number:
+            return None
+
+        # Get all waypoints at the next sequence number
+        next_sequence = current_waypoint.sequence_number + 10
+        candidate_waypoints = []
+
+        if star_name in self.cifp_parser.star_waypoints:
+            for waypoint_name, waypoint in self.cifp_parser.star_waypoints[star_name].items():
+                if waypoint.sequence_number == next_sequence:
+                    # Get coordinates from global waypoints if needed
+                    if waypoint.latitude == 0.0 and waypoint.longitude == 0.0:
+                        if waypoint_name in self.cifp_parser.waypoints:
+                            waypoint.latitude = self.cifp_parser.waypoints[waypoint_name].latitude
+                            waypoint.longitude = self.cifp_parser.waypoints[waypoint_name].longitude
+                    candidate_waypoints.append((waypoint_name, waypoint))
+
+        if not candidate_waypoints:
+            logger.debug(f"No waypoints found at sequence {next_sequence} in {star_name}")
+            return None
+
+        # If only one candidate, return it
+        if len(candidate_waypoints) == 1:
+            return candidate_waypoints[0][1]
+
+        # Multiple candidates - use CIFP transition_name to match runway
+        # Normalize runway for comparison (e.g., "08L" -> "08L", "25R" -> "25R", "8" -> "08")
+        runway_normalized = runway.replace('RW', '')
+
+        # Pad single-digit runways with leading zero (8 -> 08, 8L -> 08L)
+        if len(runway_normalized) >= 1 and runway_normalized[0].isdigit():
+            if len(runway_normalized) == 1 or (len(runway_normalized) == 2 and not runway_normalized[1].isdigit()):
+                # Single digit runway (8 or 8L) - pad with zero
+                runway_normalized = '0' + runway_normalized
+
+        # Build possible transition names to match
+        # CIFP uses formats like "RW08", "RW08L", "RW25R", etc.
+        possible_transitions = [
+            f"RW{runway_normalized}",  # Exact: RW08L, RW25R
+            f"RW{runway_normalized[:-1]}" if len(runway_normalized) > 2 else None,  # Base: RW08 (from 08L)
+        ]
+
+        logger.debug(f"Looking for waypoints with transition names: {[t for t in possible_transitions if t]}")
+
+        # First pass: exact transition name match
+        for waypoint_name, waypoint in candidate_waypoints:
+            if waypoint.transition_name and waypoint.transition_name in possible_transitions:
+                logger.debug(f"Found waypoint {waypoint_name} for runway {runway} (transition: {waypoint.transition_name})")
+                return waypoint
+
+        # Second pass: reverse base match (transition RW08 can serve runway 08L or 08R)
+        # This handles cases where CIFP defines RW08 transition that serves both 08L and 08R
+        runway_base = runway_normalized.rstrip('LRC')
+        for waypoint_name, waypoint in candidate_waypoints:
+            if waypoint.transition_name:
+                trans_clean = waypoint.transition_name.replace('RW', '')
+                trans_base = trans_clean.rstrip('LRC')
+
+                # Check if transition base matches runway base
+                if trans_base == runway_base:
+                    logger.debug(f"Found waypoint {waypoint_name} for runway {runway} via base match (transition: {waypoint.transition_name})")
+                    return waypoint
+
+        # If no match found, log warning and return first candidate
+        logger.warning(f"No CIFP transition match for runway {runway}. Available transitions: {[w.transition_name for n, w in candidate_waypoints if w.transition_name]}. Using first candidate: {candidate_waypoints[0][0]}")
+        return candidate_waypoints[0][1]
+
+    def _calculate_frd_fix(self, waypoint, star_name: str, runway: str) -> str:
+        """
+        Calculate FRD (Fix/Radial/Distance) string for vNAS starting conditions
+
+        The radial is calculated from the lateral course of the arrival procedure:
+        - If there's a previous waypoint, use bearing FROM previous TO current
+        - If this is an entry/transition point, use bearing FROM current TO next waypoint
+          (places aircraft on the arrival course leading into the STAR)
+        - For STARs with multiple branches, uses the runway to determine correct path
+
+        Format: WAYPOINTRADIALDISTANCE (no separators)
+        Example: HOMRR02003 (3NM from HOMRR on the 020 radial)
+
+        Args:
+            waypoint: Waypoint object from CIFP
+            star_name: STAR name (with numbers)
+            runway: Runway designator (e.g., "08L", "25R")
+
+        Returns:
+            FRD string (e.g., "HOMRR02003")
+        """
+        distance_nm = 3  # Always 3 NM from the waypoint
+
+        # Try to get the previous waypoint in the STAR to calculate actual lateral course
+        inbound_course = None
+        if waypoint.sequence_number:
+            prev_waypoint = self.cifp_parser.get_previous_waypoint_in_star(star_name, waypoint.sequence_number)
+            if prev_waypoint and prev_waypoint.latitude and prev_waypoint.longitude and waypoint.latitude and waypoint.longitude:
+                # Calculate bearing from previous waypoint to current waypoint
+                # This is the actual lateral course of the arrival TO this waypoint
+                inbound_course = calculate_bearing(
+                    prev_waypoint.latitude, prev_waypoint.longitude,
+                    waypoint.latitude, waypoint.longitude
+                )
+                logger.debug(f"Calculated inbound course from previous {prev_waypoint.name} to {waypoint.name}: {inbound_course:.1f}°")
+            else:
+                # No previous waypoint - this is a transition/entry point
+                # Use the next waypoint to determine the course that continues THROUGH the fix
+                # For STARs with multiple branches, find the correct next waypoint for this runway
+                next_waypoint = self._find_next_waypoint_for_runway(star_name, waypoint, runway)
+                if next_waypoint and next_waypoint.latitude and next_waypoint.longitude and waypoint.latitude and waypoint.longitude:
+                    # Calculate bearing from CURRENT to NEXT (the departure course from this fix)
+                    # We'll spawn aircraft on this same course line, BEFORE reaching the fix
+                    departure_course = calculate_bearing(
+                        waypoint.latitude, waypoint.longitude,
+                        next_waypoint.latitude, next_waypoint.longitude
+                    )
+                    # Use the departure course as the inbound course (aircraft arrive on same line)
+                    inbound_course = departure_course
+                    logger.debug(f"Using course from {waypoint.name} to next {next_waypoint.name} (for runway {runway}) as inbound: {inbound_course:.1f}°")
+
+        # Fallback to waypoint's inbound_course field if we couldn't calculate
+        if inbound_course is None:
+            inbound_course = waypoint.inbound_course if waypoint.inbound_course else 200
+            logger.debug(f"Using fallback inbound_course: {inbound_course}°")
+
+        # Calculate the radial FROM the waypoint where aircraft is located
+        # If flying inbound on course 200, aircraft is on the 020 radial FROM the fix
+        radial_from_fix = get_reciprocal_heading(int(inbound_course))
+
+        # Format: FIXRADIALDISTANCE (no slashes, radial=3 digits, distance=3 digits with leading zeros)
+        frd_string = f"{waypoint.name}{radial_from_fix:03d}{distance_nm:03d}"
+        logger.debug(f"FRD: {frd_string} ({distance_nm}NM from {waypoint.name} on {radial_from_fix:03d} radial)")
+        return frd_string
+
+    def _calculate_arrival_heading(self, waypoint, star_name: str) -> int:
+        """Calculate initial heading for arrival"""
+        # Try to get from CIFP
+        if waypoint.inbound_course:
+            return int(waypoint.inbound_course)
+
+        # Try to calculate from previous waypoint
+        if star_name and waypoint.sequence_number:
+            prev_waypoint = self.cifp_parser.get_previous_waypoint_in_star(star_name, waypoint.sequence_number)
+            if prev_waypoint and prev_waypoint.latitude and prev_waypoint.longitude:
+                heading = calculate_bearing(
+                    prev_waypoint.latitude, prev_waypoint.longitude,
+                    waypoint.latitude, waypoint.longitude
+                )
+                return int(heading)
+
+        # Default
+        return 200
+
+    def _get_cruise_speed(self, flight_data: Dict, aircraft_type: str) -> int:
+        """Get cruise speed from flight data or calculate default"""
+        speed_str = flight_data.get('requestedAirspeed', '')
+        if speed_str:
+            try:
+                return int(float(speed_str))
+            except (ValueError, TypeError):
+                pass
+
+        # Default based on aircraft type
+        return self.api_client._calculate_cruise_speed(aircraft_type)
+
+    def _select_arrival_runway(self, active_runways: List[str], star_name: str) -> str:
+        """
+        Select a runway for arrival based on STAR-runway mapping
+
+        Args:
+            active_runways: List of active runways
+            star_name: STAR name (with numbers, e.g., "EAGUL6")
+
+        Returns:
+            Runway designator that matches both active runways and STAR
+        """
+        if not active_runways:
+            return "08L"
+
+        # Get runways that this STAR can feed (use full STAR name with numbers)
+        star_runways = self.cifp_parser.get_runways_for_arrival(star_name)
+
+        # Find first active runway that matches this STAR
+        # Handle exact matches, base matches, and normalized number matches
+        for active_rwy in active_runways:
+            # Try exact match first
+            if active_rwy in star_runways:
+                return active_rwy
+
+            # Normalize runway numbers for comparison (8 -> 08, 9 -> 09)
+            active_base = active_rwy.rstrip('LRC')
+            active_normalized = active_base.zfill(2) if active_base.isdigit() else active_base
+
+            for star_rwy in star_runways:
+                star_base = star_rwy.rstrip('LRC')
+                star_normalized = star_base.zfill(2) if star_base.isdigit() else star_base
+
+                # Compare normalized bases (handles "8" == "08", "08L" == "08", etc.)
+                if active_normalized == star_normalized:
+                    return active_rwy
+
+        # Fallback: use first active runway
+        logger.warning(f"No active runway matches STAR {star_name} runways {star_runways}, using {active_runways[0]}")
+        return active_runways[0]
+
+    def _calculate_initial_path(self, current_waypoint, star_name: str, runway: str) -> str:
+        """
+        Calculate the initial path for arrival aircraft
+
+        Format: SPAWN_WAYPOINT STAR.RUNWAY
+        Example: HOMRR EAGUL6.08L (with leading zeros)
+
+        The aircraft spawns 3NM before this waypoint and flies toward it via this STAR to the runway.
+
+        Args:
+            current_waypoint: Spawn waypoint (where aircraft is spawning 3NM before)
+            star_name: STAR name (with numbers)
+            runway: Runway designator
+
+        Returns:
+            Initial path string in format "SPAWN_WAYPOINT STAR.RUNWAY"
+        """
+        # Format: SPAWN_WAYPOINT STAR.RUNWAY (space between waypoint and STAR)
+        # Remove any RW prefix but preserve leading zeros (08L, not 8L)
+        runway_clean = runway.replace('RW', '')
+
+        initial_path = f"{current_waypoint.name} {star_name}.{runway_clean}"
+        logger.debug(f"Initial path: {initial_path} (spawn 3NM before {current_waypoint.name})")
+        return initial_path

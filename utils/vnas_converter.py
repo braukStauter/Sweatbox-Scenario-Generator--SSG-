@@ -120,11 +120,12 @@ class VNASConverter:
             aircraft: Aircraft object
 
         Returns:
-            List of command objects
+            List of command objects with id and command fields
         """
         commands = []
         for command_str in aircraft.preset_commands:
             commands.append({
+                "id": generate_ulid(),
                 "command": command_str
             })
         return commands
@@ -187,11 +188,14 @@ class VNASConverter:
             return conditions
 
         # Fix or FRD with enhanced parameters
-        # The navigation_path contains the FRD format representing where the aircraft IS spawning
-        # Example: PINNG112010 means "10NM from PINNG on the 112 radial" - that's the spawn point
+        # The fix field contains the FRD format (e.g., "HOMRR020003")
+        # The navigationPath field contains the initial routing (e.g., "HOMRR.EAGUL6.8L")
         fix_or_frd = "UNKNOWN"
-        if aircraft.navigation_path:
-            # Use the full FRD format as the spawn position
+        if aircraft.fix:
+            # Use the FRD string from the fix field
+            fix_or_frd = aircraft.fix
+        elif aircraft.navigation_path:
+            # Fallback for legacy behavior
             fix_or_frd = aircraft.navigation_path
 
         conditions = {
@@ -201,8 +205,11 @@ class VNASConverter:
             "speed": aircraft.ground_speed
         }
 
-        # Set initial path to the route (the actual routing to fly)
-        if aircraft.route:
+        # Set navigationPath to the initial path (e.g., "HOMRR.EAGUL6.8L")
+        if aircraft.navigation_path:
+            conditions["navigationPath"] = aircraft.navigation_path
+        elif aircraft.route:
+            # Fallback to route if no navigation_path is set
             conditions["navigationPath"] = aircraft.route
 
         # Optional heading

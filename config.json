@@ -2,8 +2,12 @@
   "parking_airlines": {
     "KPHX": {
       "A#": ["AAL"],
-      "B#": ["AAL"],
+      "B1-B11": ["AAL"],
+      "B12-B20": ["SWA"],
+      "B3": ["JBU"],
+      "B#": ["DAL"],
       "C#": ["SWA"],
+      "C3-C14": ["AAL"],
       "D#": ["SWA"],
       "E#": ["ASA", "ACA", "UAL"],
       "F#": ["DAL", "FFT", "NKS"],
@@ -11,5 +15,27 @@
       "F2": ["JBU"]
     }
   },
-  "_comment": "Use # as a wildcard. For example, 'A#' matches A1, A2, A3, A10, A11, etc. Specific parking names override wildcards."
+  "_comment_priority": "Priority order: Specific gates > Gate ranges > Wildcards",
+  "_comment_examples": {
+    "specific": "B3 will always be JBU (overrides B1-B11 range)",
+    "range": "B1-B11 assigns AAL to gates B1, B2, B4-B11 (B3 excluded by specific)",
+    "wildcard": "B# handles any B gates not covered by specific or range assignments",
+    "multiple_airlines": "E# randomly selects from ASA, ACA, or UAL for E gates"
+  },
+  "_comment_less_common_airports": "Airports used for GA traffic destinations. Customize this list for your region.",
+  "less_common_airports": [
+    "KSDL", "KDVT", "KCHD", "KGEU", "KFFZ", "KIWA", "KBXK", "KPRC", "KGYR", "KTUS",
+    "KFLG", "KYUM", "KIGM", "KPGA", "KGCN", "KSEZ", "KINW", "KCGZ", "KBLH", "KIFP",
+    "KBYS", "KSGU", "KCDC", "KLUF", "KFUL", "KEMT", "KVNY", "KHND", "KBVU", "KSNA"
+  ],
+  "common_ga_aircraft": [
+    "C172", "C182", "BE36", "C208", "PA32", "SR22", "C210", "P28A", "BE58"
+  ],
+  "_comment_artcc_airport_groups": "Named groups of airports for enroute scenario arrival/departure selections. Format: ICAO:runway,runway,runway,ICAO:runway,runway. Runways specify ACTIVE runways for CIFP SID/STAR parsing and routing. The group name serves as the dropdown label. You should have a geojson file in /airport_data/ for each airport you intend to use.",
+  "artcc_airport_groups": {
+    "ZAB": {
+      "Primary Airports (East)": "KPHX:08,7R,KTUS:12,KABQ:08,03,KAMA:04,KELP:04,8R",
+      "Primary Airports (West)": "KPHX:26,25L,KTUS:30,KABQ:26,21,KAMA:22,KELP:22,26L"
+    }
+  }
 }

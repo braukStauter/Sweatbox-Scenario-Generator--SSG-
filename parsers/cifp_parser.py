@@ -4,7 +4,7 @@ Based on ARINC 424 specification
 """
 import logging
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from models.airport import Waypoint
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,11 @@ class CIFPParser:
         self.arrival_runways: Dict[str, List[str]] = {}  # Maps STAR name to runways it feeds
         # Store waypoint data per STAR to preserve procedure-specific constraints
         self.star_waypoints: Dict[str, Dict[str, Waypoint]] = {}  # {STAR_name: {waypoint_name: Waypoint}}
+        # Store departure (SID) data
+        self.departures: Dict[str, List[str]] = {}  # Maps SID name to waypoint list
+        self.departure_runways: Dict[str, List[str]] = {}  # Maps SID name to runways it uses
+        # Store waypoint data per SID to preserve procedure-specific constraints
+        self.sid_waypoints: Dict[str, Dict[str, Waypoint]] = {}  # {SID_name: {waypoint_name: Waypoint}}
         self._load_data()
 
     def _parse_leg_type(self, line: str) -> Optional[str]:
@@ -228,12 +233,15 @@ class CIFPParser:
                         (len(line) > 12 and line.startswith('SUSAD') and line[12] == 'C')):
                         self._parse_line(line)
 
-            # After loading all data, map arrivals to their runways
+            # After loading all data, map arrivals and departures to their runways
             self._map_arrivals_to_runways()
+            self._map_departures_to_runways()
 
             logger.info(f"Loaded {len(self.waypoints)} waypoints for {self.airport_icao}")
             logger.info(f"Found {len(self.arrivals)} arrival procedures")
             logger.info(f"Mapped {len(self.arrival_runways)} STARs to runways")
+            logger.info(f"Found {len(self.departures)} departure procedures")
+            logger.info(f"Mapped {len(self.departure_runways)} SIDs to runways")
 
         except Exception as e:
             logger.error(f"Error loading CIFP: {e}")
@@ -486,9 +494,33 @@ class CIFPParser:
     def _parse_departure_waypoint(self, line: str):
         """Parse a departure (SID) waypoint line"""
         try:
-            departure_name = line[15:21].strip()
+            departure_name_raw = line[13:19].strip()
+
+            # Extract base SID name (remove version suffix)
+            match = re.match(r'([A-Z]+\d?)', departure_name_raw)
+            if match:
+                departure_name = match.group(1)
+            else:
+                departure_name = departure_name_raw
 
             waypoint_name = line[29:34].strip()
+
+            # Extract inbound course (magnetic track) to this waypoint
+            leg_type = self._parse_leg_type(line)
+            inbound_course = None
+
+            # Extract inbound course from position 70-74 (ARINC 424 standard)
+            course_str = line[70:74].strip()
+            if course_str:
+                try:
+                    if course_str.endswith('T'):
+                        # True heading - remove T and convert
+                        inbound_course = int(course_str[:-1])
+                    elif course_str.isdigit():
+                        # Magnetic heading
+                        inbound_course = int(course_str)
+                except (ValueError, IndexError):
+                    pass
 
             altitude_section = line[66:84]
 
@@ -520,7 +552,6 @@ class CIFPParser:
 
             # Parse enhanced ARINC 424 fields
             sequence_number = self._parse_sequence_number(line)
-            leg_type = self._parse_leg_type(line)
             altitude_descriptor = self._parse_altitude_descriptor(line)
             speed_limit = self._parse_speed_limit(line)
             turn_direction = self._parse_turn_direction(line)
@@ -530,31 +561,45 @@ class CIFPParser:
             recommended_navaid = self._parse_recommended_navaid(line)
             route_type = self._parse_route_type(line, 'D')
 
-            if waypoint_name and waypoint_name not in self.waypoints:
-                waypoint = Waypoint(
-                    name=waypoint_name,
-                    latitude=0.0,
-                    longitude=0.0,
-                    min_altitude=min_alt,
-                    max_altitude=max_alt,
-                    sequence_number=sequence_number,
-                    leg_type=leg_type,
-                    altitude_descriptor=altitude_descriptor,
-                    speed_limit=speed_limit,
-                    turn_direction=turn_direction,
-                    transition_name=transition_name,
-                    magnetic_variation=magnetic_variation,
-                    distance_time=distance_time,
-                    recommended_navaid=recommended_navaid,
-                    route_type=route_type
-                )
+            # Create waypoint object for this specific SID
+            waypoint = Waypoint(
+                name=waypoint_name,
+                latitude=0.0,
+                longitude=0.0,
+                departure_name=departure_name,
+                min_altitude=min_alt,
+                max_altitude=max_alt,
+                inbound_course=inbound_course,
+                sequence_number=sequence_number,
+                leg_type=leg_type,
+                altitude_descriptor=altitude_descriptor,
+                speed_limit=speed_limit,
+                turn_direction=turn_direction,
+                transition_name=transition_name,
+                magnetic_variation=magnetic_variation,
+                distance_time=distance_time,
+                recommended_navaid=recommended_navaid,
+                route_type=route_type
+            )
+
+            # Store in SID-specific dictionary to preserve procedure-specific constraints
+            if departure_name not in self.sid_waypoints:
+                self.sid_waypoints[departure_name] = {}
+            self.sid_waypoints[departure_name][waypoint_name] = waypoint
+
+            # Also store in global waypoints dict (may get overwritten, but kept for backward compatibility)
+            if waypoint_name not in self.waypoints:
                 self.waypoints[waypoint_name] = waypoint
             else:
+                # Update existing global waypoint with latest data
                 if waypoint_name in self.waypoints:
+                    self.waypoints[waypoint_name].departure_name = departure_name
                     if min_alt:
                         self.waypoints[waypoint_name].min_altitude = min_alt
                     if max_alt:
                         self.waypoints[waypoint_name].max_altitude = max_alt
+                    if inbound_course:
+                        self.waypoints[waypoint_name].inbound_course = inbound_course
                     if sequence_number:
                         self.waypoints[waypoint_name].sequence_number = sequence_number
                     if leg_type:
@@ -575,6 +620,13 @@ class CIFPParser:
                         self.waypoints[waypoint_name].recommended_navaid = recommended_navaid
                     if route_type:
                         self.waypoints[waypoint_name].route_type = route_type
+
+            # Add to departures dictionary
+            if departure_name:
+                if departure_name not in self.departures:
+                    self.departures[departure_name] = []
+                if waypoint_name and waypoint_name not in self.departures[departure_name]:
+                    self.departures[departure_name].append(waypoint_name)
 
         except Exception as e:
             logger.debug(f"Error parsing departure waypoint: {e}")
@@ -697,6 +749,94 @@ class CIFPParser:
             List of runway designators (e.g., ['25L', '25R'])
         """
         return self.arrival_runways.get(arrival_name, [])
+
+    def _map_departures_to_runways(self):
+        """Map each SID to the runways it uses based on runway-specific transitions"""
+        import re
+
+        # Extract runways from SID waypoint data
+        # SIDs often have runway-specific transitions like "RW08", "RW26", etc.
+        for departure_name, waypoint_names in self.departures.items():
+            runways_for_this_sid = set()
+
+            # Check if any waypoints in sid_waypoints have runway-specific suffixes
+            if departure_name in self.sid_waypoints:
+                for waypoint_name, waypoint in self.sid_waypoints[departure_name].items():
+                    # Check transition_name field for runway patterns (e.g., "RW03", "RW08")
+                    if waypoint.transition_name:
+                        rwy_match = re.search(r'RW(\d{2}[LCR]?)', waypoint.transition_name)
+                        if rwy_match:
+                            runway = rwy_match.group(1)
+                            runways_for_this_sid.add(runway)
+
+            # Also check the departures dictionary keys themselves for runway patterns
+            # Some CIFP data encodes runways in the departure name (e.g., "CTZEN3RW08")
+            for key in self.departures.keys():
+                if key.startswith(departure_name):
+                    rwy_match = re.search(r'RW(\d{2}[LCR]?)', key)
+                    if rwy_match:
+                        runway = rwy_match.group(1)
+                        runways_for_this_sid.add(runway)
+
+            if runways_for_this_sid:
+                self.departure_runways[departure_name] = sorted(list(runways_for_this_sid))
+                logger.debug(f"Mapped SID {departure_name} to runways: {', '.join(sorted(runways_for_this_sid))}")
+            else:
+                logger.warning(f"No runways found for SID {departure_name}")
+
+    def get_runways_for_departure(self, departure_name: str) -> List[str]:
+        """
+        Get the runways that a specific SID/departure uses
+
+        Args:
+            departure_name: Name of the SID (e.g., "RDRNR3", "ADYOS3")
+
+        Returns:
+            List of runway designators (e.g., ['08', '26'])
+        """
+        return self.departure_runways.get(departure_name, [])
+
+    def get_available_sids(self) -> List[str]:
+        """
+        Get list of all available SID names
+
+        Returns:
+            List of SID names
+        """
+        return sorted(list(self.departures.keys()))
+
+    def get_sids_for_runway(self, runway: str) -> List[str]:
+        """
+        Get list of SIDs that use a specific runway
+
+        Args:
+            runway: Runway designator (e.g., "08", "26", "08L")
+
+        Returns:
+            List of SID names that use this runway
+        """
+        # Normalize runway format (remove leading zero if present)
+        runway_normalized = runway.lstrip('0')
+        if not runway_normalized:
+            runway_normalized = '0'
+
+        matching_sids = []
+        for sid_name, runways in self.departure_runways.items():
+            for rwy in runways:
+                # Check both with and without leading zero
+                rwy_normalized = rwy.lstrip('0')
+                if not rwy_normalized:
+                    rwy_normalized = '0'
+
+                if runway_normalized == rwy_normalized or runway == rwy:
+                    matching_sids.append(sid_name)
+                    break
+
+        return sorted(matching_sids)
+
+    def get_departure_waypoints(self, departure_name: str) -> List[str]:
+        """Get all waypoints for a departure procedure"""
+        return self.departures.get(departure_name, [])
 
     def get_transition_waypoint(self, waypoint_name: str, star_name: str) -> Optional[Waypoint]:
         """
@@ -880,3 +1020,46 @@ class CIFPParser:
             List of STAR names
         """
         return sorted(list(self.arrivals.keys()))
+
+    def get_random_star_transitions(self, count: int = 1, active_runways: List[str] = None) -> List[Tuple[str, str]]:
+        """
+        Get random STAR transition waypoints
+
+        Args:
+            count: Number of random transitions to get
+            active_runways: Optional list of active runways to filter by
+
+        Returns:
+            List of (transition_waypoint, star_name) tuples
+        """
+        import random
+
+        all_transitions = []
+
+        # Get all available STARs
+        available_stars = self.get_available_stars()
+
+        for star_name in available_stars:
+            # Filter by runways if specified
+            if active_runways:
+                star_runways = self.get_runways_for_arrival(star_name)
+                # Only include this STAR if it feeds any active runway
+                if not any(rwy in active_runways for rwy in star_runways):
+                    continue
+
+            # Get transitions for this STAR
+            transitions = self.get_available_transitions(star_name)
+            for transition in transitions:
+                all_transitions.append((transition, star_name))
+
+        if not all_transitions:
+            logger.warning("No STAR transitions available")
+            return []
+
+        # Randomly select transitions
+        selected_count = min(count, len(all_transitions))
+        selected = random.sample(all_transitions, selected_count)
+
+        logger.info(f"Selected {len(selected)} random STAR transitions: {selected}")
+
+        return selected

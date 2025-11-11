@@ -25,6 +25,13 @@ class Aircraft:
     remarks: Optional[str] = None
     flight_rules: str = "I"
 
+    # Additional API flight data fields
+    gufi: Optional[str] = None  # Globally unique flight identifier
+    registration: Optional[str] = None  # Aircraft tail number
+    operator: Optional[str] = None  # Airline ICAO code
+    estimated_arrival_time: Optional[str] = None  # ISO timestamp
+    wake_turbulence: Optional[str] = None  # L/M/H/J category
+
     # Transponder and engine configuration
     engine_type: str = "J"
     squawk_mode: str = "N"  # Used by vNAS for transponder mode: "S" = Standby, "N" = Normal (Mode C)
@@ -33,6 +40,10 @@ class Aircraft:
     parking_spot_name: Optional[str] = None
     arrival_runway: Optional[str] = None
     arrival_distance_nm: Optional[float] = None
+
+    # FixOrFrd starting conditions (for TRACON arrivals)
+    fix: Optional[str] = None  # Fix name or FRD format (e.g., "HOMRR020003")
+    starting_conditions_type: Optional[str] = None  # "Parking", "FixOrFrd", etc.
 
     # Advanced vNAS features
     # Spawn control
@@ -45,6 +56,10 @@ class Aircraft:
     mach: Optional[float] = None
     navigation_path: Optional[str] = None
     final_approach_course_offset: Optional[int] = None  # degrees
+
+    # Procedures (SID/STAR)
+    sid: Optional[str] = None  # Departure procedure (e.g., "RDRNR3")
+    star: Optional[str] = None  # Arrival procedure (e.g., "EAGUL6")
 
     # Preset commands
     preset_commands: List[str] = field(default_factory=list)

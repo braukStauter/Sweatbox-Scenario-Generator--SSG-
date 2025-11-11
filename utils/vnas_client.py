@@ -47,7 +47,25 @@ class VNASClient:
             options.add_argument('--start-maximized')
 
             # Initialize undetected Chrome driver
-            self.driver = uc.Chrome(options=options, use_subprocess=True)
+            try:
+                self.driver = uc.Chrome(options=options, use_subprocess=True)
+            except Exception as chrome_error:
+                # Check if error is related to Chrome version
+                error_str = str(chrome_error).lower()
+                if any(keyword in error_str for keyword in ['version', 'chrome', 'chromium', 'driver', 'outdated', 'unsupported']):
+                    logger.error(f"Chrome version error: {chrome_error}")
+                    raise ValueError(
+                        "Your version of Chrome is outdated or incompatible.\n\n"
+                        "SSG does not support legacy versions of Chrome.\n\n"
+                        "Please update Chrome to the latest version:\n"
+                        "1. Open Chrome\n"
+                        "2. Go to Settings > About Chrome\n"
+                        "3. Chrome will automatically update\n"
+                        "4. Restart Chrome and try again"
+                    )
+                else:
+                    # Re-raise if it's not a version issue
+                    raise
 
             # Navigate to vNAS data-admin training page
             logger.info(f"Navigating to {self.LOGIN_URL}")
@@ -88,6 +106,19 @@ class VNASClient:
 
             logger.info("Browser authenticated successfully. Ready to make API requests.")
             return True
+
+        except ValueError as ve:
+            # User-friendly error (like Chrome version issue) - don't log full traceback
+            logger.error(f"Browser initialization failed: {ve}")
+            # On error, close the browser if it was created
+            if self.driver:
+                try:
+                    self.driver.quit()
+                    self.driver = None
+                except:
+                    pass
+            # Re-raise to propagate the user-friendly message
+            raise
 
         except Exception as e:
             logger.error(f"Error during browser login: {e}", exc_info=True)
@@ -173,9 +204,13 @@ class VNASClient:
         """
         # Use cached scenario_id or login via browser
         if not self.driver or not self.scenario_id:
-            success = self._login_via_browser()
-            if not success:
-                return False, "Authentication failed. Could not log in to vNAS."
+            try:
+                success = self._login_via_browser()
+                if not success:
+                    return False, "Authentication failed. Could not log in to vNAS."
+            except ValueError as ve:
+                # Chrome version or other user-friendly error
+                return False, str(ve)
 
         # Use provided scenario_id or auto-extracted one
         target_scenario_id = scenario_id or self.scenario_id
@@ -211,10 +246,9 @@ class VNASClient:
             logger.info(f"Scenario ID: {target_scenario_id}")
             logger.info(f"Request body size: {len(json.dumps(scenario_to_push))} bytes")
 
-            # Debug: Log first aircraft to verify spawnDelay is present
             if scenario_to_push.get('aircraft') and len(scenario_to_push['aircraft']) > 0:
                 first_aircraft = scenario_to_push['aircraft'][0]
-                logger.info(f"DEBUG: First aircraft: {first_aircraft.get('aircraftId')} - spawnDelay: {first_aircraft.get('spawnDelay')}")
+                logger.debug(f"First aircraft: {first_aircraft.get('aircraftId')} - spawnDelay: {first_aircraft.get('spawnDelay')}")
 
             logger.info("=" * 60)
 
@@ -262,9 +296,9 @@ class VNASClient:
             logger.info("Executing PUT request through browser...")
             result = self.driver.execute_async_script(js_code)
 
-            logger.info("=" * 60)
-            logger.info("API RESPONSE DEBUG")
-            logger.info("=" * 60)
+            logger.debug("=" * 60)
+            logger.debug("API RESPONSE")
+            logger.debug("=" * 60)
             logger.info(f"Status Code: {result.get('status', 'unknown')}")
             logger.info(f"Status Text: {result.get('statusText', 'unknown')}")
             logger.info(f"Response Body (first 500 chars): {result.get('body', '')[:500]}")
@@ -305,9 +339,13 @@ class VNASClient:
         """
         # Ensure browser is authenticated
         if not self.driver or not self.scenario_id:
-            success = self._login_via_browser()
-            if not success:
-                return False, "Authentication failed. Could not log in to vNAS."
+            try:
+                success = self._login_via_browser()
+                if not success:
+                    return False, "Authentication failed. Could not log in to vNAS."
+            except ValueError as ve:
+                # Chrome version or other user-friendly error
+                return False, str(ve)
 
         try:
             # Test connection using browser fetch

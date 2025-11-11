@@ -168,13 +168,12 @@ class GenerationScreen(tk.Frame):
                 file_path = Path(self.output_filename).absolute()
                 folder_path = file_path.parent
 
-                # Open folder based on OS
-                if os.name == 'nt':  # Windows
+                if os.name == 'nt':
                     os.startfile(folder_path)
-                elif os.name == 'posix':  # macOS and Linux
+                elif os.name == 'posix':
                     subprocess.run(['open' if os.uname().sysname == 'Darwin' else 'xdg-open', folder_path])
             except Exception as e:
-                print(f"Error opening folder: {e}")
+                logger.error(f"Error opening folder: {e}")
 
     def show_error(self, error_message):
         """Show error message"""

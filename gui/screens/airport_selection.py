@@ -2,6 +2,7 @@
 Airport selection screen
 """
 import tkinter as tk
+from tkinter import messagebox, filedialog
 from pathlib import Path
 from gui.theme import DarkTheme
 from gui.widgets import ThemedLabel, ThemedButton, SelectableCard, ThemedFrame, Footer, ProgressIndicator
@@ -18,10 +19,10 @@ class AirportSelectionScreen(tk.Frame):
         header = ThemedFrame(self)
         header.pack(fill='x', padx=DarkTheme.PADDING_XLARGE, pady=(DarkTheme.PADDING_XLARGE, DarkTheme.PADDING_LARGE))
 
-        title = ThemedLabel(header, text="Select Primary Airport", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_TITLE, 'bold'))
+        title = ThemedLabel(header, text="Select Scenario Type", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_TITLE, 'bold'))
         title.pack(anchor='w')
 
-        subtitle = ThemedLabel(header, text="Choose the airport for your scenario", fg=DarkTheme.FG_SECONDARY)
+        subtitle = ThemedLabel(header, text="Choose an airport or create an enroute ARTCC scenario", fg=DarkTheme.FG_SECONDARY)
         subtitle.pack(anchor='w', pady=(DarkTheme.PADDING_SMALL, 0))
 
         # Divider
@@ -35,6 +36,10 @@ class AirportSelectionScreen(tk.Frame):
         # Footer with navigation buttons
         footer = ThemedFrame(self)
         footer.pack(fill='x', padx=DarkTheme.PADDING_XLARGE, pady=DarkTheme.PADDING_LARGE)
+
+        # Upload to vNAS button on the left
+        self.upload_button = ThemedButton(footer, text="Backup File Upload", command=self.on_upload_scenario, primary=False)
+        self.upload_button.pack(side='left')
 
         self.next_button = ThemedButton(footer, text="Next", command=self.on_next, primary=True)
         self.next_button.pack(side='right')
@@ -65,6 +70,15 @@ class AirportSelectionScreen(tk.Frame):
         """Load available airports from airport_data directory"""
         airport_data_dir = Path("airport_data")
 
+        # Add airport header first
+        airport_header = ThemedLabel(
+            self.airport_container,
+            text="Airport-Based Scenarios",
+            fg=DarkTheme.FG_SECONDARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_LARGE, 'bold')
+        )
+        airport_header.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
         if not airport_data_dir.exists():
             error_label = ThemedLabel(
                 self.airport_container,
@@ -86,9 +100,13 @@ class AirportSelectionScreen(tk.Frame):
             error_label.pack(pady=DarkTheme.PADDING_LARGE)
             return
 
-        # Create grid for airport cards
-        for i, geojson_file in enumerate(geojson_files):
-            icao = "K" + geojson_file.stem.upper()
+        # Create airport cards
+        for geojson_file in geojson_files:
+            # Format ICAO code: add "K" prefix only for 3-letter codes (US airports)
+            # 4-letter codes already have their proper prefix (e.g., PHOG, PHNL, CYYZ)
+            base_code = geojson_file.stem.upper()
+            icao = base_code if len(base_code) == 4 else "K" + base_code
+
             card = SelectableCard(
                 self.airport_container,
                 title=icao,
@@ -103,7 +121,23 @@ class AirportSelectionScreen(tk.Frame):
 
         # If only one airport, auto-select it
         if len(geojson_files) == 1:
-            self.select_airport("K" + geojson_files[0].stem.upper(), self.airport_cards[0])
+            base_code = geojson_files[0].stem.upper()
+            icao = base_code if len(base_code) == 4 else "K" + base_code
+            self.select_airport(icao, self.airport_cards[0])
+
+        # Add divider between airports and enroute
+        divider = tk.Frame(self.airport_container, bg=DarkTheme.DIVIDER, height=1)
+        divider.pack(fill='x', pady=DarkTheme.PADDING_LARGE)
+
+        # Add Enroute Scenario option at the BOTTOM
+        enroute_card = SelectableCard(
+            self.airport_container,
+            title="Enroute (ARTCC) Scenario",
+            description="Create an enroute scenario."
+        )
+        enroute_card.set_command(lambda: self.select_enroute_scenario(enroute_card))
+        enroute_card.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
+        self.airport_cards.append(enroute_card)
 
     def select_airport(self, icao, card):
         """Handle airport selection"""
@@ -118,10 +152,34 @@ class AirportSelectionScreen(tk.Frame):
         self.selected_airport = icao
         self.next_button['state'] = 'normal'
 
-    def show_loading(self):
+    def select_enroute_scenario(self, card):
+        """Handle enroute scenario selection"""
+        # Show warning dialog
+        warning_result = messagebox.showwarning(
+            "Experimental Feature Warning",
+            "WARNING: This is EXPERIMENTAL. Ongoing development is extensive, so support will not be offered (except bugs) until the next update. Expect longer load times (~30 seconds for complex scenarios).",
+            type=messagebox.OKCANCEL
+        )
+
+        # If user cancels, don't select the card
+        if warning_result == 'cancel':
+            return
+
+        # Deselect all cards
+        for c in self.airport_cards:
+            c.deselect()
+
+        # Select enroute card
+        if card:
+            card.select()
+
+        self.selected_airport = "ENROUTE"  # Special marker
+        self.next_button['state'] = 'normal'
+
+    def show_loading(self, message="Loading airport data..."):
         """Show loading overlay"""
         self.loading_overlay.place(x=0, y=0, relwidth=1, relheight=1)
-        self.loading_progress.start("Loading airport data...")
+        self.loading_progress.start(message)
         self.next_button['state'] = 'disabled'
 
     def hide_loading(self):
@@ -129,6 +187,22 @@ class AirportSelectionScreen(tk.Frame):
         self.loading_progress.stop()
         self.loading_overlay.place_forget()
         self.next_button['state'] = 'normal'
+
+    def on_upload_scenario(self):
+        """Handle upload scenario button click"""
+        # Open file dialog to select JSON scenario file
+        filepath = filedialog.askopenfilename(
+            title="Select vNAS Scenario File",
+            filetypes=[
+                ("JSON files", "*.json"),
+                ("All files", "*.*")
+            ],
+            initialdir="."
+        )
+
+        if filepath:
+            # Upload the scenario file to vNAS
+            self.app_controller.upload_scenario_to_vnas(filepath)
 
     def on_next(self):
         """Handle next button click"""

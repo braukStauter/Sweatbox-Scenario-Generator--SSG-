@@ -22,10 +22,6 @@ class ScenarioTypeSelectionScreen(tk.Frame):
             "title": "Tower (Departures/Arrivals)",
             "description": "Tower position with mixed departures and arrivals"
         },
-        "tracon_departures": {
-            "title": "TRACON (Departures)",
-            "description": "TRACON departure aircraft starting from the ground"
-        },
         "tracon_arrivals": {
             "title": "TRACON (Arrivals)",
             "description": "TRACON arrival aircraft at designated waypoints"
