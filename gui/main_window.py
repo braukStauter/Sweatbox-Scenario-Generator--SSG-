@@ -16,7 +16,7 @@ from parsers.geojson_parser import GeoJSONParser
 from parsers.cifp_parser import CIFPParser
 from utils.api_client import FlightDataAPIClient
 from utils.preset_command_processor import apply_preset_commands
-from generators.backup_scenario_generator import BackupScenarioGenerator
+from generators.vnas_json_exporter import VNASJSONExporter
 
 from scenarios.ground_departures import GroundDeparturesScenario
 from scenarios.ground_mixed import GroundMixedScenario
@@ -259,6 +259,67 @@ class MainWindow(tk.Tk):
 
         # Raise the screen to the front
         self.screens[screen_name].tkraise()
+
+    def upload_scenario_to_vnas(self, filepath: str):
+        """Upload a JSON scenario file directly to vNAS"""
+        try:
+            logger.info(f"Loading scenario file for upload: {filepath}")
+
+            # Load the JSON file
+            from generators.vnas_json_exporter import VNASJSONExporter
+            scenario_json = VNASJSONExporter.load(filepath)
+
+            # Get aircraft count for display
+            aircraft_count = len(scenario_json.get('aircraft', []))
+            scenario_name = scenario_json.get('name', 'Unknown Scenario')
+
+            logger.info(f"Loaded scenario '{scenario_name}' with {aircraft_count} aircraft")
+
+            # Show info dialog about browser login
+            from tkinter import messagebox
+            result = messagebox.showinfo(
+                "Upload to vNAS",
+                f"Ready to upload scenario:\n\n"
+                f"Name: {scenario_name}\n"
+                f"Aircraft: {aircraft_count}\n\n"
+                f"A browser window will open for you to log in to vNAS.\n\n"
+                f"IMPORTANT STEPS:\n"
+                f"1. Log in to vNAS Data Admin\n"
+                f"2. Navigate to the scenario you want to update\n"
+                f"3. The scenario ID will be extracted automatically\n\n"
+                f"The browser will close after the upload completes.",
+                icon=messagebox.INFO
+            )
+
+            # Initialize vNAS client and push scenario
+            from utils.vnas_client import VNASClient
+            client = VNASClient()
+
+            try:
+                success, message = client.push_scenario(scenario_json)
+
+                if success:
+                    messagebox.showinfo(
+                        "Upload Successful",
+                        f"Successfully uploaded scenario to vNAS!\n\n{message}"
+                    )
+                else:
+                    messagebox.showerror(
+                        "Upload Failed",
+                        f"Failed to upload scenario to vNAS:\n\n{message}"
+                    )
+
+            finally:
+                # Clean up browser
+                client.close()
+
+        except Exception as e:
+            logger.exception(f"Error uploading scenario file: {e}")
+            from tkinter import messagebox
+            messagebox.showerror(
+                "Upload Error",
+                f"Failed to upload scenario file:\n\n{str(e)}"
+            )
 
     def load_airport_data(self, airport_icao):
         """Load airport data in a background thread"""
@@ -874,28 +935,32 @@ class MainWindow(tk.Tk):
                 logger.info(f"Applied {len(preset_command_rules)} preset command rules to aircraft")
 
             # Update progress
-            self._update_progress("Saving backup scenario file...")
+            self._update_progress("Saving vNAS scenario file...")
 
-            # Auto-generate backup scenario filename based on airport or ARTCC
+            # Export as vNAS JSON payload
             if self.is_enroute_scenario and self.artcc_id:
-                output_filename = f"{self.artcc_id}_enroute_scenario_backup.txt"
                 # For enroute scenarios, use ARTCC ID as the identifier
                 scenario_identifier = self.artcc_id
+                output_filepath = VNASJSONExporter.export(
+                    aircraft,
+                    artcc_id=self.artcc_id,
+                    scenario_name=None
+                )
             else:
-                output_filename = f"{self.airport_icao}_scenario_backup.txt"
                 scenario_identifier = self.airport_icao
-
-            generator = BackupScenarioGenerator(output_filename)
-            generator.add_aircraft_list(aircraft)
-            generator.generate()
+                output_filepath = VNASJSONExporter.export(
+                    aircraft,
+                    airport_icao=self.airport_icao,
+                    scenario_name=None
+                )
 
             logger.info(f"Successfully generated {len(aircraft)} aircraft")
-            logger.info(f"Saved backup scenario to: {output_filename}")
+            logger.info(f"Saved vNAS scenario to: {output_filepath}")
 
             # Show success (thread-safe)
             self.after(0, lambda: self.screens['generation'].show_success(
                 len(aircraft),
-                output_filename,
+                output_filepath,
                 aircraft_list=aircraft,
                 airport_icao=scenario_identifier
             ))

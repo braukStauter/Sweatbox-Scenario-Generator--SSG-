@@ -103,8 +103,184 @@ Mixed Terminal with Overrides:
 Parking spots with "GA" in the name automatically:
 - Generate N-number callsigns (e.g., N123AB)
 - Use GA aircraft types (C172, C182, PA28, etc.)
-- Route to less-common airports
-- Fly at lower altitudes (3000-8000 feet)
+- Route to less-common airports (Can be configured in the config.json)
+
+### Enroute (ARTCC) Scenario Airport Groups
+
+For enroute scenarios, you can define named groups of airports with their active runways for departures and arrivals.
+
+```json
+{
+  "artcc_airport_groups": {
+    "ZAB": {
+      "Primary Airports (East)": "KPHX:08,7R,KTUS:12,KABQ:08,03,KAMA:04,KELP:04,8R",
+      "Primary Airports (West)": "KPHX:26,25L,KTUS:30,KABQ:26,21,KAMA:22,KELP:22,26L"
+    },
+    "ZLA": {
+      "Major Airports": "KLAX:24R,25L,KSAN:27,KLAS:26L,KONT:26L",
+      "Regional Airports": "KBUR:08,KSNA:20R,KSMF:16L"
+    }
+  }
+}
+```
+
+**Format:** `"Group Name": "ICAO:runway,runway,ICAO:runway,runway"`
+
+**Features:**
+- Group names appear as dropdown options when configuring enroute scenarios
+- Runways specify ACTIVE runways for CIFP SID/STAR parsing and routing
+- Multiple airports can be included in each group
+- Each airport can have multiple active runways listed
+>[!WARNING]
+> This requires a matching GeoJSON files in `airport_data/` folder for each airport specified in the group string, otherwise, it will be ignored.
+
+**Example:**
+- `KPHX:08,7R` - Phoenix with runways 08 and 7R active
+- `KTUS:12` - Tucson with runway 12 active
+- Full string creates a selectable airport group for enroute arrival/departure generation
+
+## vNAS Scenario JSON Format
+
+SSG exports scenarios as JSON files that can be edited and then directly uploaded to vNAS. 
+
+Generated files follow this pattern: `{AIRPORT}_{DDHHMM}.json`
+
+### Top-Level Scenario Fields
+
+```json
+{
+  "name": "Generated Scenario - KPHX",
+  "artccId": "ZAB",
+  "primaryAirportId": "PHX",
+  "aircraft": [...],
+  "initializationTriggers": [],
+  "aircraftGenerators": [],
+  "atc": [],
+  "autoDeleteMode": "None",
+  "flightStripConfigurations": []
+}
+```
+
+### Aircraft Object Fields
+
+Each aircraft in the `aircraft` array uses the following structure:
+
+#### Required Fields
+- `aircraftId` (string): Aircraft callsign (e.g., "AAL123", "N123AB")
+- `aircraftType` (string): Aircraft type with equipment suffix (e.g., "B738/L", "A320/L", "C172/G")
+- `startingConditions` (object): Defines where and how the aircraft spawns (see below)
+- `difficulty` (string): "Easy", "Medium", or "Hard"
+
+#### Optional Fields
+- `spawnDelay` (integer): Delay in seconds before aircraft spawns (default: 0)
+- `transponderMode` (string): "Standby" or "C" (Mode C)
+- `onAltitudeProfile` (boolean): Whether aircraft follows altitude profile (default: false)
+- `presetCommands` (array): List of preset command objects (see below)
+- `flightplan` (object): Flight plan information (see below)
+- `expectedApproach` (string): Expected approach type (e.g., "ILS 25L")
+- `airportId` (string): Override primary airport for this aircraft
+
+### Starting Conditions
+
+Aircraft can spawn in one of three ways:
+
+#### 1. Parking
+```json
+"startingConditions": {
+  "type": "Parking",
+  "parking": "A1"
+}
+```
+
+#### 2. On Final Approach
+```json
+"startingConditions": {
+  "type": "OnFinal",
+  "runway": "25L",
+  "distanceFromRunway": 8,
+  "speed": 180,
+  "finalApproachCourseOffset": 0
+}
+```
+- `distanceFromRunway`: Distance in nautical miles
+- `speed`: Ground speed in knots
+- `finalApproachCourseOffset`: Optional heading offset in degrees
+
+#### 3. Fix or FRD (Fix-Radial-Distance)
+```json
+"startingConditions": {
+  "type": "FixOrFrd",
+  "fix": "HOMRR020003",
+  "altitude": 12000,
+  "speed": 280,
+  "heading": 150,
+  "navigationPath": "HOMRR EAGUL6.8L",
+  "mach": 0.78
+}
+```
+- `fix`: Fix name or FRD format string
+- `altitude`: Altitude in feet MSL
+- `speed`: Ground speed in knots
+- `heading`: (Optional) heading in degrees
+- `navigationPath`: Initial route path
+- `mach`: (Optional) mach number
+
+### Flight Plan
+
+```json
+"flightplan": {
+  "rules": "IFR",
+  "departure": "KPHX",
+  "destination": "KDEN",
+  "cruiseAltitude": 35000,
+  "cruiseSpeed": 450,
+  "route": "FORPE1 ...",
+  "remarks": "/V/",
+  "aircraftType": "B738/L"
+}
+```
+
+Fields:
+- `rules`: "IFR" or "VFR"
+- `departure`: Departure airport ICAO
+- `destination`: Arrival airport ICAO
+- `cruiseAltitude`: Integer altitude in feet
+- `cruiseSpeed`: Integer speed in knots
+- `route`: Route string (SID/STAR included in route)
+- `remarks`: Additional remarks
+- `aircraftType`: Aircraft type (should match top-level `aircraftType`)
+
+### Preset Commands
+
+Preset commands are automatically issued to aircraft when they spawn. Be careful when editing these manually as they do need a ULID:
+
+```json
+"presetCommands": [
+  {
+    "id": "01K9RMZQ0JJSFMADVJQHXC1NB8",
+    "command": "DM 360"
+  },
+  {
+    "id": "01K9RMZQ0JJSFMADVJQHXC1NB9",
+    "command": "AT HOMRR SLN 210"
+  }
+]
+```
+
+Each command object has:
+- `id`: Unique identifier (auto-generated ULID)
+- `command`: The actual command string
+
+### Editing JSON Files
+
+You can manually edit the generated JSON files before uploading to vNAS:
+
+**Upload Process:**
+1. Open SSG
+2. Click "Backup File Upload" on the home screen
+3. Select your JSON file
+4. Browser opens for vNAS authentication
+6. Upload completes automatically
 
 ## Airport Data Format
 
@@ -123,8 +299,7 @@ The application includes comprehensive logging. Logs are saved to the `logs/` fo
 
 ## Notes
 
-- Aircraft altitudes are specified in MSL (Mean Sea Level), including ground aircraft
-- Arrival aircraft are positioned along their specified route of flight and automatically add the runway assignment.
+- Arrival aircraft are positioned along their specified route of flight and automatically add the runway assignment. You can change this per arrival with group commands.
 - TRACON arrival aircraft respect waypoint altitude restrictions when available
 - Callsigns can include number suffixes for easy grouping (e.g., AAL**25**66, DAL**25**89 both spawn over the same waypoint)
 

@@ -29,6 +29,9 @@ class ThemedButton(tk.Button):
         # Set fixed padding that cannot be overridden - ensures consistent button appearance
         self.configure(height=2, padx=DarkTheme.PADDING_XLARGE, pady=DarkTheme.PADDING_MEDIUM)
 
+        # Store the original background color for hover state restoration
+        self.default_bg = style.get('bg', DarkTheme.ACCENT_PRIMARY)
+
         self.bind('<Enter>', self._on_enter)
         self.bind('<Leave>', self._on_leave)
 
@@ -36,7 +39,7 @@ class ThemedButton(tk.Button):
         self['bg'] = DarkTheme.ACCENT_HOVER
 
     def _on_leave(self, event):
-        self['bg'] = DarkTheme.ACCENT_PRIMARY
+        self['bg'] = self.default_bg
 
 
 class ThemedEntry(tk.Frame):

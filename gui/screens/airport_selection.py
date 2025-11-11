@@ -2,7 +2,7 @@
 Airport selection screen
 """
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 from pathlib import Path
 from gui.theme import DarkTheme
 from gui.widgets import ThemedLabel, ThemedButton, SelectableCard, ThemedFrame, Footer, ProgressIndicator
@@ -36,6 +36,10 @@ class AirportSelectionScreen(tk.Frame):
         # Footer with navigation buttons
         footer = ThemedFrame(self)
         footer.pack(fill='x', padx=DarkTheme.PADDING_XLARGE, pady=DarkTheme.PADDING_LARGE)
+
+        # Upload to vNAS button on the left
+        self.upload_button = ThemedButton(footer, text="Backup File Upload", command=self.on_upload_scenario, primary=False)
+        self.upload_button.pack(side='left')
 
         self.next_button = ThemedButton(footer, text="Next", command=self.on_next, primary=True)
         self.next_button.pack(side='right')
@@ -183,6 +187,22 @@ class AirportSelectionScreen(tk.Frame):
         self.loading_progress.stop()
         self.loading_overlay.place_forget()
         self.next_button['state'] = 'normal'
+
+    def on_upload_scenario(self):
+        """Handle upload scenario button click"""
+        # Open file dialog to select JSON scenario file
+        filepath = filedialog.askopenfilename(
+            title="Select vNAS Scenario File",
+            filetypes=[
+                ("JSON files", "*.json"),
+                ("All files", "*.*")
+            ],
+            initialdir="."
+        )
+
+        if filepath:
+            # Upload the scenario file to vNAS
+            self.app_controller.upload_scenario_to_vnas(filepath)
 
     def on_next(self):
         """Handle next button click"""
