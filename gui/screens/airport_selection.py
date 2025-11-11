@@ -29,9 +29,51 @@ class AirportSelectionScreen(tk.Frame):
         divider = tk.Frame(self, bg=DarkTheme.DIVIDER, height=1)
         divider.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
 
-        # Airport list container
-        self.airport_container = ThemedFrame(self)
-        self.airport_container.pack(fill='both', expand=True, padx=DarkTheme.PADDING_XLARGE, pady=DarkTheme.PADDING_MEDIUM)
+        # Create outer container for the scrollable area
+        outer_container = ThemedFrame(self)
+        outer_container.pack(fill='both', expand=True, padx=DarkTheme.PADDING_XLARGE, pady=DarkTheme.PADDING_MEDIUM)
+
+        # Create canvas with no scrollbar
+        self.canvas = tk.Canvas(
+            outer_container,
+            bg=DarkTheme.BG_PRIMARY,
+            highlightthickness=0,
+            bd=0
+        )
+        self.canvas.pack(side='left', fill='both', expand=True)
+
+        # Create the scrollable frame inside canvas
+        self.airport_container = ThemedFrame(self.canvas)
+        self.canvas_frame = self.canvas.create_window((0, 0), window=self.airport_container, anchor='nw')
+
+        # Update scroll region when frame changes
+        def configure_scroll_region(event=None):
+            self.canvas.configure(scrollregion=self.canvas.bbox('all'))
+
+        self.airport_container.bind('<Configure>', configure_scroll_region)
+
+        # Update canvas window width when canvas resizes
+        def configure_canvas_width(event):
+            self.canvas.itemconfig(self.canvas_frame, width=event.width)
+
+        self.canvas.bind('<Configure>', configure_canvas_width)
+
+        # Bind mousewheel events for scrolling
+        def on_mouse_wheel(event):
+            # Scroll the canvas
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+
+        # Bind to the canvas and all child widgets
+        def bind_to_mousewheel(widget):
+            widget.bind('<MouseWheel>', on_mouse_wheel)
+            for child in widget.winfo_children():
+                bind_to_mousewheel(child)
+
+        self.canvas.bind('<MouseWheel>', on_mouse_wheel)
+        self.airport_container.bind('<MouseWheel>', on_mouse_wheel)
+
+        # Store the binding function for later use
+        self._bind_mousewheel = bind_to_mousewheel
 
         # Footer with navigation buttons
         footer = ThemedFrame(self)
@@ -119,6 +161,9 @@ class AirportSelectionScreen(tk.Frame):
             card.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
             self.airport_cards.append(card)
 
+            # Bind mousewheel to the card and its children
+            self._bind_mousewheel(card)
+
         # If only one airport, auto-select it
         if len(geojson_files) == 1:
             base_code = geojson_files[0].stem.upper()
@@ -138,6 +183,9 @@ class AirportSelectionScreen(tk.Frame):
         enroute_card.set_command(lambda: self.select_enroute_scenario(enroute_card))
         enroute_card.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
         self.airport_cards.append(enroute_card)
+
+        # Bind mousewheel to the enroute card
+        self._bind_mousewheel(enroute_card)
 
     def select_airport(self, icao, card):
         """Handle airport selection"""
