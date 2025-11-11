@@ -157,7 +157,7 @@ Generated files follow this pattern: `{AIRPORT}_{DDHHMM}.json`
   "name": "Generated Scenario - KPHX",
   "artccId": "ZAB",
   "primaryAirportId": "PHX",
-  "aircraft": [...],
+  "aircraft": ["..."],
   "initializationTriggers": [],
   "aircraftGenerators": [],
   "atc": [],
