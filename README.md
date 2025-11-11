@@ -28,9 +28,9 @@ A standalone desktop application with a modern graphical interface for generatin
 
 ## Features
 
--**vNAS Integration**: Directly modify scenarios in vNAS
+- **vNAS Integration**: Directly modify scenarios in vNAS
 - **Multiple Scenario Types**: Ground, Tower, and TRACON operations with departures and/or arrivals
-- **Realistic Flight Plans**: Integrates with flight-plans.csko.hu API for authentic routing, callsigns, and aircraft types
+- **Realistic Flight Plans**: Integrates with FAA SWIM data via an internal API for authentic routing, callsigns, and aircraft types
 - **Parking-Specific Airlines**: Configure specific airlines for parking spots with wildcard support (e.g., "A#" for all A gates)
 - **GA Aircraft Support**: Automatic N-number callsigns, low-altitude routes, and less-common airports for GA parking
 - **Airport Data Integration**: Parses GeoJSON files for parking spots, runways, and airport geometry
