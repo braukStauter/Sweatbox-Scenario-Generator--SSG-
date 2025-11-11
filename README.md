@@ -46,6 +46,7 @@ A standalone desktop application with a modern graphical interface for generatin
 4. **TRACON (Departures)**: Departure aircraft at parking.
 5. **TRACON (Arrivals)**: Arrival aircraft spawned at designated waypoints; handles specified arrival routing
 6. **TRACON (Departures/Arrivals)**: Combined TRACON operations with both departures and arrivals
+7. **Enroute.**
 
 ## Installation
 
@@ -90,13 +91,17 @@ Modify the `config.json` file to assign specific airlines to parking spots:
 - `["AAL", "AAL", "DAL"]` = 67% AAL, 33% DAL
 
 **Gate 'Blocking' Support:**
-```json
 Mixed Terminal with Overrides:
-  "E1-E20": ["ASA", "ACA"],   // Most E gates = Alaska/Air Canada
-  "E5": ["JBU"],              // E5 dedicated to JetBlue
-  "E10": ["JBU"],             // E10 dedicated to JetBlue
-  "E#": ["FFT"]               // Any other E gates = Frontier
+```json
+  "E1-E20": ["ASA", "ACA"],
+  "E5": ["JBU"],
+  "E10": ["JBU"],
+  "E#": ["FFT"]
 ```
+- Most E gates = Alaska/Air Canada
+- E5 dedicated to JetBlue
+- E10 dedicated to JetBlue
+- Any other E gates = Frontier
 
 ### GA (General Aviation) Parking
 
