@@ -178,9 +178,9 @@ class ScenarioConfigScreen(tk.Frame):
             self.is_enroute_scenario = False
 
             # Determine which features this scenario needs
-            has_departures = scenario_type in ['ground_departures', 'ground_mixed', 'tower_mixed', 'tracon_departures', 'tracon_mixed']
+            has_departures = scenario_type in ['ground_departures', 'ground_mixed', 'tower_mixed', 'tracon_mixed']
             has_arrivals = scenario_type in ['ground_mixed', 'tower_mixed', 'tracon_arrivals', 'tracon_mixed']
-            has_tower_separation = scenario_type == 'tower_mixed'
+            has_tower_separation = scenario_type in ['ground_mixed', 'tower_mixed']  # Scenarios with arrival separation
             has_tracon_arrivals = scenario_type in ['tracon_arrivals', 'tracon_mixed']  # TRACON scenarios have configurable STAR arrivals
             has_tower_arrivals = scenario_type == 'tower_mixed'  # Tower scenarios have VFR arrivals
 
@@ -541,7 +541,8 @@ class ScenarioConfigScreen(tk.Frame):
             section,
             text="Comma separated list of runway identifiers",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
         )
         hint.pack(anchor='w')
 
@@ -750,17 +751,18 @@ class ScenarioConfigScreen(tk.Frame):
                 counts_section, difficulty_divider
             )
         )
-        enable_checkbox.pack(side='left')
+        enable_checkbox.pack(anchor='w')
         self.inputs['enable_difficulty_enroute'] = enable_difficulty_var
 
-        # Hint text
+        # Hint text (below checkbox)
         hint = ThemedLabel(
-            header_frame,
+            difficulty_section,
             text="(splits aircraft counts into difficulty tiers per category)",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
         )
-        hint.pack(side='left', padx=(DarkTheme.PADDING_SMALL, 0))
+        hint.pack(anchor='w', padx=(DarkTheme.PADDING_XLARGE, 0), pady=(0, DarkTheme.PADDING_SMALL))
 
         # Container for difficulty inputs (hidden by default)
         difficulty_content_frame = ThemedFrame(difficulty_section)
@@ -956,17 +958,18 @@ class ScenarioConfigScreen(tk.Frame):
                 enable_var.get(), difficulty_frame, toggle_label
             )
         )
-        enable_checkbox.pack(side='left')
+        enable_checkbox.pack(anchor='w')
         self.inputs['enable_difficulty'] = enable_var
 
-        # Hint text
+        # Hint text (below checkbox)
         hint = ThemedLabel(
-            header_frame,
+            section,
             text="(splits aircraft counts into difficulty tiers)",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
         )
-        hint.pack(side='left', padx=(DarkTheme.PADDING_SMALL, 0))
+        hint.pack(anchor='w', padx=(DarkTheme.PADDING_XLARGE, 0), pady=(0, DarkTheme.PADDING_SMALL))
 
         # Container for difficulty inputs (hidden by default)
         difficulty_frame = ThemedFrame(section)
@@ -1119,20 +1122,21 @@ class ScenarioConfigScreen(tk.Frame):
 
         label = ThemedLabel(
             section,
-            text="Separation Range (NM):",
+            text="Additional Separation (NM):",
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
         )
         label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
-        entry = ThemedEntry(section, placeholder="3-6", validate_type="range")
+        entry = ThemedEntry(section, placeholder="0", validate_type="integer")
         entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
         self.inputs['separation_range'] = entry
 
         hint = ThemedLabel(
             section,
-            text="Format: min-max (e.g., 3-6 for 3-6 nautical miles)",
+            text="Additional NM to add to minimum separation for each aircraft (e.g., 2 adds 2 NM to the minimum)",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
         )
         hint.pack(anchor='w')
 
@@ -1168,7 +1172,8 @@ class ScenarioConfigScreen(tk.Frame):
             spawn_header_frame,
             text="(all aircraft spawn at once if unchecked)",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
         )
         spawn_checkbox_hint.pack(side='left', padx=(DarkTheme.PADDING_SMALL, 0))
 
@@ -1209,7 +1214,8 @@ class ScenarioConfigScreen(tk.Frame):
             mode_frame,
             text="Delays accumulate between each aircraft (e.g., a/c1: 0s, a/c2: 180s, a/c3: 360s...)",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
         )
         incremental_hint.pack(anchor='w', padx=(DarkTheme.PADDING_XLARGE, 0),
                              pady=(0, DarkTheme.PADDING_SMALL))
@@ -1235,7 +1241,8 @@ class ScenarioConfigScreen(tk.Frame):
             mode_frame,
             text="Random spawn times distributed across total session length for realistic traffic",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
         )
         total_hint.pack(anchor='w', padx=(DarkTheme.PADDING_XLARGE, 0))
 
@@ -1275,7 +1282,8 @@ class ScenarioConfigScreen(tk.Frame):
             self.incremental_input_frame,
             text="(range or fixed value in minutes)",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=300
         )
         incremental_input_hint.grid(row=0, column=2, sticky='w',
                                    padx=(DarkTheme.PADDING_SMALL, 0))
@@ -1313,7 +1321,8 @@ class ScenarioConfigScreen(tk.Frame):
             self.total_input_frame,
             text="(desired training session length)",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=300
         )
         total_input_hint.grid(row=0, column=2, sticky='w',
                              padx=(DarkTheme.PADDING_SMALL, 0))
@@ -1390,7 +1399,8 @@ class ScenarioConfigScreen(tk.Frame):
             section,
             text="Generate inbound VFR GA aircraft",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
         )
         vfr_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
@@ -1418,7 +1428,8 @@ class ScenarioConfigScreen(tk.Frame):
             self.vfr_frame,
             text="Number of VFR GA aircraft to generate",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
         )
         num_vfr_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM))
 
@@ -1478,7 +1489,8 @@ class ScenarioConfigScreen(tk.Frame):
             section,
             text="Filter API routes to only include SIDs that match active runways. Uncheck to accept any API route.",
             fg=DarkTheme.FG_DISABLED,
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=600
         )
         cifp_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
@@ -1610,7 +1622,6 @@ class ScenarioConfigScreen(tk.Frame):
             'ground_departures': 'Ground - Departures Only',
             'ground_mixed': 'Ground - Mixed Operations',
             'tower_mixed': 'Tower - Mixed Operations',
-            'tracon_departures': 'TRACON - Departures Only',
             'tracon_arrivals': 'TRACON - Arrivals Only',
             'tracon_mixed': 'TRACON - Mixed Operations'
         }
@@ -1846,20 +1857,14 @@ class ScenarioConfigScreen(tk.Frame):
                 except ValueError:
                     errors.append("Aircraft counts must be valid numbers")
 
-        # Validate ranges
+        # Validate additional separation (single integer)
         if config.get('separation_range'):
             try:
-                parts = config['separation_range'].split('-')
-                if len(parts) != 2:
-                    errors.append("Separation range must be in format: min-max (e.g., 3-6)")
-                else:
-                    min_sep, max_sep = int(parts[0]), int(parts[1])
-                    if min_sep < 0 or max_sep < 0:
-                        errors.append("Separation values cannot be negative")
-                    if min_sep > max_sep:
-                        errors.append("Minimum separation cannot be greater than maximum")
+                additional_sep = int(config['separation_range'])
+                if additional_sep < 0:
+                    errors.append("Additional separation cannot be negative")
             except ValueError:
-                errors.append("Separation range must contain valid numbers")
+                errors.append("Additional separation must be a valid number")
 
         # Validate spawn delay values if enabled
         if config.get('enable_spawn_delays'):

@@ -17,6 +17,7 @@ class GroundMixedScenario(BaseScenario):
     """Scenario with ground departures and arriving aircraft"""
 
     def generate(self, num_departures: int, num_arrivals: int, active_runways: List[str],
+                 additional_separation: int = 0,
                  spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
                  delay_value: str = None, total_session_minutes: int = None,
                  spawn_delay_range: str = None, difficulty_config=None,
@@ -28,6 +29,7 @@ class GroundMixedScenario(BaseScenario):
             num_departures: Number of departure aircraft
             num_arrivals: Number of arrival aircraft
             active_runways: List of active runway designators (e.g., ['7L', '25R'])
+            additional_separation: Fixed additional NM to add to minimum separation for each aircraft
             spawn_delay_mode: SpawnDelayMode enum (NONE, INCREMENTAL, or TOTAL)
             delay_value: For INCREMENTAL mode: delay range/value in minutes (e.g., "2-5" or "3")
             total_session_minutes: For TOTAL mode: total session length in minutes
@@ -152,13 +154,22 @@ class GroundMixedScenario(BaseScenario):
                 # Simple iterative algorithm:
                 # 1. First aircraft in group starts at current_distance (5 NM)
                 # 2. Each subsequent aircraft adds separation increment based on runway pairing
+                # 3. Add fixed additional separation on top of minimum
                 if prev_runway is not None:
-                    # Calculate increment based on runway transition
-                    increment = self._calculate_runway_separation_increment(
+                    # Calculate minimum increment based on runway transition
+                    min_increment = self._calculate_runway_separation_increment(
                         prev_runway, runway_name, parallel_info
                     )
+                    # Add fixed additional separation on top of minimum
+                    increment = min_increment + additional_separation
                     current_distance += increment
-                    logger.info(f"Group {group_id}: Runway transition {prev_runway} -> {runway_name}: adding {increment} NM (new distance: {current_distance} NM)")
+                    if additional_separation > 0:
+                        logger.info(f"Group {group_id}: Runway transition {prev_runway} -> {runway_name}: "
+                                   f"minimum {min_increment} NM + additional {additional_separation} NM = {increment} NM total "
+                                   f"(new distance: {current_distance} NM)")
+                    else:
+                        logger.info(f"Group {group_id}: Runway transition {prev_runway} -> {runway_name}: "
+                                   f"{increment} NM (new distance: {current_distance} NM)")
                 else:
                     logger.info(f"Group {group_id}: First aircraft on {runway_name} at {current_distance} NM")
 

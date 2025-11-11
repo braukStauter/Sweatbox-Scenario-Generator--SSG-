@@ -21,7 +21,6 @@ from generators.vnas_json_exporter import VNASJSONExporter
 from scenarios.ground_departures import GroundDeparturesScenario
 from scenarios.ground_mixed import GroundMixedScenario
 from scenarios.tower_mixed import TowerMixedScenario
-from scenarios.tracon_departures import TraconDeparturesScenario
 from scenarios.tracon_arrivals import TraconArrivalsScenario
 from scenarios.tracon_mixed import TraconMixedScenario
 from scenarios.artcc_enroute import ArtccEnrouteScenario
@@ -692,7 +691,7 @@ class MainWindow(tk.Tk):
                     num_departures = 0
                     num_arrivals = total_aircraft
                 else:
-                    # Departure-only scenarios (ground_departures, tracon_departures)
+                    # Departure-only scenarios (ground_departures)
                     num_departures = total_aircraft
                     num_arrivals = 0
             else:
@@ -705,14 +704,14 @@ class MainWindow(tk.Tk):
             if config.get('active_runways'):
                 active_runways = [r.strip() for r in config['active_runways'].split(',')]
 
-            # Parse separation range
-            separation_range = (3, 6)
+            # Parse additional separation (single integer value to add to minimum separation)
+            additional_separation = 0
             if config.get('separation_range'):
                 try:
-                    parts = config['separation_range'].split('-')
-                    separation_range = (int(parts[0]), int(parts[1]))
-                except:
-                    pass
+                    additional_separation = int(config['separation_range'])
+                except ValueError:
+                    logger.warning(f"Invalid separation value: {config.get('separation_range')}, using default 0")
+                    additional_separation = 0
 
             # Parse delay range
             delay_range = (4, 7)
@@ -902,7 +901,7 @@ class MainWindow(tk.Tk):
                 num_departures,
                 num_arrivals,
                 active_runways,
-                separation_range,
+                additional_separation,
                 delay_range,
                 arrival_waypoints,
                 spawn_delay_mode,
@@ -1051,10 +1050,6 @@ class MainWindow(tk.Tk):
             return TowerMixedScenario(
                 self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client, cached_flights
             )
-        elif self.scenario_type == 'tracon_departures':
-            return TraconDeparturesScenario(
-                self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client, cached_flights
-            )
         elif self.scenario_type == 'tracon_arrivals':
             return TraconArrivalsScenario(
                 self.airport_icao, self.geojson_parser, self.cifp_parser, self.api_client, cached_flights
@@ -1067,7 +1062,7 @@ class MainWindow(tk.Tk):
             raise ValueError(f"Unknown scenario type: {self.scenario_type}")
 
     def _generate_aircraft(self, scenario, num_departures, num_arrivals,
-                          active_runways, separation_range,
+                          active_runways, additional_separation,
                           delay_range, arrival_waypoints, spawn_delay_mode,
                           delay_value, total_session_minutes, difficulty_config=None,
                           enable_cifp_sids=False, manual_sids=None,
@@ -1108,18 +1103,15 @@ class MainWindow(tk.Tk):
         elif self.scenario_type == 'ground_mixed':
             # Note: ground_mixed doesn't support VFR aircraft yet
             return scenario.generate(num_departures, num_arrivals, active_runways,
-                                    spawn_delay_mode, delay_value, total_session_minutes,
-                                    None, difficulty_config, enable_cifp_sids, manual_sids)
+                                    additional_separation, spawn_delay_mode, delay_value,
+                                    total_session_minutes, None, difficulty_config,
+                                    enable_cifp_sids, manual_sids)
         elif self.scenario_type == 'tower_mixed':
             return scenario.generate(num_departures, num_arrivals, active_runways,
-                                    separation_range, spawn_delay_mode, delay_value,
+                                    additional_separation, spawn_delay_mode, delay_value,
                                     total_session_minutes, None, difficulty_config,
                                     enable_cifp_sids, manual_sids,
                                     num_vfr, vfr_spawn_locations)
-        elif self.scenario_type == 'tracon_departures':
-            return scenario.generate(num_departures, active_runways, spawn_delay_mode,
-                                    delay_value, total_session_minutes, None, difficulty_config,
-                                    enable_cifp_sids, manual_sids)
         elif self.scenario_type == 'tracon_arrivals':
             return scenario.generate(num_arrivals, arrival_waypoints,
                                     delay_range, spawn_delay_mode, delay_value,
