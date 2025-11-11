@@ -246,10 +246,9 @@ class VNASClient:
             logger.info(f"Scenario ID: {target_scenario_id}")
             logger.info(f"Request body size: {len(json.dumps(scenario_to_push))} bytes")
 
-            # Debug: Log first aircraft to verify spawnDelay is present
             if scenario_to_push.get('aircraft') and len(scenario_to_push['aircraft']) > 0:
                 first_aircraft = scenario_to_push['aircraft'][0]
-                logger.info(f"DEBUG: First aircraft: {first_aircraft.get('aircraftId')} - spawnDelay: {first_aircraft.get('spawnDelay')}")
+                logger.debug(f"First aircraft: {first_aircraft.get('aircraftId')} - spawnDelay: {first_aircraft.get('spawnDelay')}")
 
             logger.info("=" * 60)
 
@@ -297,9 +296,9 @@ class VNASClient:
             logger.info("Executing PUT request through browser...")
             result = self.driver.execute_async_script(js_code)
 
-            logger.info("=" * 60)
-            logger.info("API RESPONSE DEBUG")
-            logger.info("=" * 60)
+            logger.debug("=" * 60)
+            logger.debug("API RESPONSE")
+            logger.debug("=" * 60)
             logger.info(f"Status Code: {result.get('status', 'unknown')}")
             logger.info(f"Status Text: {result.get('statusText', 'unknown')}")
             logger.info(f"Response Body (first 500 chars): {result.get('body', '')[:500]}")

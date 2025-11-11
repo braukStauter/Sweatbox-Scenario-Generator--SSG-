@@ -114,7 +114,6 @@ class ArtccEnrouteScenario(BaseScenario):
         import concurrent.futures
         from pathlib import Path
 
-        # Reset tracking
         self.aircraft = []
         self.used_callsigns = set()
         self.used_spawn_points = set()
@@ -125,7 +124,6 @@ class ArtccEnrouteScenario(BaseScenario):
 
         logger.info(f"Generating ARTCC {self.artcc_id} scenario: {num_enroute} enroute, {num_arrivals} arrivals, {num_departures} departures")
 
-        # Check if we have cached pools, otherwise fetch them
         departures_pool = []
         arrivals_pool = []
         transient_pool = []

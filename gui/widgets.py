@@ -10,7 +10,6 @@ class ThemedButton(tk.Button):
     """Themed button widget"""
 
     def __init__(self, parent, text="", command=None, primary=True, **kwargs):
-        # Remove any padding/size overrides from kwargs to ensure consistent button sizing
         kwargs.pop('padx', None)
         kwargs.pop('pady', None)
         kwargs.pop('width', None)
@@ -26,10 +25,7 @@ class ThemedButton(tk.Button):
             **style
         )
 
-        # Set fixed padding that cannot be overridden - ensures consistent button appearance
         self.configure(height=2, padx=DarkTheme.PADDING_XLARGE, pady=DarkTheme.PADDING_MEDIUM)
-
-        # Store the original background color for hover state restoration
         self.default_bg = style.get('bg', DarkTheme.ACCENT_PRIMARY)
 
         self.bind('<Enter>', self._on_enter)
@@ -372,12 +368,7 @@ class ScrollableFrame(tk.Frame):
             canvas_height = self.canvas.winfo_height()
             content_height = bbox[3] - bbox[1]
             self.canvas.configure(scrollregion=bbox)
-            # Debug: print scroll region info
-            #print(f"[DEBUG] Scroll region updated: bbox={bbox}, canvas_height={canvas_height}, content_height={content_height}")
-            # Ensure mousewheel is bound after content changes
             if content_height > canvas_height:
-                #print(f"[DEBUG] Scrolling enabled (content {content_height} > canvas {canvas_height})")
-                # Re-bind mousewheel to ensure it works after dynamic content changes
                 self._bind_mousewheel(None)
 
     def _on_canvas_configure(self, event):

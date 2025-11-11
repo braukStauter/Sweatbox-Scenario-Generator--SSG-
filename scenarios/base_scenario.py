@@ -49,14 +49,10 @@ class BaseScenario(ABC):
         self.used_parking_spots: set = set()
         self.config = self._load_config()
 
-        # Cached flight data from API
         self.cached_flights = cached_flights or {'departures': [], 'arrivals': []}
         self.departure_flight_pool = []
+        self.current_sids = None
 
-        # Store current procedure filters for consistent refetching
-        self.current_sids = None  # List of SID names used for filtering departures
-
-        # Thread safety locks
         self.callsign_lock = threading.Lock()
         self.parking_lock = threading.Lock()
         self.aircraft_lock = threading.Lock()
@@ -76,7 +72,6 @@ class BaseScenario(ABC):
         self.used_callsigns.clear()
         self.used_parking_spots.clear()
         self.aircraft.clear()
-        logger.debug("Reset tracking sets for new generation")
 
     def _setup_difficulty_assignment(self, difficulty_config):
         """
@@ -91,13 +86,11 @@ class BaseScenario(ABC):
         if not difficulty_config:
             return None, 0
 
-        # Create a list of difficulty levels in the order they should be assigned
         difficulty_list = []
         difficulty_list.extend(['Easy'] * difficulty_config['easy'])
         difficulty_list.extend(['Medium'] * difficulty_config['medium'])
         difficulty_list.extend(['Hard'] * difficulty_config['hard'])
 
-        # Shuffle to randomize difficulty assignment
         import random
         random.shuffle(difficulty_list)
 
@@ -134,11 +127,9 @@ class BaseScenario(ABC):
         Returns:
             List of runway designators (e.g., ['25L', '25R'])
         """
-        # Use CIFP data to get runways for this STAR
         if self.cifp_parser:
             runways = self.cifp_parser.get_runways_for_arrival(arrival_name)
         else:
-            # Fallback: get all runways if CIFP not available
             runways_objs = self.geojson_parser.get_runways()
             runways = []
             for runway in runways_objs:
@@ -147,7 +138,6 @@ class BaseScenario(ABC):
                 if hasattr(runway, 'runway2_name'):
                     runways.append(runway.runway2_name)
 
-        # Filter by active runways if provided
         if active_runways and runways:
             runways = [rwy for rwy in runways if rwy in active_runways]
 
@@ -163,7 +153,7 @@ class BaseScenario(ABC):
         Returns:
             Tuple of (min_delay, max_delay) in SECONDS
         """
-        min_delay_minutes, max_delay_minutes = 0, 0  # defaults - spawn all at once
+        min_delay_minutes, max_delay_minutes = 0, 0
         if spawn_delay_range:
             try:
                 parts = spawn_delay_range.split('-')
@@ -173,7 +163,6 @@ class BaseScenario(ABC):
             except ValueError:
                 logger.warning(f"Invalid spawn delay range: {spawn_delay_range}, using default (0-0)")
 
-        # Convert minutes to seconds for vNAS
         min_delay_seconds = min_delay_minutes * 60
         max_delay_seconds = max_delay_minutes * 60
 
@@ -201,21 +190,17 @@ class BaseScenario(ABC):
                      Example: 30 min session → random spawns between 0 and 1800s
         """
         if spawn_delay_mode == SpawnDelayMode.NONE:
-            # All aircraft spawn immediately
             for aircraft in aircraft_list:
                 aircraft.spawn_delay = 0
             logger.info(f"Applied NONE spawn delays: all {len(aircraft_list)} aircraft spawn at 0s")
 
         elif spawn_delay_mode == SpawnDelayMode.INCREMENTAL:
-            # Parse delay value (can be range or single value)
             min_delay_minutes, max_delay_minutes = self._parse_delay_value(delay_value)
 
-            # Apply cumulative delays
             cumulative_delay = 0
             for i, aircraft in enumerate(aircraft_list):
                 aircraft.spawn_delay = cumulative_delay
 
-                # Generate next increment
                 increment_minutes = random.randint(min_delay_minutes, max_delay_minutes)
                 increment_seconds = increment_minutes * 60
                 cumulative_delay += increment_seconds
@@ -225,19 +210,15 @@ class BaseScenario(ABC):
                        f"final spawn at {cumulative_delay}s")
 
         elif spawn_delay_mode == SpawnDelayMode.TOTAL:
-            # Validate total session minutes
             if not total_session_minutes or total_session_minutes <= 0:
                 logger.warning("Invalid total_session_minutes for TOTAL mode, defaulting to 30")
                 total_session_minutes = 30
 
-            # Convert to seconds
             max_delay_seconds = total_session_minutes * 60
 
-            # Assign random spawn times within the session window
             for aircraft in aircraft_list:
                 aircraft.spawn_delay = random.randint(0, max_delay_seconds)
 
-            # Sort aircraft by spawn_delay for logical ordering
             aircraft_list.sort(key=lambda a: a.spawn_delay)
 
             logger.info(f"Applied TOTAL spawn delays: {len(aircraft_list)} aircraft "
@@ -258,13 +239,11 @@ class BaseScenario(ABC):
 
         try:
             if '-' in delay_value:
-                # Range format: "min-max"
                 parts = delay_value.split('-')
                 min_val = int(parts[0])
                 max_val = int(parts[1])
                 return min_val, max_val
             else:
-                # Single value: use same for min and max
                 val = int(delay_value)
                 return val, val
         except (ValueError, IndexError):
@@ -303,11 +282,9 @@ class BaseScenario(ABC):
         Returns:
             Aircraft type with equipment suffix (/L for airlines, /G for GA)
         """
-        # If already has suffix, return as-is
         if '/' in aircraft_type:
             return aircraft_type
 
-        # Add appropriate suffix
         suffix = '/G' if is_ga else '/L'
         return f"{aircraft_type}{suffix}"
 
@@ -323,10 +300,7 @@ class BaseScenario(ABC):
         """
         from utils.constants import COMMON_GA_AIRCRAFT
 
-        # Remove equipment suffix if present
         base_type = aircraft_type.split('/')[0]
-
-        # Check against known GA aircraft list
         return base_type in COMMON_GA_AIRCRAFT
 
     def _expand_gate_range(self, range_str: str) -> List[str]:
@@ -346,7 +320,6 @@ class BaseScenario(ABC):
         """
         import re
 
-        # Match pattern like "B1-B11" or "A10-A15"
         match = re.match(r'^([A-Z]+)(\d+)-([A-Z]+)(\d+)$', range_str)
 
         if not match:
@@ -354,7 +327,6 @@ class BaseScenario(ABC):
 
         prefix1, start_num, prefix2, end_num = match.groups()
 
-        # Prefixes must match
         if prefix1 != prefix2:
             logger.warning(f"Gate range prefixes don't match: {prefix1} vs {prefix2} in '{range_str}'")
             return []
@@ -366,7 +338,6 @@ class BaseScenario(ABC):
             logger.warning(f"Gate range start > end: {start} > {end} in '{range_str}'")
             return []
 
-        # Generate all gates in range
         gates = [f"{prefix1}{num}" for num in range(start, end + 1)]
         logger.debug(f"Expanded gate range '{range_str}' to {len(gates)} gates: {gates[:3]}...")
 
@@ -406,7 +377,6 @@ class BaseScenario(ABC):
         # Priority 2: Check for range matches
         for pattern, airlines in airport_config.items():
             if '-' in pattern and '#' not in pattern:
-                # This is a range pattern
                 expanded_gates = self._expand_gate_range(pattern)
                 if parking_name in expanded_gates:
                     if airlines:
@@ -510,11 +480,9 @@ class BaseScenario(ABC):
         if not route_parts:
             return None
 
-        # Get all available SIDs from CIFP
         known_sids = self.cifp_parser.get_available_sids()
 
-        # Check first few elements for a known SID
-        for part in route_parts[:3]:  # Check first 3 elements
+        for part in route_parts[:3]:
             if part.upper() in [sid.upper() for sid in known_sids]:
                 return part.upper()
 
@@ -537,7 +505,6 @@ class BaseScenario(ABC):
         if not self.cifp_parser or (not active_runways and not manual_sids):
             return True
 
-        # Extract SID from the route
         sid_in_route = self._extract_sid_from_route(api_route)
 
         # If no SID in route, it's valid (DCT routes are allowed)
@@ -545,7 +512,6 @@ class BaseScenario(ABC):
             logger.debug(f"No SID found in route '{api_route}', accepting as valid")
             return True
 
-        # If manual SIDs specified, check against those
         if manual_sids:
             is_valid = sid_in_route.upper() in [s.upper() for s in manual_sids]
             if is_valid:
@@ -554,14 +520,12 @@ class BaseScenario(ABC):
                 logger.debug(f"Route SID '{sid_in_route}' not in manual SID list {manual_sids}")
             return is_valid
 
-        # Otherwise, check if SID is valid for active runways
         if active_runways:
             sid_runways = self.cifp_parser.get_runways_for_departure(sid_in_route)
             if not sid_runways:
                 logger.debug(f"No runway data found for SID '{sid_in_route}', accepting as valid")
                 return True
 
-            # Check if any active runway matches the SID's runways
             for active_rwy in active_runways:
                 for sid_rwy in sid_runways:
                     # Normalize runway formats (remove leading zeros)
@@ -590,18 +554,14 @@ class BaseScenario(ABC):
         """
         available_sids = []
 
-        # If manual SIDs are specified, use those
         if manual_sids and len(manual_sids) > 0:
             available_sids = manual_sids
             logger.debug(f"Using manual SIDs: {', '.join(manual_sids)}")
-        # Otherwise, filter by active runways
         elif active_runways and len(active_runways) > 0:
-            # Get SIDs for each active runway
             for runway in active_runways:
                 runway_sids = self.cifp_parser.get_sids_for_runway(runway)
                 available_sids.extend(runway_sids)
 
-            # Remove duplicates
             available_sids = list(set(available_sids))
 
             if available_sids:
@@ -612,7 +572,6 @@ class BaseScenario(ABC):
             logger.warning("No active runways or manual SIDs specified for SID selection")
             return None
 
-        # Randomly select a SID from available options
         if available_sids:
             selected_sid = random.choice(available_sids)
             logger.debug(f"Selected SID: {selected_sid}")
@@ -634,7 +593,6 @@ class BaseScenario(ABC):
         # Store SIDs for later refetching if pool depletes
         self.current_sids = manual_sids if (enable_cifp_sids and manual_sids) else None
 
-        # If SIDs are specified, fetch directly from API with procedure filtering
         if self.current_sids:
             logger.info(f"Fetching departures from API with SID filtering: {self.current_sids}")
             api_flights = self.api_client.fetch_departures(self.airport_icao, limit=200, sids=self.current_sids)
@@ -646,7 +604,6 @@ class BaseScenario(ABC):
                 logger.warning("API fetch with SID filter failed, using cached flights")
                 valid_flights = filter_valid_flights(self.cached_flights['departures'])
         else:
-            # Use cached flights when no specific SIDs are requested
             valid_flights = filter_valid_flights(self.cached_flights['departures'])
             logger.info(f"Filtered {len(valid_flights)} valid departures from {len(self.cached_flights['departures'])} cached")
 
@@ -664,7 +621,6 @@ class BaseScenario(ABC):
             Flight dictionary or None if pool is empty
         """
         if not self.departure_flight_pool:
-            # Pool depleted, fetch more using the same SID filter
             logger.warning("Departure flight pool depleted, fetching more from API...")
             additional_flights = self.api_client.fetch_departures(
                 self.airport_icao,
@@ -679,11 +635,9 @@ class BaseScenario(ABC):
                 logger.error("Failed to fetch additional departures from API")
                 return None
 
-        # If parking spot has airline preference, try to match
         if parking_spot_name:
             parking_airline = self._get_airline_for_parking(parking_spot_name)
             if parking_airline:
-                # Try to find flight from preferred airline
                 for i, flight in enumerate(self.departure_flight_pool):
                     aircraft_type = flight.get('aircraftType', '')
                     # Skip GA aircraft at non-GA gates
@@ -692,10 +646,8 @@ class BaseScenario(ABC):
                     if flight.get('operator') == parking_airline:
                         return self.departure_flight_pool.pop(i)
 
-        # Return first available non-GA flight (or any flight if GA spot)
         for i, flight in enumerate(self.departure_flight_pool):
             aircraft_type = flight.get('aircraftType', '')
-            # If not a GA spot, skip GA aircraft types
             if not is_ga_spot and self._is_ga_aircraft_type(aircraft_type):
                 continue
             return self.departure_flight_pool.pop(i)
@@ -716,10 +668,7 @@ class BaseScenario(ABC):
 
         logger.debug(f"Assigned parking spot: {parking_spot.name}")
 
-        # Check if this is a GA parking spot
         is_ga_spot = "GA" in parking_spot.name.upper()
-
-        # Get flight from pool
         flight_data = self._get_next_departure_flight(parking_spot.name, is_ga_spot)
 
         if not flight_data:
@@ -728,21 +677,18 @@ class BaseScenario(ABC):
                 self.used_parking_spots.discard(parking_spot.name)
             return None
 
-        # Extract data from API flight
         raw_route = flight_data.get('route', '')
         route = clean_route_string(raw_route)
         destination = destination or flight_data.get('arrivalAirport', self._get_random_destination())
         api_callsign = flight_data.get('aircraftIdentification', '')
         api_aircraft_type = flight_data.get('aircraftType', 'B738')
 
-        # Calculate cruise altitude from requested altitude or default
         requested_alt = flight_data.get('requestedAltitude') or flight_data.get('assignedAltitude')
         if requested_alt:
             cruise_altitude = str(int(float(requested_alt)))
         else:
             cruise_altitude = '35000'
 
-        # Calculate cruise speed
         cruise_speed_str = flight_data.get('requestedAirspeed')
         if cruise_speed_str:
             try:
@@ -752,7 +698,6 @@ class BaseScenario(ABC):
         else:
             cruise_speed = self.api_client._calculate_cruise_speed(api_aircraft_type)
 
-        # Use provided parameters or API data
         aircraft_type = aircraft_type or api_aircraft_type
 
         # Ensure equipment suffix (/L for airlines, /G for GA)
@@ -765,7 +710,6 @@ class BaseScenario(ABC):
             if api_callsign and api_callsign.strip():
                 callsign = api_callsign
             else:
-                # Only generate if API didn't provide a callsign
                 logger.warning(f"No callsign from API for flight to {destination}, generating one")
                 callsign = self._generate_callsign()
 
@@ -774,7 +718,6 @@ class BaseScenario(ABC):
             # If callsign is already used, we have a duplicate from API
             if callsign in self.used_callsigns:
                 logger.warning(f"Duplicate callsign from API: {callsign}, skipping this flight")
-                # Don't use this flight - return None to skip it
                 with self.parking_lock:
                     self.used_parking_spots.discard(parking_spot.name)
                 return None
@@ -798,13 +741,11 @@ class BaseScenario(ABC):
             flight_rules=flight_data.get('initialFlightRules', 'I')[0] if flight_data.get('initialFlightRules') else 'I',
             engine_type="J",
             parking_spot_name=parking_spot.name,
-            # Additional API fields
             gufi=flight_data.get('gufi'),
             registration=flight_data.get('registration'),
             operator=flight_data.get('operator'),
             estimated_arrival_time=flight_data.get('estimatedArrivalTime'),
             wake_turbulence=flight_data.get('wakeTurbulence'),
-            # Procedures
             sid=flight_data.get('departureProcedure'),
             star=flight_data.get('arrivalProcedure')
         )
@@ -813,7 +754,6 @@ class BaseScenario(ABC):
 
     def _prepare_ga_flight_pool(self):
         """Prepare pool of GA flights from cached departure data"""
-        # Filter for GA aircraft (N-number callsigns)
         valid_flights = filter_valid_flights(self.cached_flights['departures'])
         ga_flights, _ = categorize_flights(valid_flights)
 
@@ -826,7 +766,6 @@ class BaseScenario(ABC):
             self._prepare_ga_flight_pool()
 
         if not self.ga_flight_pool:
-            # Try to fetch more
             logger.warning("GA flight pool depleted, fetching more...")
             additional_flights = self.api_client.fetch_departures(self.airport_icao, limit=50)
             if additional_flights:
@@ -852,7 +791,6 @@ class BaseScenario(ABC):
             self._prepare_arrival_flight_pool()
 
         if not self.arrival_flight_pool:
-            # Try to fetch more
             logger.warning("Arrival flight pool depleted, fetching more...")
             additional_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=50)
             if additional_flights:
@@ -872,7 +810,6 @@ class BaseScenario(ABC):
         self.used_parking_spots.add(parking_spot.name)
         logger.debug(f"Assigned parking spot: {parking_spot.name}")
 
-        # Try to get GA flight from API
         flight_data = self._get_next_ga_flight()
 
         if flight_data:
@@ -881,7 +818,6 @@ class BaseScenario(ABC):
             if api_callsign and api_callsign.strip():
                 callsign = api_callsign
             else:
-                # API didn't provide callsign, generate one
                 logger.warning("GA flight from API missing callsign, generating one")
                 callsign = self._generate_ga_callsign()
             aircraft_type = flight_data.get('aircraftType', 'C172')
@@ -889,7 +825,6 @@ class BaseScenario(ABC):
             raw_route = flight_data.get('route', 'DCT')
             route = clean_route_string(raw_route) if raw_route != 'DCT' else 'DCT'
 
-            # Get altitude and speed from API
             requested_alt = flight_data.get('requestedAltitude') or flight_data.get('assignedAltitude')
             if requested_alt:
                 cruise_altitude = str(int(float(requested_alt)))
@@ -912,7 +847,6 @@ class BaseScenario(ABC):
             estimated_arrival_time = flight_data.get('estimatedArrivalTime')
             wake_turbulence = flight_data.get('wakeTurbulence')
         else:
-            # Fallback to generated GA aircraft
             logger.warning("No GA flight data available, generating manually")
             callsign = self._generate_ga_callsign()
             aircraft_type = self._get_random_aircraft_type(is_ga=True)
@@ -927,7 +861,6 @@ class BaseScenario(ABC):
             estimated_arrival_time = None
             wake_turbulence = 'L'
 
-        # Ensure callsign uniqueness
         with self.callsign_lock:
             if callsign in self.used_callsigns:
                 # If from API data, skip this flight to maintain data integrity
@@ -940,7 +873,6 @@ class BaseScenario(ABC):
                     callsign = self._generate_ga_callsign()
             self.used_callsigns.add(callsign)
 
-        # Ensure equipment suffix
         if '/' not in aircraft_type:
             aircraft_type = f"{aircraft_type}/G"
 
@@ -1045,12 +977,9 @@ class BaseScenario(ABC):
         Raises:
             ValueError: If fix not found
         """
-        # First check if it's the airport
         if fix_name == self.airport_icao:
             return self.geojson_parser.get_airport_center()
 
-        # Try to find it as a waypoint in CIFP data
-        # Search in all procedures for a waypoint with this name
         for procedure_type in ['stars', 'sids', 'approaches']:
             procedures = getattr(self.cifp_parser, procedure_type, {})
             for proc_name, waypoints in procedures.items():
@@ -1090,23 +1019,19 @@ class BaseScenario(ABC):
         if prev_runway == next_runway:
             return 3
 
-        # Check if runways are parallel
         if not parallel_info:
             # No parallel info available, treat as independent runways
             return 3
 
-        # Look up centerline spacing between these runways
         centerline_spacing_nm = None
         required_diagonal_nm = None
 
-        # Check if prev_runway has next_runway as a parallel
         if prev_runway in parallel_info:
             prev_data = parallel_info[prev_runway]
             if next_runway in prev_data.get('parallels', []):
                 centerline_spacing_nm = prev_data['spacing_nm'].get(next_runway)
                 required_diagonal_nm = prev_data['required_sep_nm'].get(next_runway)
 
-        # Check if next_runway has prev_runway as a parallel
         if centerline_spacing_nm is None and next_runway in parallel_info:
             next_data = parallel_info[next_runway]
             if prev_runway in next_data.get('parallels', []):

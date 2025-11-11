@@ -37,15 +37,12 @@ class GroundDeparturesScenario(BaseScenario):
         Returns:
             List of Aircraft objects
         """
-        # Reset tracking for new generation
         self._reset_tracking()
 
-        # Prepare flight pools from cached data
         logger.info("Preparing departure flight pool...")
         self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids)
         self._prepare_ga_flight_pool()
 
-        # Setup difficulty assignment
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
 
         # Handle legacy spawn_delay_range parameter
@@ -63,7 +60,6 @@ class GroundDeparturesScenario(BaseScenario):
 
         logger.info(f"Generating {num_departures} departure aircraft with spawn_delay_mode={spawn_delay_mode.value}")
 
-        # Randomize parking spots for variety
         random.shuffle(parking_spots)
 
         # Generate aircraft sequentially (no need for threading since we're not making API calls per aircraft)
@@ -72,7 +68,6 @@ class GroundDeparturesScenario(BaseScenario):
                 break
 
             try:
-                # Check if parking spot is for GA (has "GA" in the name)
                 if "GA" in spot.name.upper():
                     logger.info(f"Creating GA aircraft for parking spot: {spot.name}")
                     aircraft = self._create_ga_aircraft(spot)
@@ -90,7 +85,6 @@ class GroundDeparturesScenario(BaseScenario):
                         aircraft.spawn_delay = random.randint(min_delay, max_delay)
                         logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
 
-                    # Assign difficulty level
                     difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
                     self.aircraft.append(aircraft)
                     logger.debug(f"Created aircraft {len(self.aircraft)}/{num_departures}: {aircraft.callsign}")
@@ -98,7 +92,6 @@ class GroundDeparturesScenario(BaseScenario):
             except Exception as e:
                 logger.error(f"Error creating aircraft for parking spot {spot.name}: {e}")
 
-        # Apply new spawn delay system
         if not spawn_delay_range:
             self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
 

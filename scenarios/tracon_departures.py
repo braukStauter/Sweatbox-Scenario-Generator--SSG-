@@ -37,15 +37,12 @@ class TraconDeparturesScenario(BaseScenario):
         Returns:
             List of Aircraft objects
         """
-        # Reset tracking for new generation
         self._reset_tracking()
 
-        # Prepare flight pools from cached data
         logger.info("Preparing departure flight pool...")
         self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids)
         self._prepare_ga_flight_pool()
 
-        # Setup difficulty assignment
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
 
         # Handle legacy spawn_delay_range parameter
@@ -63,7 +60,6 @@ class TraconDeparturesScenario(BaseScenario):
 
         logger.info(f"Generating TRACON departure scenario: {num_departures} departures")
 
-        # Generate aircraft, trying more spots if needed
         attempts = 0
         max_attempts = len(parking_spots) * 2
         available_spots = parking_spots.copy()
@@ -72,7 +68,6 @@ class TraconDeparturesScenario(BaseScenario):
             spot = random.choice(available_spots)
             available_spots.remove(spot)
 
-            # Check if parking spot is for GA (has "GA" in the name)
             if "GA" in spot.name.upper():
                 logger.info(f"Creating GA aircraft for parking spot: {spot.name}")
                 aircraft = self._create_ga_aircraft(spot)
@@ -94,7 +89,6 @@ class TraconDeparturesScenario(BaseScenario):
 
             attempts += 1
 
-        # Apply new spawn delay system
         if not spawn_delay_range:
             self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
 
