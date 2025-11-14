@@ -20,7 +20,7 @@ A standalone desktop application with a modern graphical interface for generatin
 2. **Extract the distribution folder** to any location on your computer
 
 3. **Add your airport data** to the `airport_data/` folder:
-   - `[AIRPORT].geojson` (e.g., KPHX.geojson)
+   - `[AIRPORT].geojson` (e.g., PHX.geojson). This should be the training airport .geojson, not the tower map.
    - FAA CIFP File (can be downloaded [here](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/cifp/download/); shipped with releases)
 
 4. **Launch SSG.exe** and follow the GUI workflow:
