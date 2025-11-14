@@ -1,4 +1,5 @@
-[![Version Image](https://img.shields.io/badge/Stable_Version-1.1.0-Green)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases) [![Build Image](https://img.shields.io/badge/Build-98-blue)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases)
+[![Version Image](https://img.shields.io/badge/Stable_Version-1.1.0b-Green)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases) [![Build Image](https://img.shields.io/badge/Build-91-blue)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases)
+(Temporarily, the most up-to-date distribution can be found on the ATCTrainer Discord)
 # vNAS Sweatbox Scenario Generator
 
 A standalone desktop application with a modern graphical interface for generating realistic air traffic control simulation scenarios for vNAS Data Admin Sweatbox files.
