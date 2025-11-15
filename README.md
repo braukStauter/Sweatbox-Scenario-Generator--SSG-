@@ -1,4 +1,4 @@
-[![Version Image](https://img.shields.io/badge/Stable_Version-1.1.0b-Green)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases) [![Build Image](https://img.shields.io/badge/Build-108-blue)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases)
+[![Version Image](https://img.shields.io/badge/Stable_Version-1.1.1-Green)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases) [![Build Image](https://img.shields.io/badge/Build-120-blue)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases)
 
 (Temporarily, the most up-to-date distribution can be found on the ATCTrainer Discord)
 # vNAS Sweatbox Scenario Generator
