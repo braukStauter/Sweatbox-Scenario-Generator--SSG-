@@ -218,13 +218,20 @@ class BaseScenario(ABC):
 
             max_delay_seconds = total_session_minutes * 60
 
-            for aircraft in aircraft_list:
-                aircraft.spawn_delay = random.randint(0, max_delay_seconds)
-
-            aircraft_list.sort(key=lambda a: a.spawn_delay)
+            # Assign sequential spawn delays to preserve aircraft creation order
+            # (important for maintaining alternating STAR/runway distributions)
+            num_aircraft = len(aircraft_list)
+            if num_aircraft > 1:
+                # Spread aircraft evenly across the session time
+                interval_seconds = max_delay_seconds / (num_aircraft - 1)
+                for i, aircraft in enumerate(aircraft_list):
+                    aircraft.spawn_delay = int(i * interval_seconds)
+            else:
+                # Single aircraft spawns at time 0
+                aircraft_list[0].spawn_delay = 0
 
             logger.info(f"Applied TOTAL spawn delays: {len(aircraft_list)} aircraft "
-                       f"distributed across {total_session_minutes} minutes (0-{max_delay_seconds}s)")
+                       f"distributed sequentially across {total_session_minutes} minutes (0-{max_delay_seconds}s)")
 
     def _parse_delay_value(self, delay_value: str) -> tuple:
         """
