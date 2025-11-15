@@ -1,12 +1,12 @@
 .claude/
+__pycache__
 __pycache__/
-**/__pycache__/
 logs/
 build/
 dist/
 temp_update/
 
-*.pyc
+*.py[cod]
 *_backup.txt
 *.spec
 version.py
