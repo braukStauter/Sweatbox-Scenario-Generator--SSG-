@@ -148,9 +148,10 @@ class TraconMixedScenario(BaseScenario):
             arrivals_created = 0
             attempts = 0
             max_attempts = num_arrivals * 10  # Allow 10x attempts to handle missing data/waypoints
+            star_round_robin_index = 0  # Track round-robin position (only advances on successful creation)
 
             while arrivals_created < num_arrivals and attempts < max_attempts:
-                waypoint_name, star_name = star_transitions[attempts % len(star_transitions)]
+                waypoint_name, star_name = star_transitions[star_round_robin_index % len(star_transitions)]
 
                 # Get waypoint for this STAR
                 waypoint = self.cifp_parser.get_transition_waypoint(waypoint_name, star_name)
@@ -219,6 +220,7 @@ class TraconMixedScenario(BaseScenario):
                     difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
                     self.aircraft.append(aircraft)
                     arrivals_created += 1
+                    star_round_robin_index += 1  # Advance round-robin only on successful creation
 
                 attempts += 1
 
@@ -311,7 +313,10 @@ class TraconMixedScenario(BaseScenario):
             cruise_altitude=str(altitude),
             navigation_path=initial_path,
             fix=frd_fix,
-            starting_conditions_type="FixOrFrd"
+            starting_conditions_type="FixOrFrd",
+            # Procedures
+            star=star_name,  # Store the STAR name
+            arrival_runway=runway  # Store the arrival runway
         )
 
         return aircraft
