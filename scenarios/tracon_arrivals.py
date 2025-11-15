@@ -73,79 +73,88 @@ class TraconArrivalsScenario(BaseScenario):
         for star, flights in flights_by_star.items():
             logger.info(f"  {star}: {len(flights)} flights")
 
-        # Calculate how many aircraft per STAR
-        num_stars = len(waypoint_star_pairs)
-        aircraft_per_star = num_arrivals // num_stars
-        remainder = num_arrivals % num_stars
-
-        logger.info(f"Will generate {aircraft_per_star} aircraft per STAR (+ {remainder} extra)")
+        logger.info(f"Will generate {num_arrivals} aircraft alternating among {len(waypoint_star_pairs)} STARs")
 
         # Setup difficulty assignment
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
 
-        # Generate aircraft for each waypoint.STAR pair
-        for idx, (waypoint_name, star_name) in enumerate(waypoint_star_pairs):
+        # Track which flight index we're using for each STAR (for alternating distribution)
+        star_flight_indices = defaultdict(int)
+
+        # Generate aircraft using round-robin alternating pattern
+        arrivals_created = 0
+        attempts = 0
+        max_attempts = num_arrivals * 10  # Allow 10x attempts to handle missing data/waypoints
+
+        while arrivals_created < num_arrivals and attempts < max_attempts:
+            # Alternate through waypoint/STAR pairs using modulo
+            waypoint_name, star_name = waypoint_star_pairs[attempts % len(waypoint_star_pairs)]
             star_base = self._strip_numbers(star_name)
-
-            # Calculate how many for this STAR (distribute remainder to first STARs)
-            num_for_this_star = aircraft_per_star + (1 if idx < remainder else 0)
-
-            logger.info(f"Generating {num_for_this_star} aircraft for {waypoint_name}.{star_name}")
-
-            # Get flights for this STAR
-            available_flights = flights_by_star.get(star_base.upper(), [])
-            if not available_flights:
-                logger.warning(f"No flights available for STAR {star_base}")
-                continue
 
             # Get waypoint from CIFP
             waypoint = self.cifp_parser.get_transition_waypoint(waypoint_name, star_name)
             if not waypoint:
                 logger.warning(f"Waypoint {waypoint_name} not found in CIFP for {star_name}")
+                attempts += 1
                 continue
 
-            # Generate aircraft with retry logic
-            created = 0
-            attempts = 0
-            max_attempts = num_for_this_star * 10
-
-            while created < num_for_this_star and attempts < max_attempts:
-                flight_index = attempts % len(available_flights)
-
-                # If we've exhausted the available flights, try to fetch more
-                if attempts > 0 and attempts % len(available_flights) == 0:
-                    logger.info(f"Flight pool exhausted for STAR {star_base}, fetching more from API...")
-                    additional_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=100, stars=[star_base.upper()])
-                    if additional_flights:
-                        valid_flights = filter_valid_flights(additional_flights)
-                        unique_flights = self._deduplicate_by_gufi(valid_flights)
-                        if unique_flights:
-                            available_flights.extend(unique_flights)
-                            flights_by_star[star_base.upper()] = available_flights
-                            logger.info(f"Added {len(unique_flights)} more flights for STAR {star_base}")
-
-                if flight_index >= len(available_flights):
-                    logger.warning(f"No more flights available for STAR {star_base}")
-                    break
-
-                flight_data = available_flights[flight_index]
-
-                aircraft = self._create_arrival_aircraft(
-                    flight_data=flight_data,
-                    waypoint=waypoint,
-                    star_name=star_name,
-                    active_runways=active_runways
-                )
-
-                if aircraft:
-                    difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
-                    self.aircraft.append(aircraft)
-                    created += 1
-
+            # Check if waypoint has valid coordinates
+            if waypoint.latitude == 0.0 and waypoint.longitude == 0.0:
+                logger.warning(f"Waypoint {waypoint.name} has no coordinate data")
                 attempts += 1
+                continue
 
-            if created < num_for_this_star:
-                logger.warning(f"Only created {created} of {num_for_this_star} requested aircraft for {waypoint_name}.{star_name}")
+            # Get flights for this STAR
+            available_flights = flights_by_star.get(star_base.upper(), [])
+            if not available_flights:
+                logger.warning(f"No flights available for STAR {star_base}")
+                attempts += 1
+                continue
+
+            # Get next unused flight for this STAR
+            flight_index = star_flight_indices[star_base.upper()]
+            if flight_index >= len(available_flights):
+                # Try to fetch more flights from API
+                logger.info(f"Flight pool exhausted for STAR {star_base}, fetching more from API...")
+                additional_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=100, stars=[star_base.upper()])
+                if additional_flights:
+                    valid_flights = filter_valid_flights(additional_flights)
+                    unique_flights = self._deduplicate_by_gufi(valid_flights)
+                    if unique_flights:
+                        # Add to the flight pool for this STAR
+                        if star_base.upper() not in flights_by_star:
+                            flights_by_star[star_base.upper()] = []
+                        flights_by_star[star_base.upper()].extend(unique_flights)
+                        available_flights = flights_by_star[star_base.upper()]
+                        logger.info(f"Added {len(unique_flights)} more flights for STAR {star_base}")
+                    else:
+                        logger.warning(f"No additional valid flights found for STAR {star_base}")
+                        attempts += 1
+                        continue
+                else:
+                    logger.warning(f"Failed to fetch additional flights for STAR {star_base}")
+                    attempts += 1
+                    continue
+
+            flight_data = available_flights[flight_index]
+            star_flight_indices[star_base.upper()] += 1
+
+            aircraft = self._create_arrival_aircraft(
+                flight_data=flight_data,
+                waypoint=waypoint,
+                star_name=star_name,
+                active_runways=active_runways
+            )
+
+            if aircraft:
+                difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                self.aircraft.append(aircraft)
+                arrivals_created += 1
+
+            attempts += 1
+
+        if arrivals_created < num_arrivals:
+            logger.warning(f"Could only generate {arrivals_created}/{num_arrivals} arrivals after {attempts} attempts (limited API data or missing waypoints)")
 
         # Apply spawn delays
         self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
