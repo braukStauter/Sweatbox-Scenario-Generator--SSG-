@@ -1,4 +1,6 @@
-[![Version Image](https://img.shields.io/badge/Stable_Version-1.0.10-Green)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases) [![Build Image](https://img.shields.io/badge/Build-57-blue)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases)
+[![Version Image](https://img.shields.io/badge/Stable_Version-1.1.0b-Green)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases) [![Build Image](https://img.shields.io/badge/Build-91-blue)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases)
+
+(Temporarily, the most up-to-date distribution can be found on the ATCTrainer Discord)
 # vNAS Sweatbox Scenario Generator
 
 A standalone desktop application with a modern graphical interface for generating realistic air traffic control simulation scenarios for vNAS Data Admin Sweatbox files.
@@ -18,7 +20,7 @@ A standalone desktop application with a modern graphical interface for generatin
 2. **Extract the distribution folder** to any location on your computer
 
 3. **Add your airport data** to the `airport_data/` folder:
-   - `[AIRPORT].geojson` (e.g., KPHX.geojson)
+   - `[AIRPORT].geojson` (e.g., PHX.geojson). This should be the training airport .geojson, not the tower map.
    - FAA CIFP File (can be downloaded [here](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/cifp/download/); shipped with releases)
 
 4. **Launch SSG.exe** and follow the GUI workflow:
@@ -28,9 +30,9 @@ A standalone desktop application with a modern graphical interface for generatin
 
 ## Features
 
--**vNAS Integration**: Directly modify scenarios in vNAS
-- **Multiple Scenario Types**: Ground, Tower, and TRACON operations with departures and/or arrivals
-- **Realistic Flight Plans**: Integrates with flight-plans.csko.hu API for authentic routing, callsigns, and aircraft types
+- **vNAS Integration**: Directly modify scenarios in vNAS
+- **Multiple Scenario Types**: Ground, Tower, and TRACON operations with departures and/or arrivals. Enroute scenarios are supported, but are a large work in progress.
+- **Realistic Flight Plans**: Integrates with FAA SWIM data via an internal API for authentic routing, callsigns, and aircraft types
 - **Parking-Specific Airlines**: Configure specific airlines for parking spots with wildcard support (e.g., "A#" for all A gates)
 - **GA Aircraft Support**: Automatic N-number callsigns, low-altitude routes, and less-common airports for GA parking
 - **Airport Data Integration**: Parses GeoJSON files for parking spots, runways, and airport geometry
@@ -46,6 +48,7 @@ A standalone desktop application with a modern graphical interface for generatin
 4. **TRACON (Departures)**: Departure aircraft at parking.
 5. **TRACON (Arrivals)**: Arrival aircraft spawned at designated waypoints; handles specified arrival routing
 6. **TRACON (Departures/Arrivals)**: Combined TRACON operations with both departures and arrivals
+7. **Enroute.**
 
 ## Installation
 
@@ -90,13 +93,17 @@ Modify the `config.json` file to assign specific airlines to parking spots:
 - `["AAL", "AAL", "DAL"]` = 67% AAL, 33% DAL
 
 **Gate 'Blocking' Support:**
-```json
 Mixed Terminal with Overrides:
-  "E1-E20": ["ASA", "ACA"],   // Most E gates = Alaska/Air Canada
-  "E5": ["JBU"],              // E5 dedicated to JetBlue
-  "E10": ["JBU"],             // E10 dedicated to JetBlue
-  "E#": ["FFT"]               // Any other E gates = Frontier
+```json
+  "E1-E20": ["ASA", "ACA"],
+  "E5": ["JBU"],
+  "E10": ["JBU"],
+  "E#": ["FFT"]
 ```
+- Most E gates = Alaska/Air Canada
+- E5 dedicated to JetBlue
+- E10 dedicated to JetBlue
+- Any other E gates = Frontier
 
 ### GA (General Aviation) Parking
 
@@ -152,7 +159,7 @@ Generated files follow this pattern: `{AIRPORT}_{DDHHMM}.json`
   "name": "Generated Scenario - KPHX",
   "artccId": "ZAB",
   "primaryAirportId": "PHX",
-  "aircraft": [...],
+  "aircraft": ["..."],
   "initializationTriggers": [],
   "aircraftGenerators": [],
   "atc": [],
