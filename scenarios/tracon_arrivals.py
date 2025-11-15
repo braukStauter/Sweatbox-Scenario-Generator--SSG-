@@ -3,7 +3,7 @@ TRACON (Arrivals) scenario - Simplified implementation
 """
 import re
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 from collections import defaultdict
 
 from scenarios.base_scenario import BaseScenario
@@ -21,7 +21,8 @@ class TraconArrivalsScenario(BaseScenario):
     def generate(self, num_arrivals: int, arrival_waypoints: List[str],
                  delay_range=None, spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
                  delay_value: str = None, total_session_minutes: int = None,
-                 spawn_delay_range: str = None, difficulty_config=None, active_runways: List[str] = None) -> List[Aircraft]:
+                 spawn_delay_range: str = None, difficulty_config=None, active_runways: List[str] = None,
+                 use_cifp_speeds: bool = True) -> List[Aircraft]:
         """
         Generate TRACON arrival scenario
 
@@ -33,12 +34,16 @@ class TraconArrivalsScenario(BaseScenario):
             total_session_minutes: For TOTAL mode: total session length in minutes
             difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts
             active_runways: List of active runway designators
+            use_cifp_speeds: Whether to use CIFP speed restrictions for arrival aircraft
 
         Returns:
             List of Aircraft objects
         """
         # Reset tracking for new generation
         self._reset_tracking()
+
+        # Store use_cifp_speeds for use in speed calculation
+        self.use_cifp_speeds = use_cifp_speeds
 
         logger.info(f"Generating TRACON arrival scenario: {num_arrivals} arrivals")
 
@@ -248,8 +253,8 @@ class TraconArrivalsScenario(BaseScenario):
         # Get cruise speed (for flight plan only, not initial speed)
         cruise_speed = self._get_cruise_speed(flight_data, aircraft_type)
 
-        # Calculate realistic initial speed based on altitude
-        initial_speed = self._calculate_realistic_arrival_speed(altitude, aircraft_type)
+        # Calculate realistic initial speed based on altitude and CIFP speed restrictions
+        initial_speed = self._calculate_realistic_arrival_speed(altitude, aircraft_type, waypoint, star_name)
 
         # Determine runway
         runway = self._select_arrival_runway(active_runways, star_name) if active_runways else "08L"
@@ -306,34 +311,90 @@ class TraconArrivalsScenario(BaseScenario):
         # Default for TRACON arrivals (typically 11,000 ft)
         return 11000
 
-    def _calculate_realistic_arrival_speed(self, altitude: int, aircraft_type: str) -> int:
+    def _get_speed_from_cifp(self, waypoint, star_name: str) -> Optional[int]:
         """
-        Calculate realistic arrival speed based on altitude.
+        Get speed restriction from CIFP waypoint data.
+
+        Checks the current waypoint and walks backwards through the STAR procedure
+        to find the most recent speed restriction that applies.
+
+        Args:
+            waypoint: Current waypoint object from CIFP
+            star_name: STAR name
+
+        Returns:
+            Speed restriction in knots, or None if no restriction found
+        """
+        # First check if current waypoint has a speed limit
+        if waypoint.speed_limit:
+            logger.debug(f"Found CIFP speed {waypoint.speed_limit} kts at waypoint {waypoint.name}")
+            return waypoint.speed_limit
+
+        # If not, walk backwards through the STAR to find the most recent speed restriction
+        if star_name not in self.cifp_parser.star_waypoints:
+            return None
+
+        current_sequence = waypoint.sequence_number
+        if not current_sequence:
+            return None
+
+        # Get all waypoints in this STAR
+        star_wpts = self.cifp_parser.star_waypoints[star_name]
+
+        # Walk backwards from current sequence to find most recent speed restriction
+        for seq in range(current_sequence - 10, 0, -10):
+            for wpt_name, wpt in star_wpts.items():
+                if wpt.sequence_number == seq and wpt.speed_limit:
+                    logger.debug(f"Found CIFP speed {wpt.speed_limit} kts from previous waypoint {wpt_name} (seq {seq})")
+                    return wpt.speed_limit
+
+        return None
+
+    def _calculate_realistic_arrival_speed(self, altitude: int, aircraft_type: str, waypoint=None, star_name: str = None) -> int:
+        """
+        Calculate realistic arrival speed based on CIFP speed restrictions or altitude.
+
+        Priority:
+        1. CIFP speed restriction (if use_cifp_speeds config is enabled and speed exists)
+        2. Altitude-based exponential calculation (fallback)
 
         Uses an exponential relationship where speed increases with altitude.
-        Higher altitudes = higher speeds (descending jets at 280-300 kts)
+        Higher altitudes = higher speeds (descending jets at ~310 kts max at 18k ft)
         Lower altitudes = lower speeds (approach speeds 140-180 kts)
 
         Args:
             altitude: Altitude in feet MSL
             aircraft_type: Aircraft type code
+            waypoint: Waypoint object from CIFP (optional)
+            star_name: STAR name (optional)
 
         Returns:
             Speed in knots
         """
+        # Check if we should use CIFP speeds (from parameter, defaults to True)
+        use_cifp_speeds = getattr(self, 'use_cifp_speeds', True)
+
+        # Try to get CIFP speed if enabled and waypoint data is available
+        if use_cifp_speeds and waypoint and star_name:
+            cifp_speed = self._get_speed_from_cifp(waypoint, star_name)
+            if cifp_speed:
+                logger.info(f"Using CIFP speed restriction: {cifp_speed} kts (aircraft: {aircraft_type})")
+                return cifp_speed
+
+        # Fallback to altitude-based calculation
         # Determine if this is a GA aircraft
         is_ga = self._is_ga_aircraft_type(aircraft_type.split('/')[0])
 
         if is_ga:
             # General aviation speeds are lower
-            # Base: 120 kts, increases to ~180 kts at high altitude
+            # Base: 110 kts, increases to ~170 kts at high altitude
             base_speed = 110
             max_speed = 170
         else:
             # Jet/turboprop speeds
-            # Base: 180 kts (approach speed), increases to ~290 kts at cruise descent
+            # Base: 140 kts (approach speed), max: 330 kts (yields ~310 kts at 18,000 ft)
             base_speed = 140
-            max_speed = 380
+            max_speed = 330
 
         # Exponential formula: speed = base + (max - base) * (1 - e^(-altitude / scale))
         # Scale factor controls how quickly speed increases with altitude
@@ -346,7 +407,7 @@ class TraconArrivalsScenario(BaseScenario):
         # Round to nearest 5 knots for realism
         speed = int(round(calculated_speed / 5) * 5)
 
-        logger.debug(f"Calculated arrival speed: {speed} kts for altitude {altitude} ft (aircraft: {aircraft_type})")
+        logger.debug(f"Calculated arrival speed (altitude-based fallback): {speed} kts for altitude {altitude} ft (aircraft: {aircraft_type})")
         return speed
 
     def _find_next_waypoint_for_runway(self, star_name: str, current_waypoint, runway: str):

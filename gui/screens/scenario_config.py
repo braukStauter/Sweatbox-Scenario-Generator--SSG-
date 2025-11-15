@@ -1367,6 +1367,34 @@ class ScenarioConfigScreen(tk.Frame):
         )
         waypoint_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM))
 
+        # Use CIFP Speeds checkbox
+        use_cifp_speeds_var = tk.BooleanVar(value=True)
+
+        use_cifp_speeds_checkbox = tk.Checkbutton(
+            section,
+            text="Use CIFP Speed Restrictions",
+            variable=use_cifp_speeds_var,
+            bg=DarkTheme.BG_PRIMARY,
+            fg=DarkTheme.FG_PRIMARY,
+            selectcolor=DarkTheme.BG_TERTIARY,
+            activebackground=DarkTheme.BG_PRIMARY,
+            activeforeground=DarkTheme.FG_PRIMARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            cursor='hand2'
+        )
+        use_cifp_speeds_checkbox.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+        self.inputs['use_cifp_speeds'] = use_cifp_speeds_var
+
+        # Hint for CIFP speeds
+        cifp_speed_hint = ThemedLabel(
+            section,
+            text="When enabled, arrival aircraft will spawn at speeds matching CIFP parsed speed restrictions for the arrival procedure. Falls back to altitude-based calculation if no restriction exists.",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=550
+        )
+        cifp_speed_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM))
+
     def _add_vfr_aircraft_section(self, parent):
         """Add VFR aircraft configuration section"""
         section = ThemedFrame(parent)
