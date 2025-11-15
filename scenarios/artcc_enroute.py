@@ -894,6 +894,7 @@ class ArtccEnrouteScenario(BaseScenario):
             cruise_speed=cruise_speed,
             navigation_path=navigation_path,
             arrival_runway=arrival_runway,  # Assign runway based on STAR
+            star=arr_proc,  # Store the STAR/arrival procedure
             flight_rules="I",
             primary_airport=arrival_3letter,  # Set arrival airport for vNAS
             spawn_delay=0
