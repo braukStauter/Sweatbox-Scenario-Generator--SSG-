@@ -156,13 +156,19 @@ class TraconMixedScenario(BaseScenario):
                 waypoint = self.cifp_parser.get_transition_waypoint(waypoint_name, star_name)
 
                 if not waypoint:
-                    logger.warning(f"Waypoint {waypoint_name}.{star_name} not found in CIFP data")
+                    error_msg = f"Waypoint {waypoint_name}.{star_name} not found in CIFP data"
+                    logger.warning(error_msg)
+                    if error_msg not in self.cifp_waypoint_errors:
+                        self.cifp_waypoint_errors.append(error_msg)
                     attempts += 1
                     continue
 
                 # Check if waypoint has valid coordinates
                 if waypoint.latitude == 0.0 and waypoint.longitude == 0.0:
-                    logger.warning(f"Waypoint {waypoint.name} has no coordinate data")
+                    error_msg = f"Waypoint {waypoint.name} has no coordinate data"
+                    logger.warning(error_msg)
+                    if error_msg not in self.cifp_waypoint_errors:
+                        self.cifp_waypoint_errors.append(error_msg)
                     attempts += 1
                     continue
 

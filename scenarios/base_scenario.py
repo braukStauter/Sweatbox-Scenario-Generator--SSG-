@@ -47,6 +47,7 @@ class BaseScenario(ABC):
         self.aircraft: List[Aircraft] = []
         self.used_callsigns: set = set()
         self.used_parking_spots: set = set()
+        self.cifp_waypoint_errors: List[str] = []  # Track CIFP/waypoint errors for user notification
         self.config = self._load_config()
 
         self.cached_flights = cached_flights or {'departures': [], 'arrivals': []}
@@ -72,6 +73,7 @@ class BaseScenario(ABC):
         self.used_callsigns.clear()
         self.used_parking_spots.clear()
         self.aircraft.clear()
+        self.cifp_waypoint_errors.clear()
 
     def _setup_difficulty_assignment(self, difficulty_config):
         """

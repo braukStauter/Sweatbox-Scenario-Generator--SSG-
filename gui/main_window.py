@@ -932,6 +932,25 @@ class MainWindow(tk.Tk):
             if not aircraft:
                 raise Exception("No aircraft generated")
 
+            # Check for CIFP/waypoint errors and show warning if any occurred
+            if hasattr(scenario, 'cifp_waypoint_errors') and scenario.cifp_waypoint_errors:
+                error_count = len(scenario.cifp_waypoint_errors)
+                error_list = '\n'.join(f"• {err}" for err in scenario.cifp_waypoint_errors[:10])  # Show first 10
+                if len(scenario.cifp_waypoint_errors) > 10:
+                    error_list += f"\n... and {len(scenario.cifp_waypoint_errors) - 10} more"
+
+                warning_msg = (f"Generation completed with {error_count} waypoint/CIFP error(s).\n"
+                              f"These aircraft were skipped:\n\n{error_list}\n\n"
+                              f"Check the logs for more details.")
+
+                # Show warning (thread-safe)
+                from tkinter import messagebox
+                self.after(0, lambda: messagebox.showwarning(
+                    "CIFP/Waypoint Warnings",
+                    warning_msg
+                ))
+                logger.warning(f"Generation completed with {error_count} CIFP/waypoint errors")
+
             # Apply preset commands if configured
             preset_command_rules = config.get('preset_command_rules', [])
             if preset_command_rules:
