@@ -90,10 +90,12 @@ class TraconArrivalsScenario(BaseScenario):
         arrivals_created = 0
         attempts = 0
         max_attempts = num_arrivals * 10  # Allow 10x attempts to handle missing data/waypoints
+        star_round_robin_index = 0  # Track round-robin position (only advances on successful creation)
 
         while arrivals_created < num_arrivals and attempts < max_attempts:
-            # Alternate through waypoint/STAR pairs using modulo
-            waypoint_name, star_name = waypoint_star_pairs[attempts % len(waypoint_star_pairs)]
+            # Alternate through waypoint/STAR pairs using round-robin counter
+            # Use arrivals_created counter instead of attempts to ensure true alternating
+            waypoint_name, star_name = waypoint_star_pairs[star_round_robin_index % len(waypoint_star_pairs)]
             star_base = self._strip_numbers(star_name)
 
             # Get waypoint from CIFP
@@ -161,6 +163,7 @@ class TraconArrivalsScenario(BaseScenario):
                 difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
                 self.aircraft.append(aircraft)
                 arrivals_created += 1
+                star_round_robin_index += 1  # Advance round-robin only on successful creation
 
             attempts += 1
 
@@ -290,7 +293,8 @@ class TraconArrivalsScenario(BaseScenario):
             fix=frd_fix,
             starting_conditions_type="FixOrFrd",
             # Procedures
-            star=star_name  # Store the STAR name
+            star=star_name,  # Store the STAR name
+            arrival_runway=runway  # Store the arrival runway
         )
 
         return aircraft
