@@ -747,6 +747,9 @@ class MainWindow(tk.Tk):
             if config.get('arrival_waypoints'):
                 arrival_waypoints = [w.strip().upper() for w in config['arrival_waypoints'].split(',')]
 
+            # Parse CIFP speed configuration for arrivals
+            use_cifp_speeds = config.get('use_cifp_speeds', True)
+
             # Parse CIFP SID configuration
             enable_cifp_sids = config.get('enable_cifp_sids', False)
             manual_sids = []
@@ -914,6 +917,7 @@ class MainWindow(tk.Tk):
                 manual_sids,
                 num_vfr,
                 vfr_spawn_locations,
+                use_cifp_speeds,
                 # Enroute parameters
                 num_enroute,
                 arrival_airports,
@@ -927,6 +931,25 @@ class MainWindow(tk.Tk):
 
             if not aircraft:
                 raise Exception("No aircraft generated")
+
+            # Check for CIFP/waypoint errors and show warning if any occurred
+            if hasattr(scenario, 'cifp_waypoint_errors') and scenario.cifp_waypoint_errors:
+                error_count = len(scenario.cifp_waypoint_errors)
+                error_list = '\n'.join(f"• {err}" for err in scenario.cifp_waypoint_errors[:10])  # Show first 10
+                if len(scenario.cifp_waypoint_errors) > 10:
+                    error_list += f"\n... and {len(scenario.cifp_waypoint_errors) - 10} more"
+
+                warning_msg = (f"Generation completed with {error_count} waypoint/CIFP error(s).\n"
+                              f"These aircraft were skipped:\n\n{error_list}\n\n"
+                              f"Check the logs for more details.")
+
+                # Show warning (thread-safe)
+                from tkinter import messagebox
+                self.after(0, lambda: messagebox.showwarning(
+                    "CIFP/Waypoint Warnings",
+                    warning_msg
+                ))
+                logger.warning(f"Generation completed with {error_count} CIFP/waypoint errors")
 
             # Apply preset commands if configured
             preset_command_rules = config.get('preset_command_rules', [])
@@ -1071,6 +1094,7 @@ class MainWindow(tk.Tk):
                           delay_value, total_session_minutes, difficulty_config=None,
                           enable_cifp_sids=False, manual_sids=None,
                           num_vfr=0, vfr_spawn_locations=None,
+                          use_cifp_speeds=True,
                           # Enroute-specific parameters
                           num_enroute=0,
                           arrival_airports=None, departure_airports=None,
@@ -1119,12 +1143,14 @@ class MainWindow(tk.Tk):
         elif self.scenario_type == 'tracon_arrivals':
             return scenario.generate(num_arrivals, arrival_waypoints,
                                     delay_range, spawn_delay_mode, delay_value,
-                                    total_session_minutes, None, difficulty_config, active_runways)
+                                    total_session_minutes, None, difficulty_config, active_runways,
+                                    use_cifp_speeds)
         elif self.scenario_type == 'tracon_mixed':
             return scenario.generate(num_departures, num_arrivals, arrival_waypoints,
                                     delay_range, spawn_delay_mode,
                                     delay_value, total_session_minutes, None,
-                                    difficulty_config, active_runways, enable_cifp_sids, manual_sids)
+                                    difficulty_config, active_runways, enable_cifp_sids, manual_sids,
+                                    use_cifp_speeds)
         else:
             raise ValueError(f"Unknown scenario type: {self.scenario_type}")
 
