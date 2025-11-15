@@ -229,8 +229,11 @@ class CIFPParser:
                 for line in f:
                     if (self.airport_icao in line or
                         line.startswith('SUSAE') or
+                        line.startswith('SPACE') or
                         (len(line) > 12 and line.startswith('SUSAP') and line[12] == 'C') or
-                        (len(line) > 12 and line.startswith('SUSAD') and line[12] == 'C')):
+                        (len(line) > 12 and line.startswith('SUSAD') and line[12] == 'C') or
+                        (len(line) > 12 and line.startswith('SPACP') and line[12] == 'C') or
+                        (len(line) > 12 and line.startswith('SPACD') and line[12] == 'C')):
                         self._parse_line(line)
 
             # After loading all data, map arrivals and departures to their runways
@@ -255,18 +258,18 @@ class CIFPParser:
 
             record_type = line[0:5].strip()
 
-            if record_type not in ['SUSAP', 'SUSAD', 'SUSAE']:
+            if record_type not in ['SUSAP', 'SUSAD', 'SUSAE', 'SPACP', 'SPACD', 'SPACE']:
                 return
 
-            if record_type == 'SUSAE':
+            if record_type in ['SUSAE', 'SPACE']:
                 subsection = line[5] if len(line) > 5 else ''
             else:
                 subsection = line[12] if len(line) > 12 else ''
 
-            is_waypoint_definition = subsection == 'C' or (record_type == 'SUSAE' and subsection == 'A')
+            is_waypoint_definition = subsection == 'C' or (record_type in ['SUSAE', 'SPACE'] and subsection == 'A')
 
             if not is_waypoint_definition:
-                if record_type in ['SUSAP', 'SUSAD']:
+                if record_type in ['SUSAP', 'SUSAD', 'SPACP', 'SPACD']:
                     airport = line[6:10].strip()
                     if airport != self.airport_icao:
                         return
@@ -277,7 +280,7 @@ class CIFPParser:
                 self._parse_arrival_waypoint(line)
             elif subsection == 'D':
                 self._parse_departure_waypoint(line)
-            elif subsection == 'A' and record_type != 'SUSAE':
+            elif subsection == 'A' and record_type not in ['SUSAE', 'SPACE']:
                 self._parse_airport_waypoint(line)
 
         except Exception as e:

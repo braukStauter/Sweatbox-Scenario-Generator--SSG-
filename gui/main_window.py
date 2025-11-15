@@ -553,7 +553,9 @@ class MainWindow(tk.Tk):
 
             # Load GeoJSON data
             logger.info("Loading GeoJSON data...")
-            geojson_path = self.airport_data_dir / f"{airport_icao[1:].lower()}.geojson"
+            # Use full ICAO for non-K airports (P, T, C, etc.), strip K for US airports
+            geojson_filename = airport_icao[1:].lower() if airport_icao.startswith('K') else airport_icao.lower()
+            geojson_path = self.airport_data_dir / f"{geojson_filename}.geojson"
             self.geojson_parser = GeoJSONParser(str(geojson_path), airport_icao)
             logger.info("GeoJSON data loaded successfully")
 
@@ -1014,7 +1016,9 @@ class MainWindow(tk.Tk):
                 for icao in all_airports:
                     try:
                         # Load GeoJSON if available
-                        geojson_path = self.airport_data_dir / f"{icao[1:].lower()}.geojson"
+                        # Use full ICAO for non-K airports (P, T, C, etc.), strip K for US airports
+                        geojson_filename = icao[1:].lower() if icao.startswith('K') else icao.lower()
+                        geojson_path = self.airport_data_dir / f"{geojson_filename}.geojson"
                         if geojson_path.exists():
                             geojson_parsers[icao] = GeoJSONParser(str(geojson_path), icao)
                             logger.debug(f"Loaded GeoJSON for {icao}")
