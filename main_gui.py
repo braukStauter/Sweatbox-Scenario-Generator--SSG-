@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 logger.info(f"Logging to: {log_file}")
 
 
+# Global variable to store update info for notification after main window launches
+pending_update_notification = None
+
+
 def perform_startup_tasks(root, splash):
     """
     Perform startup tasks including update check in background thread
@@ -40,7 +44,10 @@ def perform_startup_tasks(root, splash):
         root: Root Tk window
         splash: SplashScreen instance
     """
+    global pending_update_notification
+
     def update_task():
+        global pending_update_notification
         try:
             # Initialize updater
             updater = AutoUpdater()
@@ -52,13 +59,13 @@ def perform_startup_tasks(root, splash):
             has_update, latest_version = updater.check_for_update_notification()
 
             if has_update and latest_version:
-                logger.info(f"Update available: {latest_version}")
-                root.after(0, lambda: splash.update_status("Update available!", 80))
-                # Schedule the update notification to show after main window launches
-                root.after(2000, lambda: show_update_notification(latest_version))
+                logger.info(f"Version mismatch detected: {latest_version}")
+                root.after(0, lambda: splash.update_status("Version mismatch detected", 80))
+                # Store the update info to show after main window launches
+                pending_update_notification = latest_version
             else:
-                logger.info("Application is up to date")
-                root.after(0, lambda: splash.update_status("Application is up to date", 80))
+                logger.info("Version matches GitHub release")
+                root.after(0, lambda: splash.update_status("Version matches GitHub release", 80))
 
             # Finish loading
             root.after(500, lambda: splash.update_status("Initializing components...", 90))
@@ -79,18 +86,23 @@ def perform_startup_tasks(root, splash):
 
 def show_update_notification(latest_version):
     """
-    Show a popup notification when an update is available
+    Show a popup notification when version differs from GitHub release
 
     Args:
-        latest_version: The version string of the available update
+        latest_version: The version string of the GitHub release
     """
     import tkinter.messagebox as messagebox
     import webbrowser
+    from utils.version_manager import VersionManager
+
+    # Get current version for display
+    vm = VersionManager()
+    current_version = vm.get_current_version()
 
     response = messagebox.askquestion(
-        "Update Available",
-        f"A new version (v{latest_version}) is available!\n\n"
-        f"Would you like to download it from GitHub?",
+        "Version Mismatch",
+        f"Your version (v{current_version}) differs from the latest GitHub release (v{latest_version}).\n\n"
+        f"Would you like to visit the releases page?",
         icon='info'
     )
 
@@ -125,6 +137,7 @@ def main():
 
 def launch_main_window(root, splash):
     """Launch the main application window"""
+    global pending_update_notification
     try:
         # Close splash screen
         splash.close()
@@ -134,6 +147,13 @@ def launch_main_window(root, splash):
 
         # Create and show main window
         app = MainWindow()
+
+        # Show update notification if there's a pending one
+        if pending_update_notification:
+            logger.info(f"Showing update notification for version {pending_update_notification}")
+            # Schedule notification to appear 1 second after main window is shown
+            app.after(1000, lambda: show_update_notification(pending_update_notification))
+
         app.mainloop()
 
     except Exception as e:

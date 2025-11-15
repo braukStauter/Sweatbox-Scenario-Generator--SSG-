@@ -82,11 +82,11 @@ class AutoUpdater:
 
             # Compare versions
             try:
-                if version_parser.parse(latest_version) > version_parser.parse(current_version):
-                    logger.info(f"Update available: v{current_version} → v{latest_version}")
+                if version_parser.parse(latest_version) != version_parser.parse(current_version):
+                    logger.info(f"Version mismatch: v{current_version} (local) vs v{latest_version} (GitHub)")
                     return True, latest_version
                 else:
-                    logger.info("Application is up to date")
+                    logger.info("Application version matches GitHub release")
                     return False, None
             except Exception as e:
                 logger.error(f"Version comparison failed: {e}")
