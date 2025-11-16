@@ -25,7 +25,7 @@ class TraconMixedScenario(BaseScenario):
                  delay_value: str = None, total_session_minutes: int = None,
                  spawn_delay_range: str = None, difficulty_config=None, active_runways: List[str] = None,
                  enable_cifp_sids: bool = False, manual_sids: List[str] = None,
-                 use_cifp_speeds: bool = True) -> List[Aircraft]:
+                 use_cifp_speeds: bool = True, num_vfr: int = 0, vfr_spawn_locations: List[str] = None) -> List[Aircraft]:
         """
         Generate TRACON mixed scenario
 
@@ -45,6 +45,8 @@ class TraconMixedScenario(BaseScenario):
             enable_cifp_sids: Whether to use CIFP SID procedures
             manual_sids: Optional list of specific SIDs to use
             use_cifp_speeds: Whether to use CIFP speed restrictions for arrival aircraft
+            num_vfr: Number of VFR aircraft to generate (default: 0)
+            vfr_spawn_locations: Optional list of FRD spawn locations for VFR aircraft
 
         Returns:
             List of Aircraft objects
