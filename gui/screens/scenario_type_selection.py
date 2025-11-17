@@ -46,6 +46,15 @@ class ScenarioTypeSelectionScreen(tk.Frame):
         subtitle = ThemedLabel(header, text="Choose the type of scenario you want to generate", fg=DarkTheme.FG_SECONDARY)
         subtitle.pack(anchor='w', pady=(DarkTheme.PADDING_SMALL, 0))
 
+        # Flight data loading status (hidden by default)
+        self.loading_status_label = ThemedLabel(
+            header,
+            text="[Loading] Flight data loading in background...",
+            fg=DarkTheme.ACCENT_PRIMARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+        )
+        # Don't pack yet - will show if data is loading
+
         # Divider
         divider = tk.Frame(self, bg=DarkTheme.DIVIDER, height=1)
         divider.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
@@ -115,3 +124,24 @@ class ScenarioTypeSelectionScreen(tk.Frame):
         if self.selected_scenario:
             self.app_controller.set_scenario_type(self.selected_scenario)
             self.app_controller.show_screen('scenario_config')
+
+    def show_loading_status(self):
+        """Show flight data loading status"""
+        self.loading_status_label.pack(anchor='w', pady=(DarkTheme.PADDING_SMALL, 0))
+
+    def hide_loading_status(self):
+        """Hide flight data loading status"""
+        self.loading_status_label.pack_forget()
+
+    def update_loading_status(self, is_loading, departures_count=0, arrivals_count=0):
+        """Update loading status text"""
+        if is_loading:
+            self.loading_status_label.config(text="[Loading] Flight data loading in background...")
+            self.show_loading_status()
+        else:
+            self.loading_status_label.config(
+                text=f"[Ready] Flight data ready ({departures_count} departures, {arrivals_count} arrivals)",
+                fg="#00ff00"  # Green color for success
+            )
+            # Keep it visible for a moment, then hide it
+            self.after(3000, self.hide_loading_status)

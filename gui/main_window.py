@@ -218,6 +218,8 @@ class MainWindow(tk.Tk):
         self.cached_departures = []
         self.cached_arrivals = []
         self.flight_cache_timestamp = None
+        self.flight_data_loading = False
+        self.flight_data_ready = False
 
         # Cached enroute transient pool (loaded when ARTCC is selected)
         # Departure/arrival pools are fetched during generation based on selected airports
@@ -569,11 +571,11 @@ class MainWindow(tk.Tk):
                 self.cifp_parser = None
                 logger.warning("CIFP data not found")
 
-            # Load flight data from API in parallel
-            logger.info("Pre-loading flight data from API...")
-            self._preload_flight_data(airport_icao)
+            # Start loading flight data from API in background (non-blocking)
+            logger.info("Starting background flight data loading from API...")
+            self._start_flight_data_loading(airport_icao)
 
-            # Hide loading and show next screen (thread-safe)
+            # Hide loading and show next screen immediately (thread-safe)
             self.after(0, self._on_airport_data_loaded)
 
         except Exception as e:
@@ -582,55 +584,84 @@ class MainWindow(tk.Tk):
             error_msg = str(e)
             self.after(0, lambda msg=error_msg: self._on_airport_data_error(msg))
 
-    def _preload_flight_data(self, airport_icao):
-        """Pre-load flight data from API (called from background thread)"""
+    def _start_flight_data_loading(self, airport_icao):
+        """Start loading flight data from API in background (non-blocking)"""
         import time
         import threading
 
-        # Containers for results
-        departures_result = [None]
-        arrivals_result = [None]
+        # Mark data as loading
+        self.flight_data_loading = True
+        self.flight_data_ready = False
 
-        def fetch_departures():
-            try:
-                logger.info(f"Fetching 200 departures from {airport_icao}...")
-                departures_result[0] = self.api_client.fetch_departures(airport_icao, limit=200)
-                logger.info(f"Fetched {len(departures_result[0]) if departures_result[0] else 0} departures")
-            except Exception as e:
-                logger.error(f"Error fetching departures: {e}")
-                departures_result[0] = []
+        def fetch_and_store():
+            """Fetch both departures and arrivals in parallel"""
+            departures_result = [None]
+            arrivals_result = [None]
 
-        def fetch_arrivals():
-            try:
-                logger.info(f"Fetching 200 arrivals to {airport_icao}...")
-                arrivals_result[0] = self.api_client.fetch_arrivals(airport_icao, limit=200)
-                logger.info(f"Fetched {len(arrivals_result[0]) if arrivals_result[0] else 0} arrivals")
-            except Exception as e:
-                logger.error(f"Error fetching arrivals: {e}")
-                arrivals_result[0] = []
+            def fetch_departures():
+                try:
+                    logger.info(f"Fetching 1000 departures from {airport_icao}...")
+                    departures_result[0] = self.api_client.fetch_departures(airport_icao, limit=1000)
+                    logger.info(f"Fetched {len(departures_result[0]) if departures_result[0] else 0} departures")
+                except Exception as e:
+                    logger.error(f"Error fetching departures: {e}")
+                    departures_result[0] = []
 
-        # Start both threads
-        dep_thread = threading.Thread(target=fetch_departures, daemon=True)
-        arr_thread = threading.Thread(target=fetch_arrivals, daemon=True)
+            def fetch_arrivals():
+                try:
+                    logger.info(f"Fetching 1000 arrivals to {airport_icao}...")
+                    arrivals_result[0] = self.api_client.fetch_arrivals(airport_icao, limit=1000)
+                    logger.info(f"Fetched {len(arrivals_result[0]) if arrivals_result[0] else 0} arrivals")
+                except Exception as e:
+                    logger.error(f"Error fetching arrivals: {e}")
+                    arrivals_result[0] = []
 
-        dep_thread.start()
-        arr_thread.start()
+            # Start both fetch threads
+            dep_thread = threading.Thread(target=fetch_departures, daemon=True)
+            arr_thread = threading.Thread(target=fetch_arrivals, daemon=True)
 
-        # Wait for both to complete
-        dep_thread.join()
-        arr_thread.join()
+            dep_thread.start()
+            arr_thread.start()
 
-        # Store results
-        self.cached_departures = departures_result[0] if departures_result[0] else []
-        self.cached_arrivals = arrivals_result[0] if arrivals_result[0] else []
-        self.flight_cache_timestamp = time.time()
+            # Wait for both to complete
+            dep_thread.join()
+            arr_thread.join()
 
-        logger.info(f"Flight data pre-loading complete: {len(self.cached_departures)} departures, {len(self.cached_arrivals)} arrivals")
+            # Store results
+            self.cached_departures = departures_result[0] if departures_result[0] else []
+            self.cached_arrivals = arrivals_result[0] if arrivals_result[0] else []
+            self.flight_cache_timestamp = time.time()
+            self.flight_data_loading = False
+            self.flight_data_ready = True
+
+            logger.info(f"Flight data loading complete: {len(self.cached_departures)} departures, {len(self.cached_arrivals)} arrivals")
+
+            # Update GUI status (thread-safe)
+            self.after(0, lambda: self._on_flight_data_loaded())
+
+        # Start the loading thread (non-blocking)
+        loading_thread = threading.Thread(target=fetch_and_store, daemon=True)
+        loading_thread.start()
+        logger.info("Flight data loading started in background")
 
     def _on_airport_data_loaded(self):
         """Called when airport data is loaded successfully"""
         self.screens['airport'].hide_loading()
         self.show_screen('scenario_type')
+
+        # Show loading status if flight data is still loading
+        if self.flight_data_loading and not self.flight_data_ready:
+            self.screens['scenario_type'].update_loading_status(True)
+
+    def _on_flight_data_loaded(self):
+        """Called when flight data loading completes"""
+        # Update status in scenario type screen if it's visible
+        if hasattr(self, 'screens') and 'scenario_type' in self.screens:
+            self.screens['scenario_type'].update_loading_status(
+                False,
+                len(self.cached_departures),
+                len(self.cached_arrivals)
+            )
 
     def _on_airport_data_error(self, error_message):
         """Called when airport data loading fails"""
@@ -891,6 +922,15 @@ class MainWindow(tk.Tk):
                     logger.info(f"Arrival airport runways: {arrival_airport_runways}")
                 if departure_airport_runways:
                     logger.info(f"Departure airport runways: {departure_airport_runways}")
+
+            # Wait for flight data to finish loading (if still in progress)
+            if self.flight_data_loading and not self.flight_data_ready:
+                self._update_progress("Waiting for flight data to finish loading...")
+                logger.info("Waiting for background flight data loading to complete...")
+                import time
+                while self.flight_data_loading and not self.flight_data_ready:
+                    time.sleep(0.1)  # Check every 100ms
+                logger.info("Flight data loading complete")
 
             # Update progress
             self._update_progress("Creating scenario...")
