@@ -239,16 +239,22 @@ class ScenarioConfigScreen(tk.Frame):
             difficulty_enabled = config.get('enable_difficulty', False)
             if difficulty_enabled:
                 try:
-                    easy_count = int(config.get('difficulty_easy', '0') or '0')
-                    medium_count = int(config.get('difficulty_medium', '0') or '0')
-                    hard_count = int(config.get('difficulty_hard', '0') or '0')
+                    # Check departures difficulty
+                    dep_easy = int(config.get('difficulty_departures_easy', '0') or '0')
+                    dep_medium = int(config.get('difficulty_departures_medium', '0') or '0')
+                    dep_hard = int(config.get('difficulty_departures_hard', '0') or '0')
 
-                    if easy_count < 0 or medium_count < 0 or hard_count < 0:
+                    # Check arrivals difficulty
+                    arr_easy = int(config.get('difficulty_arrivals_easy', '0') or '0')
+                    arr_medium = int(config.get('difficulty_arrivals_medium', '0') or '0')
+                    arr_hard = int(config.get('difficulty_arrivals_hard', '0') or '0')
+
+                    if any(x < 0 for x in [dep_easy, dep_medium, dep_hard, arr_easy, arr_medium, arr_hard]):
                         errors.append("Difficulty counts cannot be negative")
 
-                    total_aircraft = easy_count + medium_count + hard_count
+                    total_aircraft = dep_easy + dep_medium + dep_hard + arr_easy + arr_medium + arr_hard
                     if total_aircraft == 0:
-                        errors.append("Must specify at least one aircraft in difficulty levels")
+                        errors.append("Must specify at least one aircraft across all difficulty levels and categories")
                 except ValueError:
                     errors.append("Difficulty counts must be valid numbers")
             else:
@@ -925,7 +931,7 @@ class ScenarioConfigScreen(tk.Frame):
         divider.pack(fill='x', pady=DarkTheme.PADDING_MEDIUM)
 
     def _add_difficulty_section(self, parent):
-        """Add difficulty level configuration section"""
+        """Add difficulty level configuration section with separate arrivals/departures"""
         section = ThemedFrame(parent)
         section.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
 
@@ -964,7 +970,7 @@ class ScenarioConfigScreen(tk.Frame):
         # Hint text (below checkbox)
         hint = ThemedLabel(
             section,
-            text="(splits aircraft counts into difficulty tiers)",
+            text="(splits aircraft counts into difficulty tiers per category)",
             fg=DarkTheme.FG_DISABLED,
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
             wraplength=600
@@ -976,70 +982,53 @@ class ScenarioConfigScreen(tk.Frame):
         difficulty_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
         difficulty_frame.pack_forget()  # Hide initially
 
-        # Grid layout for difficulty inputs
-        grid = ThemedFrame(difficulty_frame)
-        grid.pack(fill='x', padx=(DarkTheme.PADDING_LARGE, 0))
+        # Helper to create difficulty section for a category
+        def create_category_difficulty(parent, category_name, key_prefix):
+            section = ThemedFrame(parent)
+            section.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0), padx=(DarkTheme.PADDING_LARGE, 0))
 
-        # Easy difficulty - Required field with red asterisk
-        easy_label_frame = tk.Frame(grid, bg=DarkTheme.BG_PRIMARY)
-        easy_label_frame.grid(row=0, column=0, sticky='w',
-                             padx=(0, DarkTheme.PADDING_SMALL))
+            section_title = ThemedLabel(
+                section,
+                text=category_name,
+                fg=DarkTheme.FG_SECONDARY,
+                font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)
+            )
+            section_title.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
-        ThemedLabel(easy_label_frame, text="Easy:").pack(side='left')
-        tk.Label(
-            easy_label_frame,
-            text=" *",
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
-            fg='#FF4444',
-            bg=DarkTheme.BG_PRIMARY
-        ).pack(side='left')
+            grid = ThemedFrame(section)
+            grid.pack(fill='x')
 
-        easy_entry = ThemedEntry(grid, placeholder="0", validate_type="integer")
-        easy_entry.grid(row=0, column=1, sticky='ew',
-                       padx=(0, DarkTheme.PADDING_LARGE))
-        self.inputs['difficulty_easy'] = easy_entry
+            # Easy
+            ThemedLabel(grid, text="Easy:", fg=DarkTheme.SUCCESS).grid(
+                row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL)
+            )
+            easy_entry = ThemedEntry(grid, placeholder="0", validate_type="integer")
+            easy_entry.grid(row=0, column=1, sticky='ew', padx=(0, DarkTheme.PADDING_MEDIUM))
+            self.inputs[f'{key_prefix}_easy'] = easy_entry
 
-        # Medium difficulty - Required field with red asterisk
-        medium_label_frame = tk.Frame(grid, bg=DarkTheme.BG_PRIMARY)
-        medium_label_frame.grid(row=0, column=2, sticky='w',
-                               padx=(0, DarkTheme.PADDING_SMALL))
+            # Medium
+            ThemedLabel(grid, text="Medium:", fg=DarkTheme.WARNING).grid(
+                row=0, column=2, sticky='w', padx=(0, DarkTheme.PADDING_SMALL)
+            )
+            medium_entry = ThemedEntry(grid, placeholder="0", validate_type="integer")
+            medium_entry.grid(row=0, column=3, sticky='ew', padx=(0, DarkTheme.PADDING_MEDIUM))
+            self.inputs[f'{key_prefix}_medium'] = medium_entry
 
-        ThemedLabel(medium_label_frame, text="Medium:").pack(side='left')
-        tk.Label(
-            medium_label_frame,
-            text=" *",
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
-            fg='#FF4444',
-            bg=DarkTheme.BG_PRIMARY
-        ).pack(side='left')
+            # Hard
+            ThemedLabel(grid, text="Hard:", fg=DarkTheme.ERROR).grid(
+                row=0, column=4, sticky='w', padx=(0, DarkTheme.PADDING_SMALL)
+            )
+            hard_entry = ThemedEntry(grid, placeholder="0", validate_type="integer")
+            hard_entry.grid(row=0, column=5, sticky='ew')
+            self.inputs[f'{key_prefix}_hard'] = hard_entry
 
-        medium_entry = ThemedEntry(grid, placeholder="0", validate_type="integer")
-        medium_entry.grid(row=0, column=3, sticky='ew',
-                         padx=(0, DarkTheme.PADDING_LARGE))
-        self.inputs['difficulty_medium'] = medium_entry
+            grid.columnconfigure(1, weight=1)
+            grid.columnconfigure(3, weight=1)
+            grid.columnconfigure(5, weight=1)
 
-        # Hard difficulty - Required field with red asterisk
-        hard_label_frame = tk.Frame(grid, bg=DarkTheme.BG_PRIMARY)
-        hard_label_frame.grid(row=0, column=4, sticky='w',
-                             padx=(0, DarkTheme.PADDING_SMALL))
-
-        ThemedLabel(hard_label_frame, text="Hard:").pack(side='left')
-        tk.Label(
-            hard_label_frame,
-            text=" *",
-            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
-            fg='#FF4444',
-            bg=DarkTheme.BG_PRIMARY
-        ).pack(side='left')
-
-        hard_entry = ThemedEntry(grid, placeholder="0", validate_type="integer")
-        hard_entry.grid(row=0, column=5, sticky='ew')
-        self.inputs['difficulty_hard'] = hard_entry
-
-        # Make entry columns expand equally
-        grid.columnconfigure(1, weight=1)
-        grid.columnconfigure(3, weight=1)
-        grid.columnconfigure(5, weight=1)
+        # Create difficulty sections for each category
+        create_category_difficulty(difficulty_frame, "Departures", "difficulty_departures")
+        create_category_difficulty(difficulty_frame, "Arrivals", "difficulty_arrivals")
 
         # Store references for toggling
         self.difficulty_section = section
@@ -1831,18 +1820,24 @@ class ScenarioConfigScreen(tk.Frame):
                 except ValueError:
                     errors.append("Difficulty counts must be valid numbers")
             else:
-                # Validate airport scenario difficulty counts
+                # Validate airport scenario difficulty counts (separate for departures/arrivals)
                 try:
-                    easy_count = int(config.get('difficulty_easy', '0') or '0')
-                    medium_count = int(config.get('difficulty_medium', '0') or '0')
-                    hard_count = int(config.get('difficulty_hard', '0') or '0')
+                    # Check departures difficulty
+                    dep_easy = int(config.get('difficulty_departures_easy', '0') or '0')
+                    dep_medium = int(config.get('difficulty_departures_medium', '0') or '0')
+                    dep_hard = int(config.get('difficulty_departures_hard', '0') or '0')
 
-                    if easy_count < 0 or medium_count < 0 or hard_count < 0:
+                    # Check arrivals difficulty
+                    arr_easy = int(config.get('difficulty_arrivals_easy', '0') or '0')
+                    arr_medium = int(config.get('difficulty_arrivals_medium', '0') or '0')
+                    arr_hard = int(config.get('difficulty_arrivals_hard', '0') or '0')
+
+                    if any(x < 0 for x in [dep_easy, dep_medium, dep_hard, arr_easy, arr_medium, arr_hard]):
                         errors.append("Difficulty counts cannot be negative")
 
-                    total_aircraft = easy_count + medium_count + hard_count
+                    total_aircraft = dep_easy + dep_medium + dep_hard + arr_easy + arr_medium + arr_hard
                     if total_aircraft == 0:
-                        errors.append("Must specify at least one aircraft in difficulty levels")
+                        errors.append("Must specify at least one aircraft across all difficulty levels and categories")
                 except ValueError:
                     errors.append("Difficulty counts must be valid numbers")
         else:
@@ -1922,10 +1917,11 @@ class ScenarioConfigScreen(tk.Frame):
             has_arrivals = False
             if difficulty_enabled:
                 try:
-                    easy_count = int(config.get('difficulty_easy', '0') or '0')
-                    medium_count = int(config.get('difficulty_medium', '0') or '0')
-                    hard_count = int(config.get('difficulty_hard', '0') or '0')
-                    has_arrivals = (easy_count + medium_count + hard_count) > 0
+                    # Check arrivals difficulty counts
+                    arr_easy = int(config.get('difficulty_arrivals_easy', '0') or '0')
+                    arr_medium = int(config.get('difficulty_arrivals_medium', '0') or '0')
+                    arr_hard = int(config.get('difficulty_arrivals_hard', '0') or '0')
+                    has_arrivals = (arr_easy + arr_medium + arr_hard) > 0
                 except ValueError:
                     pass
             else:

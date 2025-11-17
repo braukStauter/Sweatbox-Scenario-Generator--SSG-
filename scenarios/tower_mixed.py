@@ -23,7 +23,8 @@ class TowerMixedScenario(BaseScenario):
                  delay_value: str = None, total_session_minutes: int = None,
                  spawn_delay_range: str = None, difficulty_config=None,
                  enable_cifp_sids: bool = False, manual_sids: List[str] = None,
-                 num_vfr: int = 0, vfr_spawn_locations: List[str] = None) -> List[Aircraft]:
+                 num_vfr: int = 0, vfr_spawn_locations: List[str] = None,
+                 difficulty_departures_config=None, difficulty_arrivals_config=None) -> List[Aircraft]:
         """
         Generate tower scenario with departures and arrivals
 
@@ -36,15 +37,21 @@ class TowerMixedScenario(BaseScenario):
             delay_value: For INCREMENTAL mode: delay range/value in minutes (e.g., "2-5" or "3")
             total_session_minutes: For TOTAL mode: total session length in minutes
             spawn_delay_range: LEGACY parameter - kept for backward compatibility
-            difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
+            difficulty_config: DEPRECATED - use difficulty_departures_config and difficulty_arrivals_config instead
             enable_cifp_sids: Whether to use CIFP SID procedures
             manual_sids: Optional list of specific SIDs to use
             num_vfr: Number of VFR aircraft to generate
             vfr_spawn_locations: Optional list of FRD strings for VFR spawn locations
+            difficulty_departures_config: Optional dict with 'easy', 'medium', 'hard' counts for departure difficulty
+            difficulty_arrivals_config: Optional dict with 'easy', 'medium', 'hard' counts for arrival difficulty
 
         Returns:
             List of Aircraft objects
         """
+        # Handle backward compatibility - if old difficulty_config is passed, use it for both
+        if difficulty_config and not difficulty_departures_config and not difficulty_arrivals_config:
+            difficulty_departures_config = difficulty_config
+            difficulty_arrivals_config = difficulty_config
         # Reset tracking for new generation
         self._reset_tracking()
 
@@ -66,8 +73,9 @@ class TowerMixedScenario(BaseScenario):
         # Get runway groups for per-group distance tracking
         runway_groups = self.geojson_parser.get_runway_groups()
 
-        # Setup difficulty assignment
-        difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
+        # Setup difficulty assignment for departures and arrivals separately
+        difficulty_departures_list, difficulty_departures_index = self._setup_difficulty_assignment(difficulty_departures_config)
+        difficulty_arrivals_list, difficulty_arrivals_index = self._setup_difficulty_assignment(difficulty_arrivals_config)
 
         # Handle legacy spawn_delay_range parameter
         if spawn_delay_range and not delay_value:
@@ -116,7 +124,7 @@ class TowerMixedScenario(BaseScenario):
                     if spawn_delay_range and not delay_value:
                         aircraft.spawn_delay = random.randint(min_delay, max_delay)
                         logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
-                    difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                    difficulty_departures_index = self._assign_difficulty(aircraft, difficulty_departures_list, difficulty_departures_index)
                     self.aircraft.append(aircraft)
                 else:
                     # Track failed gates
@@ -144,7 +152,7 @@ class TowerMixedScenario(BaseScenario):
                     if spawn_delay_range and not delay_value:
                         aircraft.spawn_delay = random.randint(min_delay, max_delay)
                         logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
-                    difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                    difficulty_departures_index = self._assign_difficulty(aircraft, difficulty_departures_list, difficulty_departures_index)
                     self.aircraft.append(aircraft)
                     num_ga_created += 1
 
@@ -229,7 +237,7 @@ class TowerMixedScenario(BaseScenario):
                 if spawn_delay_range and not delay_value:
                     aircraft.spawn_delay = random.randint(min_delay, max_delay)
                     logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
-                difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                difficulty_arrivals_index = self._assign_difficulty(aircraft, difficulty_arrivals_list, difficulty_arrivals_index)
                 self.aircraft.append(aircraft)
                 num_arrivals_created += 1
 
@@ -241,7 +249,7 @@ class TowerMixedScenario(BaseScenario):
         # Generate VFR aircraft if requested
         if num_vfr > 0:
             logger.info(f"Generating {num_vfr} VFR aircraft")
-            vfr_aircraft = self._generate_vfr_aircraft(num_vfr, vfr_spawn_locations or [], active_runways, difficulty_list, difficulty_index)
+            vfr_aircraft = self._generate_vfr_aircraft(num_vfr, vfr_spawn_locations or [], active_runways, difficulty_arrivals_list, difficulty_arrivals_index)
             self.aircraft.extend(vfr_aircraft)
 
         # Apply new spawn delay system

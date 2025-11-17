@@ -25,7 +25,8 @@ class TraconMixedScenario(BaseScenario):
                  delay_value: str = None, total_session_minutes: int = None,
                  spawn_delay_range: str = None, difficulty_config=None, active_runways: List[str] = None,
                  enable_cifp_sids: bool = False, manual_sids: List[str] = None,
-                 use_cifp_speeds: bool = True, num_vfr: int = 0, vfr_spawn_locations: List[str] = None) -> List[Aircraft]:
+                 use_cifp_speeds: bool = True, num_vfr: int = 0, vfr_spawn_locations: List[str] = None,
+                 difficulty_departures_config=None, difficulty_arrivals_config=None) -> List[Aircraft]:
         """
         Generate TRACON mixed scenario
 
@@ -40,19 +41,26 @@ class TraconMixedScenario(BaseScenario):
             delay_value: For INCREMENTAL mode: delay range/value in minutes (e.g., "2-5" or "3")
             total_session_minutes: For TOTAL mode: total session length in minutes
             spawn_delay_range: LEGACY parameter - kept for backward compatibility
-            difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels
+            difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts for difficulty levels (LEGACY - use separate configs)
             active_runways: List of active runway designators
             enable_cifp_sids: Whether to use CIFP SID procedures
             manual_sids: Optional list of specific SIDs to use
             use_cifp_speeds: Whether to use CIFP speed restrictions for arrival aircraft
             num_vfr: Number of VFR aircraft to generate (default: 0)
             vfr_spawn_locations: Optional list of FRD spawn locations for VFR aircraft
+            difficulty_departures_config: Optional dict with 'easy', 'medium', 'hard' counts for departure difficulty levels
+            difficulty_arrivals_config: Optional dict with 'easy', 'medium', 'hard' counts for arrival difficulty levels
 
         Returns:
             List of Aircraft objects
         """
         # Reset tracking for new generation
         self._reset_tracking()
+
+        # Handle backward compatibility - if old difficulty_config is provided but not separate configs
+        if difficulty_config and not difficulty_departures_config and not difficulty_arrivals_config:
+            difficulty_departures_config = difficulty_config
+            difficulty_arrivals_config = difficulty_config
 
         # Store use_cifp_speeds for use in speed calculation
         self.use_cifp_speeds = use_cifp_speeds
@@ -91,8 +99,9 @@ class TraconMixedScenario(BaseScenario):
         else:
             logger.info("No STAR transitions specified for arrivals")
 
-        # Setup difficulty assignment
-        difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
+        # Setup separate difficulty assignment for departures and arrivals
+        difficulty_departures_list, difficulty_departures_index = self._setup_difficulty_assignment(difficulty_departures_config)
+        difficulty_arrivals_list, difficulty_arrivals_index = self._setup_difficulty_assignment(difficulty_arrivals_config)
 
         # Handle legacy spawn_delay_range parameter
         if spawn_delay_range and not delay_value:
@@ -138,7 +147,7 @@ class TraconMixedScenario(BaseScenario):
                 if spawn_delay_range and not delay_value:
                     aircraft.spawn_delay = random.randint(min_delay, max_delay)
                     logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
-                difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                difficulty_departures_index = self._assign_difficulty(aircraft, difficulty_departures_list, difficulty_departures_index)
                 departures_list.append(aircraft)
             else:
                 # Track which gate failed to create aircraft
@@ -227,7 +236,7 @@ class TraconMixedScenario(BaseScenario):
                     if spawn_delay_range and not delay_value:
                         aircraft.spawn_delay = random.randint(min_delay, max_delay)
                         logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
-                    difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                    difficulty_arrivals_index = self._assign_difficulty(aircraft, difficulty_arrivals_list, difficulty_arrivals_index)
                     arrivals_list.append(aircraft)
                     arrivals_created += 1
                     star_round_robin_index += 1  # Advance round-robin only on successful creation
@@ -241,7 +250,7 @@ class TraconMixedScenario(BaseScenario):
         vfr_list = []
         if num_vfr > 0:
             logger.info(f"Generating {num_vfr} VFR aircraft")
-            vfr_list = self._generate_vfr_aircraft(num_vfr, vfr_spawn_locations, active_runways, difficulty_list, difficulty_index)
+            vfr_list = self._generate_vfr_aircraft(num_vfr, vfr_spawn_locations, active_runways, difficulty_arrivals_list, difficulty_arrivals_index)
 
         # Merge all aircraft lists: randomly interleave departures and VFR into arrivals
         # while preserving the arrivals' STAR alternating order

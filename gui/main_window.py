@@ -701,33 +701,51 @@ class MainWindow(tk.Tk):
 
             # Parse difficulty levels first to determine aircraft counts
             difficulty_config = None
+            difficulty_departures_config = None
+            difficulty_arrivals_config = None
+
             if config.get('enable_difficulty'):
-                easy_count = int(config.get('difficulty_easy', 0) or 0)
-                medium_count = int(config.get('difficulty_medium', 0) or 0)
-                hard_count = int(config.get('difficulty_hard', 0) or 0)
-
-                difficulty_config = {
-                    'easy': easy_count,
-                    'medium': medium_count,
-                    'hard': hard_count
-                }
-
-                # When difficulty is enabled, calculate total aircraft from difficulty counts
-                total_aircraft = easy_count + medium_count + hard_count
-
-                # Split aircraft based on scenario type
                 if self.scenario_type in ['ground_mixed', 'tower_mixed', 'tracon_mixed']:
-                    # Mixed scenarios: split evenly between departures and arrivals
-                    num_departures = total_aircraft // 2
-                    num_arrivals = total_aircraft - num_departures  # Gives remainder to arrivals if odd
+                    # Mixed scenarios: separate difficulty for departures and arrivals
+                    difficulty_departures_config = {
+                        'easy': int(config.get('difficulty_departures_easy', 0) or 0),
+                        'medium': int(config.get('difficulty_departures_medium', 0) or 0),
+                        'hard': int(config.get('difficulty_departures_hard', 0) or 0)
+                    }
+                    difficulty_arrivals_config = {
+                        'easy': int(config.get('difficulty_arrivals_easy', 0) or 0),
+                        'medium': int(config.get('difficulty_arrivals_medium', 0) or 0),
+                        'hard': int(config.get('difficulty_arrivals_hard', 0) or 0)
+                    }
+
+                    # Calculate counts from difficulty
+                    num_departures = sum(difficulty_departures_config.values())
+                    num_arrivals = sum(difficulty_arrivals_config.values())
+
+                    # Use the single difficulty_config for backward compatibility with departure-only logic
+                    difficulty_config = difficulty_departures_config
+
                 elif self.scenario_type == 'tracon_arrivals':
-                    # Arrivals-only scenario
+                    # Arrivals-only scenario - use arrivals difficulty
+                    difficulty_arrivals_config = {
+                        'easy': int(config.get('difficulty_arrivals_easy', 0) or 0),
+                        'medium': int(config.get('difficulty_arrivals_medium', 0) or 0),
+                        'hard': int(config.get('difficulty_arrivals_hard', 0) or 0)
+                    }
                     num_departures = 0
-                    num_arrivals = total_aircraft
+                    num_arrivals = sum(difficulty_arrivals_config.values())
+                    difficulty_config = difficulty_arrivals_config
+
                 else:
-                    # Departure-only scenarios (ground_departures)
-                    num_departures = total_aircraft
+                    # Departure-only scenarios (ground_departures) - use departures difficulty
+                    difficulty_departures_config = {
+                        'easy': int(config.get('difficulty_departures_easy', 0) or 0),
+                        'medium': int(config.get('difficulty_departures_medium', 0) or 0),
+                        'hard': int(config.get('difficulty_departures_hard', 0) or 0)
+                    }
+                    num_departures = sum(difficulty_departures_config.values())
                     num_arrivals = 0
+                    difficulty_config = difficulty_departures_config
             else:
                 # Parse manual configuration
                 num_departures = int(config.get('num_departures', 0)) if config.get('num_departures') else 0
@@ -967,7 +985,10 @@ class MainWindow(tk.Tk):
                 departure_airport_runways if self.is_enroute_scenario else None,
                 difficulty_config_enroute,
                 difficulty_config_arrivals,
-                difficulty_config_departures
+                difficulty_config_departures,
+                # Mixed scenario separate difficulty configs
+                difficulty_departures_config,
+                difficulty_arrivals_config
             )
 
             if not aircraft:
@@ -1174,7 +1195,9 @@ class MainWindow(tk.Tk):
                           arrival_airports=None, departure_airports=None,
                           arrival_airport_runways=None, departure_airport_runways=None,
                           difficulty_config_enroute=None, difficulty_config_arrivals=None,
-                          difficulty_config_departures=None):
+                          difficulty_config_departures=None,
+                          # Mixed scenario separate difficulty configs
+                          difficulty_departures_config=None, difficulty_arrivals_config=None):
         """Generate aircraft based on scenario type"""
         # Handle enroute scenario
         if self.is_enroute_scenario:
@@ -1207,13 +1230,15 @@ class MainWindow(tk.Tk):
             return scenario.generate(num_departures, num_arrivals, active_runways,
                                     additional_separation, spawn_delay_mode, delay_value,
                                     total_session_minutes, None, difficulty_config,
-                                    enable_cifp_sids, manual_sids)
+                                    enable_cifp_sids, manual_sids,
+                                    difficulty_departures_config, difficulty_arrivals_config)
         elif self.scenario_type == 'tower_mixed':
             return scenario.generate(num_departures, num_arrivals, active_runways,
                                     additional_separation, spawn_delay_mode, delay_value,
                                     total_session_minutes, None, difficulty_config,
                                     enable_cifp_sids, manual_sids,
-                                    num_vfr, vfr_spawn_locations)
+                                    num_vfr, vfr_spawn_locations,
+                                    difficulty_departures_config, difficulty_arrivals_config)
         elif self.scenario_type == 'tracon_arrivals':
             return scenario.generate(num_arrivals, arrival_waypoints,
                                     delay_range, spawn_delay_mode, delay_value,
@@ -1224,7 +1249,8 @@ class MainWindow(tk.Tk):
                                     delay_range, spawn_delay_mode,
                                     delay_value, total_session_minutes, None,
                                     difficulty_config, active_runways, enable_cifp_sids, manual_sids,
-                                    use_cifp_speeds)
+                                    use_cifp_speeds, num_vfr, vfr_spawn_locations,
+                                    difficulty_departures_config, difficulty_arrivals_config)
         else:
             raise ValueError(f"Unknown scenario type: {self.scenario_type}")
 
