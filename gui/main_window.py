@@ -6,6 +6,7 @@ import logging
 import threading
 from pathlib import Path
 from typing import List, Dict
+from collections import defaultdict
 from gui.theme import DarkTheme
 from gui.screens.airport_selection import AirportSelectionScreen
 from gui.screens.scenario_type_selection import ScenarioTypeSelectionScreen
@@ -1000,7 +1001,6 @@ class MainWindow(tk.Tk):
 
                 # Add detailed failure breakdown if available
                 if hasattr(scenario, 'gate_failure_reasons') and scenario.gate_failure_reasons:
-                    from collections import defaultdict
                     failures_by_reason = defaultdict(list)
                     for gate, reason in scenario.gate_failure_reasons.items():
                         # Skip "Unknown reason" entries

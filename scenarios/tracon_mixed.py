@@ -272,7 +272,6 @@ class TraconMixedScenario(BaseScenario):
                 logger.warning(warning_msg)
                 logger.warning(f"Gate assignment failures ({len(failed_gates)} gates):")
                 # Group gates by failure reason
-                from collections import defaultdict
                 failures_by_reason = defaultdict(list)
                 for gate in failed_gates:
                     reason = self.gate_failure_reasons.get(gate, "Unknown reason")
