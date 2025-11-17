@@ -97,10 +97,10 @@ class TowerMixedScenario(BaseScenario):
             attempts = 0
             max_attempts = len(commercial_spots) * 2
             available_spots = commercial_spots.copy()
+            failed_gates = []  # Track gates that couldn't be filled
 
             while len(self.aircraft) < num_commercial and attempts < max_attempts and available_spots:
                 spot = random.choice(available_spots)
-                available_spots.remove(spot)
 
                 aircraft = self._create_departure_aircraft(
                     spot,
@@ -109,12 +109,19 @@ class TowerMixedScenario(BaseScenario):
                     manual_sids=manual_sids
                 )
                 if aircraft is not None:
+                    # Only remove spot if aircraft was successfully created
+                    available_spots.remove(spot)
                     # Legacy mode: apply random spawn delay
                     if spawn_delay_range and not delay_value:
                         aircraft.spawn_delay = random.randint(min_delay, max_delay)
                         logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
                     difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
                     self.aircraft.append(aircraft)
+                else:
+                    # Track failed gates
+                    if spot.name not in failed_gates:
+                        failed_gates.append(spot.name)
+                    available_spots.remove(spot)  # Remove failed spot to avoid retrying
 
                 attempts += 1
 
@@ -127,10 +134,11 @@ class TowerMixedScenario(BaseScenario):
 
             while num_ga_created < num_ga and attempts < max_attempts and available_ga_spots:
                 spot = random.choice(available_ga_spots)
-                available_ga_spots.remove(spot)
 
                 aircraft = self._create_ga_aircraft(spot)
                 if aircraft is not None:
+                    # Only remove spot if aircraft was successfully created
+                    available_ga_spots.remove(spot)
                     # Legacy mode: apply random spawn delay
                     if spawn_delay_range and not delay_value:
                         aircraft.spawn_delay = random.randint(min_delay, max_delay)
@@ -248,6 +256,35 @@ class TowerMixedScenario(BaseScenario):
                    f"{num_departures_actual} departures (requested {num_departures}), "
                    f"{num_arrivals_actual} arrivals (requested {num_arrivals}), "
                    f"{num_vfr_actual} VFR (requested {num_vfr})")
+
+        # Only add warning if we couldn't generate the requested number of departures
+        if num_departures_actual < num_departures:
+            shortage = num_departures - num_departures_actual
+            warning_msg = f"Generated {num_departures_actual}/{num_departures} departures. Missing {shortage}."
+
+            # Show detailed failure reasons for failed gates
+            if failed_gates and shortage <= len(failed_gates):
+                logger.warning(warning_msg)
+                logger.warning(f"Gate assignment failures ({len(failed_gates)} gates):")
+                # Group gates by failure reason
+                from collections import defaultdict
+                failures_by_reason = defaultdict(list)
+                for gate in failed_gates:
+                    reason = self.gate_failure_reasons.get(gate, "Unknown reason")
+                    failures_by_reason[reason].append(gate)
+
+                # Log each failure type with its gates
+                for reason, gates in sorted(failures_by_reason.items()):
+                    gate_list = ', '.join(gates[:10])
+                    if len(gates) > 10:
+                        gate_list += f" (and {len(gates) - 10} more)"
+                    logger.warning(f"  {reason}: {gate_list}")
+
+            else:
+                logger.warning(warning_msg)
+
+            self.gate_assignment_warnings.append(warning_msg)
+
         return self.aircraft
 
     def _create_arrival_aircraft(self, runway_name: str, distance_nm: float) -> Aircraft:

@@ -951,6 +951,40 @@ class MainWindow(tk.Tk):
                 ))
                 logger.warning(f"Generation completed with {error_count} CIFP/waypoint errors")
 
+            # Check for gate assignment warnings and show info dialog if any occurred
+            if hasattr(scenario, 'gate_assignment_warnings') and scenario.gate_assignment_warnings:
+                warning_count = len(scenario.gate_assignment_warnings)
+
+                # Build detailed message with gate failure reasons
+                msg_parts = [scenario.gate_assignment_warnings[0]]  # Main summary line
+
+                # Add detailed failure breakdown if available
+                if hasattr(scenario, 'gate_failure_reasons') and scenario.gate_failure_reasons:
+                    from collections import defaultdict
+                    failures_by_reason = defaultdict(list)
+                    for gate, reason in scenario.gate_failure_reasons.items():
+                        # Skip "Unknown reason" entries
+                        if reason != "Unknown reason":
+                            failures_by_reason[reason].append(gate)
+
+                    if failures_by_reason:
+                        msg_parts.append("\nGate assignment details:")
+                        for reason, gates in sorted(failures_by_reason.items()):
+                            gate_list = ', '.join(gates[:10])
+                            if len(gates) > 10:
+                                gate_list += f" (and {len(gates) - 10} more)"
+                            msg_parts.append(f"  • {reason}: {gate_list}")
+
+                warning_msg = '\n'.join(msg_parts)
+
+                # Show info dialog (thread-safe)
+                from tkinter import messagebox
+                self.after(0, lambda: messagebox.showinfo(
+                    "Generation Complete",
+                    warning_msg
+                ))
+                logger.warning(f"Generation completed with {warning_count} gate assignment warnings")
+
             # Apply preset commands if configured
             preset_command_rules = config.get('preset_command_rules', [])
             if preset_command_rules:

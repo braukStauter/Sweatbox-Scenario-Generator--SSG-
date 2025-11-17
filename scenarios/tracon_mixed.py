@@ -109,14 +109,15 @@ class TraconMixedScenario(BaseScenario):
 
         logger.info(f"Generating TRACON mixed scenario: {num_departures} departures, {num_arrivals} arrivals")
 
-        # Generate departures, trying more spots if needed
+        # Generate departures into a separate list for later merging
+        departures_list = []
+        failed_gates = []
         attempts = 0
         max_attempts = len(parking_spots) * 2
         available_spots = parking_spots.copy()
 
-        while len(self.aircraft) < num_departures and attempts < max_attempts and available_spots:
+        while len(departures_list) < num_departures and attempts < max_attempts and available_spots:
             spot = random.choice(available_spots)
-            available_spots.remove(spot)
 
             # Check if parking spot is for GA (has "GA" in the name)
             if "GA" in spot.name.upper():
@@ -131,16 +132,23 @@ class TraconMixedScenario(BaseScenario):
                 )
 
             if aircraft is not None:
+                # Only remove spot if aircraft was successfully created
+                available_spots.remove(spot)
                 # Legacy mode: apply random spawn delay
                 if spawn_delay_range and not delay_value:
                     aircraft.spawn_delay = random.randint(min_delay, max_delay)
                     logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
                 difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
-                self.aircraft.append(aircraft)
+                departures_list.append(aircraft)
+            else:
+                # Track which gate failed to create aircraft
+                if spot.name not in failed_gates:
+                    failed_gates.append(spot.name)
 
             attempts += 1
 
-        # Generate arrivals at waypoints using new simplified approach
+        # Generate arrivals into a separate list for later merging
+        arrivals_list = []
         if not star_transitions:
             logger.warning("No valid STAR waypoints provided for arrivals")
         else:
@@ -220,7 +228,7 @@ class TraconMixedScenario(BaseScenario):
                         aircraft.spawn_delay = random.randint(min_delay, max_delay)
                         logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
                     difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
-                    self.aircraft.append(aircraft)
+                    arrivals_list.append(aircraft)
                     arrivals_created += 1
                     star_round_robin_index += 1  # Advance round-robin only on successful creation
 
@@ -229,11 +237,16 @@ class TraconMixedScenario(BaseScenario):
             if arrivals_created < num_arrivals:
                 logger.warning(f"Could only generate {arrivals_created}/{num_arrivals} arrivals after {attempts} attempts (limited API data or missing waypoints)")
 
-        # Generate VFR aircraft if requested
+        # Generate VFR aircraft into a separate list for later merging
+        vfr_list = []
         if num_vfr > 0:
             logger.info(f"Generating {num_vfr} VFR aircraft")
-            vfr_aircraft = self._generate_vfr_aircraft(num_vfr, vfr_spawn_locations, active_runways, difficulty_list, difficulty_index)
-            self.aircraft.extend(vfr_aircraft)
+            vfr_list = self._generate_vfr_aircraft(num_vfr, vfr_spawn_locations, active_runways, difficulty_list, difficulty_index)
+
+        # Merge all aircraft lists: randomly interleave departures and VFR into arrivals
+        # while preserving the arrivals' STAR alternating order
+        self.aircraft = self._merge_aircraft_randomly(arrivals_list, departures_list, vfr_list)
+        logger.info(f"Merged {len(departures_list)} departures, {len(arrivals_list)} arrivals, and {len(vfr_list)} VFR into randomized sequence")
 
         # Apply new spawn delay system
         if not spawn_delay_range:
@@ -248,7 +261,76 @@ class TraconMixedScenario(BaseScenario):
                    f"{num_departures_actual} departures (requested {num_departures}), "
                    f"{num_arrivals_actual} arrivals (requested {num_arrivals}), "
                    f"{num_vfr_actual} VFR (requested {num_vfr})")
+
+        # Only add warning if we couldn't generate the requested number of departures
+        if num_departures_actual < num_departures:
+            shortage = num_departures - num_departures_actual
+            warning_msg = f"Generated {num_departures_actual}/{num_departures} departures. Missing {shortage}."
+
+            # Show detailed failure reasons for failed gates
+            if failed_gates and shortage <= len(failed_gates):
+                logger.warning(warning_msg)
+                logger.warning(f"Gate assignment failures ({len(failed_gates)} gates):")
+                # Group gates by failure reason
+                from collections import defaultdict
+                failures_by_reason = defaultdict(list)
+                for gate in failed_gates:
+                    reason = self.gate_failure_reasons.get(gate, "Unknown reason")
+                    failures_by_reason[reason].append(gate)
+
+                # Log each failure type with its gates
+                for reason, gates in sorted(failures_by_reason.items()):
+                    gate_list = ', '.join(gates[:10])
+                    if len(gates) > 10:
+                        gate_list += f" (and {len(gates) - 10} more)"
+                    logger.warning(f"  {reason}: {gate_list}")
+
+            else:
+                logger.warning(warning_msg)
+
+            self.gate_assignment_warnings.append(warning_msg)
+
         return self.aircraft
+
+    def _merge_aircraft_randomly(self, arrivals: List[Aircraft], departures: List[Aircraft],
+                                  vfr: List[Aircraft]) -> List[Aircraft]:
+        """
+        Merge departures and VFR aircraft randomly into arrivals list while preserving arrival order.
+
+        The arrivals maintain their round-robin STAR alternating pattern, while departures and VFR
+        are randomly interleaved throughout the sequence.
+
+        Args:
+            arrivals: List of arrival aircraft (in STAR alternating order)
+            departures: List of departure aircraft
+            vfr: List of VFR aircraft
+
+        Returns:
+            Merged list with randomized order between aircraft types
+        """
+        # Combine departures and VFR into a single list to interleave
+        non_arrivals = departures + vfr
+
+        # If no arrivals, just return the non-arrivals list (shuffled for randomness)
+        if not arrivals:
+            random.shuffle(non_arrivals)
+            return non_arrivals
+
+        # If no non-arrivals, just return the arrivals list in order
+        if not non_arrivals:
+            return arrivals
+
+        # Start with arrivals list to preserve their order
+        result = arrivals.copy()
+
+        # Randomly insert each non-arrival aircraft into the result
+        # This preserves the relative order of arrivals while mixing in departures/VFR
+        for aircraft in non_arrivals:
+            # Choose a random position to insert
+            insert_pos = random.randint(0, len(result))
+            result.insert(insert_pos, aircraft)
+
+        return result
 
     def _create_arrival_at_waypoint(self, waypoint, flight_data: Dict, star_name: str, active_runways: List[str] = None) -> Aircraft:
         """

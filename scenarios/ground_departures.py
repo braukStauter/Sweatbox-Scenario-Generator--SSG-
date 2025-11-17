@@ -96,4 +96,31 @@ class GroundDeparturesScenario(BaseScenario):
             self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
 
         logger.info(f"Generated {len(self.aircraft)} departure aircraft")
+
+        # Only add warning if we couldn't generate the requested number of aircraft
+        if len(self.aircraft) < num_departures:
+            shortage = num_departures - len(self.aircraft)
+            warning_msg = f"Generated {len(self.aircraft)}/{num_departures} departures. Missing {shortage}."
+
+            # Show detailed failure reasons for failed gates
+            if hasattr(self, 'gate_failure_reasons') and self.gate_failure_reasons:
+                logger.warning(warning_msg)
+                logger.warning(f"Gate assignment failures ({len(self.gate_failure_reasons)} gates):")
+                # Group gates by failure reason
+                from collections import defaultdict
+                failures_by_reason = defaultdict(list)
+                for gate, reason in self.gate_failure_reasons.items():
+                    failures_by_reason[reason].append(gate)
+
+                # Log each failure type with its gates
+                for reason, gates in sorted(failures_by_reason.items()):
+                    gate_list = ', '.join(gates[:10])
+                    if len(gates) > 10:
+                        gate_list += f" (and {len(gates) - 10} more)"
+                    logger.warning(f"  {reason}: {gate_list}")
+            else:
+                logger.warning(warning_msg)
+
+            self.gate_assignment_warnings.append(warning_msg)
+
         return self.aircraft

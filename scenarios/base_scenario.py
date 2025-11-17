@@ -48,6 +48,7 @@ class BaseScenario(ABC):
         self.used_callsigns: set = set()
         self.used_parking_spots: set = set()
         self.cifp_waypoint_errors: List[str] = []  # Track CIFP/waypoint errors for user notification
+        self.gate_assignment_warnings: List[str] = []  # Track gate assignment mismatches for user notification
         self.config = self._load_config()
 
         self.cached_flights = cached_flights or {'departures': [], 'arrivals': []}
@@ -74,6 +75,8 @@ class BaseScenario(ABC):
         self.used_parking_spots.clear()
         self.aircraft.clear()
         self.cifp_waypoint_errors.clear()
+        self.gate_assignment_warnings.clear()
+        self.gate_failure_reasons = {}  # Track why each gate failed
 
     def _setup_difficulty_assignment(self, difficulty_config):
         """
@@ -352,22 +355,27 @@ class BaseScenario(ABC):
 
         return gates
 
-    def _get_airline_for_parking(self, parking_name: str) -> str:
+    def _get_airline_for_parking(self, parking_name: str):
         """
-        Get a specific airline code for a parking spot based on configuration
+        Get allowed airline codes for a parking spot based on configuration
 
         Supports:
         1. Specific gates (highest priority): "B3" -> ["JBU"]
         2. Gate ranges: "B1-B11" -> ["AAL"]
-        3. Wildcards (lowest priority): "B#" -> ["AAL"]
+        3. Prefix wildcards: "B#" -> ["DAL"] (matches B1, B2, B3, etc.)
+        4. Catch-all wildcard (lowest priority): "#" -> ["DEFAULT"] (matches any gate)
+        5. Prohibited gates: ["BLANK"] -> Prevents aircraft from spawning at this gate/pattern
 
-        Priority order: Specific > Range > Wildcard
+        Priority order: Specific > Range > Prefix Wildcard > Catch-all Wildcard
+
+        Special value: Use ["BLANK"] to prohibit aircraft spawning at specified gates.
+        Example: "C#": ["BLANK"] will prevent any aircraft from using C gates.
 
         Args:
             parking_name: Name of the parking spot (e.g., "B3", "A10")
 
         Returns:
-            Random airline from matching configuration, or None
+            List of allowed airlines, "BLANK" if prohibited, or None if no restriction
         """
         parking_airlines = self.config.get('parking_airlines', {})
 
@@ -380,8 +388,12 @@ class BaseScenario(ABC):
         if parking_name in airport_config:
             airlines = airport_config[parking_name]
             if airlines:
+                # Check for BLANK value to prohibit spawning
+                if len(airlines) == 1 and airlines[0] == "BLANK":
+                    logger.debug(f"Gate {parking_name}: Marked as BLANK (prohibited)")
+                    return "BLANK"
                 logger.debug(f"Gate {parking_name}: Using specific assignment -> {airlines}")
-                return random.choice(airlines)
+                return airlines  # Return list of allowed airlines
 
         # Priority 2: Check for range matches
         for pattern, airlines in airport_config.items():
@@ -389,17 +401,50 @@ class BaseScenario(ABC):
                 expanded_gates = self._expand_gate_range(pattern)
                 if parking_name in expanded_gates:
                     if airlines:
+                        # Check for BLANK value to prohibit spawning
+                        if len(airlines) == 1 and airlines[0] == "BLANK":
+                            logger.debug(f"Gate {parking_name}: Matched range '{pattern}' marked as BLANK (prohibited)")
+                            return "BLANK"
                         logger.debug(f"Gate {parking_name}: Matched range '{pattern}' -> {airlines}")
-                        return random.choice(airlines)
+                        return airlines  # Return list of allowed airlines
 
-        # Priority 3: Check for wildcard matches
+        # Priority 3: Check for prefix wildcard matches (e.g., "A#", "B#", "FEDX#")
+        # Sort by prefix length (descending) so longer prefixes match first
+        wildcard_patterns = []
+        catchall_pattern = None
+
         for pattern, airlines in airport_config.items():
             if '#' in pattern:
                 prefix = pattern.replace('#', '')
-                if parking_name.startswith(prefix):
-                    if airlines:
-                        logger.debug(f"Gate {parking_name}: Matched wildcard '{pattern}' -> {airlines}")
-                        return random.choice(airlines)
+                if prefix:  # Has a prefix (e.g., "A#", "FEDX#")
+                    wildcard_patterns.append((pattern, prefix, airlines))
+                else:  # Bare "#" - this is the catch-all
+                    catchall_pattern = (pattern, airlines)
+
+        # Sort wildcard patterns by prefix length (longest first) for specificity
+        wildcard_patterns.sort(key=lambda x: len(x[1]), reverse=True)
+
+        # Try to match prefix wildcards
+        for pattern, prefix, airlines in wildcard_patterns:
+            if parking_name.startswith(prefix):
+                if airlines:
+                    # Check for BLANK value to prohibit spawning
+                    if len(airlines) == 1 and airlines[0] == "BLANK":
+                        logger.debug(f"Gate {parking_name}: Matched wildcard '{pattern}' marked as BLANK (prohibited)")
+                        return "BLANK"
+                    logger.debug(f"Gate {parking_name}: Matched wildcard '{pattern}' -> {airlines}")
+                    return airlines  # Return list of allowed airlines
+
+        # Priority 4: Check catch-all wildcard (lowest priority)
+        if catchall_pattern:
+            pattern, airlines = catchall_pattern
+            if airlines:
+                # Check for BLANK value to prohibit spawning
+                if len(airlines) == 1 and airlines[0] == "BLANK":
+                    logger.debug(f"Gate {parking_name}: Matched catch-all '{pattern}' marked as BLANK (prohibited)")
+                    return "BLANK"
+                logger.debug(f"Gate {parking_name}: Matched catch-all '{pattern}' -> {airlines}")
+                return airlines  # Return list of allowed airlines
 
         return None
 
@@ -629,38 +674,56 @@ class BaseScenario(ABC):
         Returns:
             Flight dictionary or None if pool is empty
         """
-        if not self.departure_flight_pool:
-            logger.warning("Departure flight pool depleted, fetching more from API...")
-            additional_flights = self.api_client.fetch_departures(
-                self.airport_icao,
-                limit=50,
-                sids=self.current_sids
-            )
-            if additional_flights:
-                valid_flights = filter_valid_flights(additional_flights)
-                self.departure_flight_pool.extend(valid_flights)
-                logger.info(f"Added {len(valid_flights)} more departures to pool")
-            else:
-                logger.error("Failed to fetch additional departures from API")
+        # Handle GA spots - use GA pool directly
+        if is_ga_spot:
+            if self.ga_departure_flights:
+                return self.ga_departure_flights.pop(0)
+            logger.warning("GA departure pool depleted")
+            # Track failure reason
+            if parking_spot_name:
+                self.gate_failure_reasons[parking_spot_name] = "GA pool depleted"
+            return None
+
+        # Get airline restrictions for this gate
+        if parking_spot_name:
+            parking_airlines = self._get_airline_for_parking(parking_spot_name)
+
+            # If gate is marked as BLANK, skip it entirely
+            if parking_airlines == "BLANK":
+                logger.debug(f"Skipping gate {parking_spot_name} - marked as BLANK (prohibited)")
+                self.gate_failure_reasons[parking_spot_name] = "BLANK (prohibited)"
                 return None
 
-        if parking_spot_name:
-            parking_airline = self._get_airline_for_parking(parking_spot_name)
-            if parking_airline:
-                for i, flight in enumerate(self.departure_flight_pool):
-                    aircraft_type = flight.get('aircraftType', '')
-                    # Skip GA aircraft at non-GA gates
-                    if not is_ga_spot and self._is_ga_aircraft_type(aircraft_type):
-                        continue
-                    if flight.get('operator') == parking_airline:
-                        return self.departure_flight_pool.pop(i)
+            if parking_airlines:
+                # Convert single airline to list for uniform handling
+                if isinstance(parking_airlines, str):
+                    parking_airlines = [parking_airlines]
 
-        for i, flight in enumerate(self.departure_flight_pool):
-            aircraft_type = flight.get('aircraftType', '')
-            if not is_ga_spot and self._is_ga_aircraft_type(aircraft_type):
-                continue
-            return self.departure_flight_pool.pop(i)
+                logger.debug(f"Gate {parking_spot_name} allows airlines {parking_airlines}")
 
+                # Try each allowed airline in order
+                for airline in parking_airlines:
+                    if airline in self.departure_flights_by_airline and self.departure_flights_by_airline[airline]:
+                        flight = self.departure_flights_by_airline[airline].pop(0)
+                        logger.debug(f"[MATCH] Assigned {flight.get('aircraftIdentification')} ({airline}) to gate {parking_spot_name}")
+                        return flight
+
+                # No flights found for any allowed airline
+                available_counts = {airline: len(self.departure_flights_by_airline.get(airline, [])) for airline in parking_airlines}
+                logger.warning(f"[NO MATCH] Gate {parking_spot_name} allows {parking_airlines} but no flights available: {available_counts}")
+                # Track failure reason with airline counts
+                airlines_str = ', '.join([f"{a}={c}" for a, c in available_counts.items()])
+                self.gate_failure_reasons[parking_spot_name] = f"No flights for allowed airlines ({airlines_str})"
+                return None
+
+        # Fallback: no gate restriction, use any available airline flight
+        for airline, flights in self.departure_flights_by_airline.items():
+            if flights:
+                flight = flights.pop(0)
+                logger.debug(f"Assigned {flight.get('aircraftIdentification')} ({airline}) (no gate restriction)")
+                return flight
+
+        logger.warning("All departure flight pools depleted")
         return None
 
     def _create_departure_aircraft(self, parking_spot, destination: str = None,
