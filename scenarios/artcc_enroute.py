@@ -203,7 +203,8 @@ class ArtccEnrouteScenario(BaseScenario):
                 logger.info(f"Generating {num_departures} departure aircraft...")
                 generation_futures['departures'] = executor.submit(
                     self._generate_departure_aircraft,
-                    num_departures, departures_pool, difficulty_config_departures
+                    num_departures, departures_pool, difficulty_config_departures,
+                    departure_airport_runways
                 )
 
             if num_arrivals > 0 and arrivals_pool:
@@ -572,8 +573,9 @@ class ArtccEnrouteScenario(BaseScenario):
         logger.info(f"Created {created} arrival aircraft (requested {count})")
 
     def _generate_departure_aircraft(self, count: int, flight_pool: List[Dict],
-                                      difficulty_config: Dict = None):
-        """Generate departure aircraft at parking spots with geojson validation"""
+                                      difficulty_config: Dict = None,
+                                      departure_airport_runways: Dict[str, List[str]] = None):
+        """Generate departure aircraft at parking spots with geojson validation and SID filtering"""
         from pathlib import Path
 
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
@@ -650,6 +652,23 @@ class ArtccEnrouteScenario(BaseScenario):
             if not airport_flights:
                 logger.debug(f"No flights available for departure airport {airport_icao}")
                 continue
+
+            # If active runways specified for this airport, filter by SID compatibility
+            active_runways = departure_airport_runways.get(airport_icao) if departure_airport_runways else None
+
+            if active_runways:
+                # Filter flights with SIDs that match active runways
+                valid_flights = []
+                for flight in airport_flights:
+                    sid = flight.get('departureProcedure', '')
+                    if not sid or self._procedure_matches_runways(sid, active_runways, airport_icao, is_sid=True):
+                        valid_flights.append(flight)
+
+                if valid_flights:
+                    airport_flights = valid_flights
+                    logger.debug(f"Filtered to {len(valid_flights)} flights with valid SIDs for runways {active_runways} at {airport_icao}")
+                else:
+                    logger.warning(f"No flights with valid SIDs for runways {active_runways} at {airport_icao}, using any available flight")
 
             flight_data = random.choice(airport_flights)
 

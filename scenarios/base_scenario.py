@@ -633,6 +633,29 @@ class BaseScenario(ABC):
 
         return None
 
+    def _get_sids_for_active_runways(self, active_runways: List[str]) -> List[str]:
+        """
+        Get all valid SIDs from CIFP data that match the active runways
+
+        Args:
+            active_runways: List of active runway designators (e.g., ['08', '26', '21'])
+
+        Returns:
+            List of SID names that are valid for at least one of the active runways
+        """
+        if not active_runways:
+            return []
+
+        valid_sids = []
+        for runway in active_runways:
+            runway_sids = self.cifp_parser.get_sids_for_runway(runway)
+            valid_sids.extend(runway_sids)
+
+        # Remove duplicates while preserving order
+        unique_sids = list(dict.fromkeys(valid_sids))
+
+        return unique_sids
+
     def _prepare_departure_flight_pool(self, active_runways: List[str] = None,
                                         enable_cifp_sids: bool = False,
                                         manual_sids: List[str] = None):
@@ -642,30 +665,185 @@ class BaseScenario(ABC):
         Args:
             active_runways: List of active runway names
             enable_cifp_sids: Whether to filter by SID/runway compatibility
-            manual_sids: Manual SID list if specified
+            manual_sids: Manual SID list if specified (overrides auto-detection)
         """
+        # Determine which SIDs to use
+        sids_to_fetch = None
+
+        if enable_cifp_sids:
+            if manual_sids:
+                # User manually specified SIDs - use those
+                sids_to_fetch = manual_sids
+                logger.info(f"Using manual SIDs: {sids_to_fetch}")
+            elif active_runways:
+                # Auto-detect valid SIDs from CIFP based on active runways
+                sids_to_fetch = self._get_sids_for_active_runways(active_runways)
+                if sids_to_fetch:
+                    logger.info(f"Auto-detected {len(sids_to_fetch)} SIDs from CIFP for runways {active_runways}: {sids_to_fetch}")
+                else:
+                    logger.warning(f"No SIDs found in CIFP data for active runways {active_runways}")
+
         # Store SIDs for later refetching if pool depletes
-        self.current_sids = manual_sids if (enable_cifp_sids and manual_sids) else None
+        self.current_sids = sids_to_fetch
+        # Store active runways for validation
+        self.active_runways = active_runways
 
+        # Always use cached flights first (already loaded with 1000 limit in background)
+        valid_flights = filter_valid_flights(self.cached_flights['departures'])
+        logger.info(f"Filtered {len(valid_flights)} valid departures from {len(self.cached_flights['departures'])} cached flights")
+
+        # Pre-filter and segment flights for efficient lookup
+        from collections import defaultdict
+        self.departure_flights_by_airline = defaultdict(list)
+        self.ga_departure_flights = []
+
+        filtered_ga = 0
+        filtered_sid = 0
+        flights_no_sid = 0
+        flights_sid_not_in_cifp = 0
+        sids_found_in_data = {}  # Track SIDs found in flight data
+        sids_matched = {}  # Track SIDs that matched our allowed list
+
+        for flight in valid_flights:
+            aircraft_type = flight.get('aircraftType', '')
+            operator = flight.get('operator', 'UNKNOWN')
+            route = flight.get('route', '')
+
+            # Try to get SID from departureProcedure field first, then extract from route
+            sid = flight.get('departureProcedure', '')
+            if not sid and route:
+                # Extract SID from route (format: AIRPORT.SID.WAYPOINT...)
+                from utils.flight_data_filter import extract_sid_from_route
+                sid = extract_sid_from_route(route)
+
+            # Separate GA flights into their own pool
+            if self._is_ga_aircraft_type(aircraft_type):
+                self.ga_departure_flights.append(flight)
+                filtered_ga += 1
+                continue
+
+            # Track all SIDs found in data for debugging
+            if sid:
+                sids_found_in_data[sid] = sids_found_in_data.get(sid, 0) + 1
+
+            # Filter by SID if needed (only when enable_cifp_sids is True)
+            if self.current_sids:
+                # STRICT MODE: Only allow flights with SIDs that match our current_sids list
+                if not sid:
+                    flights_no_sid += 1
+                    filtered_sid += 1
+                    continue  # Reject flights without SIDs
+
+                # Check if flight's SID matches our allowed list
+                # Support both exact match (BROAK1) and base match (BROAK matches BROAK1)
+                sid_matched = False
+
+                # Try exact match first
+                if sid in self.current_sids:
+                    sid_matched = True
+                else:
+                    # Try base name match (strip trailing digits from both)
+                    import re
+                    sid_base = re.sub(r'\d+$', '', sid)  # BROAK1 -> BROAK, or BROAK -> BROAK
+
+                    for allowed_sid in self.current_sids:
+                        allowed_base = re.sub(r'\d+$', '', allowed_sid)
+                        if sid_base == allowed_base:
+                            sid_matched = True
+                            break
+
+                if not sid_matched:
+                    # Check if SID exists in CIFP but doesn't match our runways
+                    sid_runways = self.cifp_parser.get_runways_for_departure(sid)
+                    if sid_runways:
+                        # SID exists in CIFP but serves different runways
+                        filtered_sid += 1
+                    else:
+                        # SID not in CIFP at all
+                        flights_sid_not_in_cifp += 1
+                        filtered_sid += 1
+                    continue  # Reject
+                else:
+                    # Track matched SIDs
+                    sids_matched[sid] = sids_matched.get(sid, 0) + 1
+
+            # Segment by airline for O(1) lookup
+            self.departure_flights_by_airline[operator].append(flight)
+
+        # Calculate total usable flights
+        total_usable = sum(len(flights) for flights in self.departure_flights_by_airline.values())
+
+        logger.info(f"Departure pool segmented: {total_usable} airline flights, {len(self.ga_departure_flights)} GA flights")
         if self.current_sids:
-            logger.info(f"Fetching departures from API with SID filtering: {self.current_sids}")
-            api_flights = self.api_client.fetch_departures(self.airport_icao, limit=200, sids=self.current_sids)
+            logger.info(f"STRICT SID filtering enabled for runways {self.active_runways}, allowed SIDs: {self.current_sids}")
+            logger.info(f"  - {flights_no_sid} flights without SID (rejected)")
+            logger.info(f"  - {flights_sid_not_in_cifp} flights with SID not in CIFP (rejected)")
+            logger.info(f"  - {filtered_sid} total flights rejected due to SID mismatch")
+            logger.info(f"  - {total_usable} flights matched allowed SIDs")
 
-            if api_flights:
-                valid_flights = filter_valid_flights(api_flights)
-                logger.info(f"Fetched {len(valid_flights)} valid departures from API with SID filter")
+            # Show what SIDs were found in the data
+            logger.info(f"SIDs found in flight data (top 15): {', '.join([f'{k}={v}' for k, v in sorted(sids_found_in_data.items(), key=lambda x: x[1], reverse=True)[:15]])}")
+            if sids_matched:
+                logger.info(f"SIDs that matched allowed list: {', '.join([f'{k}={v}' for k, v in sorted(sids_matched.items(), key=lambda x: x[1], reverse=True)])}")
             else:
-                logger.warning("API fetch with SID filter failed, using cached flights")
-                valid_flights = filter_valid_flights(self.cached_flights['departures'])
-        else:
-            valid_flights = filter_valid_flights(self.cached_flights['departures'])
-            logger.info(f"Filtered {len(valid_flights)} valid departures from {len(self.cached_flights['departures'])} cached")
+                logger.warning("NO SIDs in the data matched the allowed list! This means the API data doesn't contain flights with the required SIDs.")
+        logger.info(f"Airlines available: {len(self.departure_flights_by_airline)}")
+        logger.info(f"Top 10 airlines: {', '.join([f'{k}={len(v)}' for k, v in sorted(self.departure_flights_by_airline.items(), key=lambda x: len(x[1]), reverse=True)[:10]])}")
 
+        # Keep old pool for fallback/refetch scenarios
         self.departure_flight_pool = valid_flights
+
+    def _is_valid_departure_flight(self, flight: Dict) -> bool:
+        """
+        Validate if a departure flight's SID is compatible with active runways
+
+        Args:
+            flight: Flight dictionary from API
+
+        Returns:
+            True if the flight is valid (SID matches active runways or no validation needed)
+        """
+        # If no active runways stored, no validation needed
+        if not hasattr(self, 'active_runways') or not self.active_runways:
+            return True
+
+        # Extract SID from flight data
+        sid = flight.get('departureProcedure', '')
+        if not sid:
+            # No SID in flight data - allow it (might be assigned later)
+            return True
+
+        # Get runways that this SID serves from CIFP
+        sid_runways = self.cifp_parser.get_runways_for_departure(sid)
+        if not sid_runways:
+            # SID not found in CIFP data - log warning but allow it
+            logger.debug(f"SID {sid} not found in CIFP data, allowing flight")
+            return True
+
+        # Check if any of the SID's runways match the active runways
+        for active_rwy in self.active_runways:
+            # Normalize runway format for comparison
+            active_normalized = active_rwy.lstrip('RW').zfill(2) if active_rwy.replace('RW', '').replace('L', '').replace('R', '').replace('C', '').isdigit() else active_rwy.lstrip('RW')
+
+            for sid_rwy in sid_runways:
+                sid_normalized = sid_rwy.lstrip('RW').zfill(2) if sid_rwy.replace('RW', '').replace('L', '').replace('R', '').replace('C', '').isdigit() else sid_rwy.lstrip('RW')
+
+                # Check for exact match or base match (08 matches 08L, 08R)
+                if active_normalized == sid_normalized:
+                    return True
+                # Also check if the bases match (stripping L/R/C suffixes)
+                active_base = active_normalized.rstrip('LRC')
+                sid_base = sid_normalized.rstrip('LRC')
+                if active_base == sid_base:
+                    return True
+
+        # No match found - this SID doesn't serve any active runway
+        logger.debug(f"Skipping flight with SID {sid} (serves runways {sid_runways}, but active runways are {self.active_runways})")
+        return False
 
     def _get_next_departure_flight(self, parking_spot_name: str = None, is_ga_spot: bool = False) -> Dict:
         """
-        Get the next departure flight from the pool
+        Get the next departure flight from the pool using pre-segmented airline lookup
 
         Args:
             parking_spot_name: Optional parking spot name for airline matching
@@ -825,28 +1003,32 @@ class BaseScenario(ABC):
         return aircraft
 
     def _prepare_ga_flight_pool(self):
-        """Prepare pool of GA flights from cached departure data"""
-        valid_flights = filter_valid_flights(self.cached_flights['departures'])
-        ga_flights, _ = categorize_flights(valid_flights)
-
-        self.ga_flight_pool = ga_flights
-        logger.info(f"Prepared GA flight pool with {len(ga_flights)} aircraft")
+        """
+        Prepare pool of GA flights from cached departure data.
+        Note: This is now handled by _prepare_departure_flight_pool which creates self.ga_departure_flights.
+        This method kept for backward compatibility.
+        """
+        if not hasattr(self, 'ga_departure_flights'):
+            logger.warning("GA departure flights not initialized, initializing now...")
+            valid_flights = filter_valid_flights(self.cached_flights['departures'])
+            ga_flights, _ = categorize_flights(valid_flights)
+            self.ga_departure_flights = ga_flights
+            logger.info(f"Prepared GA flight pool with {len(ga_flights)} aircraft")
 
     def _get_next_ga_flight(self) -> Dict:
-        """Get next GA flight from pool"""
-        if not hasattr(self, 'ga_flight_pool'):
+        """
+        Get next GA flight from pool.
+        Note: This now uses self.ga_departure_flights created by _prepare_departure_flight_pool.
+        """
+        if not hasattr(self, 'ga_departure_flights'):
             self._prepare_ga_flight_pool()
 
-        if not self.ga_flight_pool:
-            logger.warning("GA flight pool depleted, fetching more...")
-            additional_flights = self.api_client.fetch_departures(self.airport_icao, limit=50)
-            if additional_flights:
-                valid_flights = filter_valid_flights(additional_flights)
-                ga_flights, _ = categorize_flights(valid_flights)
-                self.ga_flight_pool.extend(ga_flights)
-                logger.info(f"Added {len(ga_flights)} more GA flights to pool")
+        if not self.ga_departure_flights:
+            logger.warning("GA flight pool depleted")
+            return None
 
-        return self.ga_flight_pool.pop(0) if self.ga_flight_pool else None
+        # GA flights are already filtered, just return the next one
+        return self.ga_departure_flights.pop(0)
 
     def _prepare_arrival_flight_pool(self):
         """Prepare pool of arrival flights from cached arrival data"""
