@@ -3,8 +3,17 @@ API client for fetching real flight data from creativeshrimp.work.gd
 """
 import requests
 import time
-from typing import Optional, Dict, Any, List
+import os
+import json
+from typing import Optional, Dict, Any, List, Callable
 import logging
+
+# Try to import diskcache for persistent caching
+try:
+    import diskcache
+    DISKCACHE_AVAILABLE = True
+except ImportError:
+    DISKCACHE_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -14,15 +23,64 @@ class FlightDataAPIClient:
 
     BASE_URL = "http://creativeshrimp.work.gd:3000/flights"
 
-    def __init__(self, cache_timeout: int = 3600):
+    # Timeout configuration (in seconds)
+    DEFAULT_TIMEOUT = 30  # Standard requests (was 15)
+    ARTCC_TIMEOUT = 60    # ARTCC requests need longer (was 30)
+
+    # Progressive timeout multipliers for retries
+    TIMEOUT_MULTIPLIERS = [1.0, 1.5, 2.0]  # 30s, 45s, 60s for standard
+
+    def __init__(self, cache_timeout: int = 3600, cache_dir: Optional[str] = None):
         """
         Initialize the API client
 
         Args:
             cache_timeout: How long to cache results in seconds (default: 1 hour)
+            cache_dir: Directory for persistent disk cache (default: user's app data)
         """
-        self.cache: Dict[str, tuple] = {}
         self.cache_timeout = cache_timeout
+
+        # In-memory cache as fallback
+        self.memory_cache: Dict[str, tuple] = {}
+
+        # Set up persistent disk cache
+        self.disk_cache = None
+        if DISKCACHE_AVAILABLE:
+            try:
+                if cache_dir is None:
+                    # Use a sensible default cache directory
+                    cache_dir = os.path.join(
+                        os.environ.get('LOCALAPPDATA', os.path.expanduser('~')),
+                        'SSG', 'flight_cache'
+                    )
+                os.makedirs(cache_dir, exist_ok=True)
+                self.disk_cache = diskcache.Cache(
+                    cache_dir,
+                    size_limit=500 * 1024 * 1024  # 500MB max cache size
+                )
+                logger.info(f"Disk cache initialized at: {cache_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize disk cache, using memory cache: {e}")
+                self.disk_cache = None
+        else:
+            logger.info("diskcache not installed, using memory cache only")
+
+        # Set up requests session for connection pooling
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Accept-Encoding': 'gzip, deflate',  # Ready for when server supports compression
+            'Connection': 'keep-alive',
+            'Accept': 'application/json'
+        })
+
+        # Configure connection pool size
+        adapter = requests.adapters.HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=10,
+            max_retries=0  # We handle retries ourselves
+        )
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
 
     @staticmethod
     def _strip_procedure_numbers(procedure: str) -> str:
@@ -75,6 +133,62 @@ class FlightDataAPIClient:
         logger.debug(f"Using default cruise speed fallback for: {aircraft_type}")
         return 450
 
+    def _get_cached(self, cache_key: str) -> Optional[List[Dict[str, Any]]]:
+        """
+        Get data from cache (disk cache first, then memory cache)
+
+        Args:
+            cache_key: The cache key to look up
+
+        Returns:
+            Cached data if valid, None otherwise
+        """
+        # Try disk cache first
+        if self.disk_cache is not None:
+            try:
+                cached = self.disk_cache.get(cache_key)
+                if cached is not None:
+                    cached_data, timestamp = cached
+                    if time.time() - timestamp < self.cache_timeout:
+                        logger.debug(f"Disk cache hit for {cache_key}")
+                        return cached_data
+            except Exception as e:
+                logger.warning(f"Error reading from disk cache: {e}")
+
+        # Fall back to memory cache
+        if cache_key in self.memory_cache:
+            cached_data, timestamp = self.memory_cache[cache_key]
+            if time.time() - timestamp < self.cache_timeout:
+                logger.debug(f"Memory cache hit for {cache_key}")
+                return cached_data
+
+        return None
+
+    def _set_cached(self, cache_key: str, data: List[Dict[str, Any]]) -> None:
+        """
+        Store data in cache (both disk and memory)
+
+        Args:
+            cache_key: The cache key
+            data: The data to cache
+        """
+        timestamp = time.time()
+
+        # Store in memory cache
+        self.memory_cache[cache_key] = (data, timestamp)
+
+        # Store in disk cache
+        if self.disk_cache is not None:
+            try:
+                self.disk_cache.set(cache_key, (data, timestamp), expire=self.cache_timeout)
+            except Exception as e:
+                logger.warning(f"Error writing to disk cache: {e}")
+
+    @property
+    def cache(self) -> Dict[str, tuple]:
+        """Backwards-compatible access to memory cache"""
+        return self.memory_cache
+
     def fetch_flights(
         self,
         departure: Optional[str] = None,
@@ -82,7 +196,8 @@ class FlightDataAPIClient:
         limit: int = 200,
         retries: int = 3,
         depproc: Optional[str] = None,
-        arrproc: Optional[str] = None
+        arrproc: Optional[str] = None,
+        progress_callback: Optional[Callable[[str], None]] = None
     ) -> Optional[List[Dict[str, Any]]]:
         """
         Fetch flights from the API
@@ -94,6 +209,7 @@ class FlightDataAPIClient:
             retries: Number of retries if request fails
             depproc: URL-encoded departure procedures filter (e.g., 'EAGUL%2BZZULU')
             arrproc: URL-encoded arrival procedures filter (e.g., 'STAR1%2BSTAR2')
+            progress_callback: Optional callback function for progress updates
 
         Returns:
             List of flight dictionaries or None if request fails
@@ -105,12 +221,11 @@ class FlightDataAPIClient:
         arr_proc = arrproc or "none"
         cache_key = f"{dep}:{arr}:{limit}:{dep_proc}:{arr_proc}"
 
-        # Check cache
-        if cache_key in self.cache:
-            cached_data, timestamp = self.cache[cache_key]
-            if time.time() - timestamp < self.cache_timeout:
-                logger.debug(f"Using cached data for {cache_key}")
-                return cached_data
+        # Check cache (disk and memory)
+        cached_data = self._get_cached(cache_key)
+        if cached_data is not None:
+            logger.debug(f"Using cached data for {cache_key}")
+            return cached_data
 
         # Build request parameters
         params = {}
@@ -123,25 +238,47 @@ class FlightDataAPIClient:
         if arrproc:
             params['arrproc'] = arrproc
 
-        # Try to fetch from API
+        # Try to fetch from API with progressive timeouts
         for attempt in range(retries):
             try:
+                # Calculate timeout with progressive increase
+                multiplier = self.TIMEOUT_MULTIPLIERS[min(attempt, len(self.TIMEOUT_MULTIPLIERS) - 1)]
+                timeout = int(self.DEFAULT_TIMEOUT * multiplier)
+
                 # Log all parameters including procedures
                 log_msg = f"Fetching flights: departure={dep}, arrival={arr}, limit={limit}"
                 if depproc:
                     log_msg += f", depproc={depproc}"
                 if arrproc:
                     log_msg += f", arrproc={arrproc}"
-                log_msg += f" (attempt {attempt + 1}/{retries})"
+                log_msg += f" (attempt {attempt + 1}/{retries}, timeout={timeout}s)"
                 logger.info(log_msg)
+
+                # Notify progress callback
+                if progress_callback:
+                    progress_callback(f"Fetching {dep} → {arr} (attempt {attempt + 1}/{retries})...")
 
                 # Log the full URL for debugging
                 logger.debug(f"API URL: {self.BASE_URL}, params: {params}")
 
-                response = requests.get(self.BASE_URL, params=params, timeout=15)
+                # Use session for connection pooling, stream for large responses
+                start_time = time.time()
+                response = self.session.get(
+                    self.BASE_URL,
+                    params=params,
+                    timeout=timeout,
+                    stream=True  # Stream response to handle large payloads
+                )
 
                 if response.status_code == 200:
-                    data = response.json()
+                    # Stream and parse response
+                    elapsed = time.time() - start_time
+                    if progress_callback:
+                        progress_callback(f"Downloading data... ({elapsed:.1f}s)")
+
+                    # Read streamed content
+                    content = response.content
+                    data = json.loads(content)
 
                     # Validate response structure
                     if not isinstance(data, dict) or 'success' not in data:
@@ -162,10 +299,11 @@ class FlightDataAPIClient:
                     # Limit to requested count
                     flights = flights[:limit]
 
-                    logger.info(f"Fetched {len(flights)} flights from API ({dep} -> {arr})")
+                    elapsed = time.time() - start_time
+                    logger.info(f"Fetched {len(flights)} flights from API ({dep} -> {arr}) in {elapsed:.1f}s")
 
-                    # Cache the result
-                    self.cache[cache_key] = (flights, time.time())
+                    # Cache the result (both disk and memory)
+                    self._set_cached(cache_key, flights)
 
                     return flights
 
@@ -173,6 +311,8 @@ class FlightDataAPIClient:
                     # Rate limited, wait and retry
                     wait_time = (attempt + 1) * 2
                     logger.warning(f"Rate limited, waiting {wait_time}s before retry")
+                    if progress_callback:
+                        progress_callback(f"Rate limited, waiting {wait_time}s...")
                     time.sleep(wait_time)
                 else:
                     logger.warning(f"API returned status code {response.status_code}")
@@ -180,7 +320,10 @@ class FlightDataAPIClient:
                         time.sleep(1)
 
             except requests.exceptions.Timeout:
-                logger.error(f"Request timeout (attempt {attempt + 1}/{retries})")
+                elapsed = time.time() - start_time if 'start_time' in locals() else 0
+                logger.error(f"Request timeout after {elapsed:.1f}s (attempt {attempt + 1}/{retries})")
+                if progress_callback:
+                    progress_callback(f"Timeout, retrying with longer timeout...")
                 if attempt < retries - 1:
                     time.sleep(2)
             except requests.exceptions.RequestException as e:
@@ -256,7 +399,8 @@ class FlightDataAPIClient:
     def fetch_artcc_flights(
         self,
         artcc_id: str,
-        limit: int = 1000
+        limit: int = 1000,
+        progress_callback: Optional[Callable[[str], None]] = None
     ) -> Optional[List[Dict[str, Any]]]:
         """
         Fetch flights within a specific ARTCC
@@ -264,6 +408,7 @@ class FlightDataAPIClient:
         Args:
             artcc_id: ARTCC identifier (e.g., "ZAB", "ZLA")
             limit: Maximum number of flights to fetch
+            progress_callback: Optional callback function for progress updates
 
         Returns:
             List of flight dictionaries or None if request fails
@@ -271,29 +416,49 @@ class FlightDataAPIClient:
         # Build cache key
         cache_key = f"artcc:{artcc_id}:{limit}"
 
-        # Check cache
-        if cache_key in self.cache:
-            cached_data, timestamp = self.cache[cache_key]
-            if time.time() - timestamp < self.cache_timeout:
-                logger.debug(f"Using cached data for ARTCC {artcc_id}")
-                return cached_data
+        # Check cache (disk and memory)
+        cached_data = self._get_cached(cache_key)
+        if cached_data is not None:
+            logger.debug(f"Using cached data for ARTCC {artcc_id}")
+            return cached_data
 
         # Build request parameters with ARTCC (prefix with K)
         params = {
             'artcc': f"K{artcc_id.upper()}"
         }
 
-        # Try to fetch from API
+        # Try to fetch from API with progressive timeouts
         retries = 3
         for attempt in range(retries):
             try:
-                logger.info(f"Fetching flights for ARTCC {artcc_id}, limit={limit} (attempt {attempt + 1}/{retries})")
+                # Calculate timeout with progressive increase (using ARTCC timeout)
+                multiplier = self.TIMEOUT_MULTIPLIERS[min(attempt, len(self.TIMEOUT_MULTIPLIERS) - 1)]
+                timeout = int(self.ARTCC_TIMEOUT * multiplier)
+
+                logger.info(f"Fetching flights for ARTCC {artcc_id}, limit={limit} (attempt {attempt + 1}/{retries}, timeout={timeout}s)")
                 logger.debug(f"API URL: {self.BASE_URL}, params: {params}")
 
-                response = requests.get(self.BASE_URL, params=params, timeout=30)
+                # Notify progress callback
+                if progress_callback:
+                    progress_callback(f"Fetching ARTCC {artcc_id} flights (attempt {attempt + 1}/{retries})...")
+
+                # Use session for connection pooling, stream for large responses
+                start_time = time.time()
+                response = self.session.get(
+                    self.BASE_URL,
+                    params=params,
+                    timeout=timeout,
+                    stream=True
+                )
 
                 if response.status_code == 200:
-                    data = response.json()
+                    # Stream and parse response
+                    elapsed = time.time() - start_time
+                    if progress_callback:
+                        progress_callback(f"Downloading ARTCC data... ({elapsed:.1f}s)")
+
+                    content = response.content
+                    data = json.loads(content)
 
                     # Validate response structure
                     if not isinstance(data, dict) or 'success' not in data:
@@ -314,10 +479,11 @@ class FlightDataAPIClient:
                     # Limit to requested count
                     flights = flights[:limit]
 
-                    logger.info(f"Fetched {len(flights)} flights for ARTCC {artcc_id}")
+                    elapsed = time.time() - start_time
+                    logger.info(f"Fetched {len(flights)} flights for ARTCC {artcc_id} in {elapsed:.1f}s")
 
-                    # Cache the result
-                    self.cache[cache_key] = (flights, time.time())
+                    # Cache the result (both disk and memory)
+                    self._set_cached(cache_key, flights)
 
                     return flights
 
@@ -325,6 +491,8 @@ class FlightDataAPIClient:
                     # Rate limited, wait and retry
                     wait_time = (attempt + 1) * 2
                     logger.warning(f"Rate limited, waiting {wait_time}s before retry")
+                    if progress_callback:
+                        progress_callback(f"Rate limited, waiting {wait_time}s...")
                     time.sleep(wait_time)
                 else:
                     logger.warning(f"API returned status code {response.status_code}")
@@ -332,7 +500,10 @@ class FlightDataAPIClient:
                         time.sleep(1)
 
             except requests.exceptions.Timeout:
-                logger.error(f"Request timeout (attempt {attempt + 1}/{retries})")
+                elapsed = time.time() - start_time if 'start_time' in locals() else 0
+                logger.error(f"Request timeout after {elapsed:.1f}s (attempt {attempt + 1}/{retries})")
+                if progress_callback:
+                    progress_callback(f"Timeout, retrying with longer timeout...")
                 if attempt < retries - 1:
                     time.sleep(2)
             except requests.exceptions.RequestException as e:
@@ -352,6 +523,14 @@ class FlightDataAPIClient:
         return None
 
     def clear_cache(self):
-        """Clear all cached flight data"""
-        self.cache.clear()
-        logger.info("Flight data cache cleared")
+        """Clear all cached flight data (both disk and memory)"""
+        self.memory_cache.clear()
+        if self.disk_cache is not None:
+            try:
+                self.disk_cache.clear()
+                logger.info("Disk and memory cache cleared")
+            except Exception as e:
+                logger.warning(f"Error clearing disk cache: {e}")
+                logger.info("Memory cache cleared")
+        else:
+            logger.info("Memory cache cleared")

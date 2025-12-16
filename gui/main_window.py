@@ -4,6 +4,7 @@ Main application window and controller
 import tkinter as tk
 import logging
 import threading
+import time
 from pathlib import Path
 from typing import List, Dict
 from collections import defaultdict
@@ -587,21 +588,25 @@ class MainWindow(tk.Tk):
 
     def _start_flight_data_loading(self, airport_icao):
         """Start loading flight data from API in background (non-blocking)"""
-        import time
-        import threading
-
         # Mark data as loading
         self.flight_data_loading = True
         self.flight_data_ready = False
+        self.flight_loading_start_time = time.time()
+        self.flight_loading_status_message = "Connecting to flight data API..."
+
+        # Start elapsed time updater
+        self._start_loading_elapsed_timer()
 
         def fetch_and_store():
             """Fetch both departures and arrivals in parallel"""
             departures_result = [None]
             arrivals_result = [None]
+            status_message = ["Fetching departures and arrivals..."]
 
             def fetch_departures():
                 try:
                     logger.info(f"Fetching 1000 departures from {airport_icao}...")
+                    status_message[0] = f"Fetching departures from {airport_icao}..."
                     departures_result[0] = self.api_client.fetch_departures(airport_icao, limit=1000)
                     logger.info(f"Fetched {len(departures_result[0]) if departures_result[0] else 0} departures")
                 except Exception as e:
@@ -611,11 +616,16 @@ class MainWindow(tk.Tk):
             def fetch_arrivals():
                 try:
                     logger.info(f"Fetching 1000 arrivals to {airport_icao}...")
+                    status_message[0] = f"Fetching arrivals to {airport_icao}..."
                     arrivals_result[0] = self.api_client.fetch_arrivals(airport_icao, limit=1000)
                     logger.info(f"Fetched {len(arrivals_result[0]) if arrivals_result[0] else 0} arrivals")
                 except Exception as e:
                     logger.error(f"Error fetching arrivals: {e}")
                     arrivals_result[0] = []
+
+            # Update status message periodically
+            def update_status():
+                self.flight_loading_status_message = status_message[0]
 
             # Start both fetch threads
             dep_thread = threading.Thread(target=fetch_departures, daemon=True)
@@ -635,7 +645,8 @@ class MainWindow(tk.Tk):
             self.flight_data_loading = False
             self.flight_data_ready = True
 
-            logger.info(f"Flight data loading complete: {len(self.cached_departures)} departures, {len(self.cached_arrivals)} arrivals")
+            elapsed = time.time() - self.flight_loading_start_time
+            logger.info(f"Flight data loading complete in {elapsed:.1f}s: {len(self.cached_departures)} departures, {len(self.cached_arrivals)} arrivals")
 
             # Update GUI status (thread-safe)
             self.after(0, lambda: self._on_flight_data_loaded())
@@ -644,6 +655,23 @@ class MainWindow(tk.Tk):
         loading_thread = threading.Thread(target=fetch_and_store, daemon=True)
         loading_thread.start()
         logger.info("Flight data loading started in background")
+
+    def _start_loading_elapsed_timer(self):
+        """Start a timer to update loading status with elapsed time"""
+        def update_elapsed():
+            if self.flight_data_loading and not self.flight_data_ready:
+                elapsed = time.time() - self.flight_loading_start_time
+                if hasattr(self, 'screens') and 'scenario_type' in self.screens:
+                    self.screens['scenario_type'].update_loading_status(
+                        True,
+                        elapsed_seconds=elapsed,
+                        status_message=getattr(self, 'flight_loading_status_message', None)
+                    )
+                # Schedule next update in 1 second
+                self.after(1000, update_elapsed)
+
+        # Start the update loop
+        self.after(100, update_elapsed)
 
     def _on_airport_data_loaded(self):
         """Called when airport data is loaded successfully"""

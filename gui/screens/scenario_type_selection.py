@@ -133,10 +133,22 @@ class ScenarioTypeSelectionScreen(tk.Frame):
         """Hide flight data loading status"""
         self.loading_status_label.pack_forget()
 
-    def update_loading_status(self, is_loading, departures_count=0, arrivals_count=0):
-        """Update loading status text"""
+    def update_loading_status(self, is_loading, departures_count=0, arrivals_count=0, elapsed_seconds=0, status_message=None):
+        """Update loading status text
+
+        Args:
+            is_loading: Whether data is still loading
+            departures_count: Number of departures loaded
+            arrivals_count: Number of arrivals loaded
+            elapsed_seconds: Seconds elapsed since loading started
+            status_message: Optional custom status message
+        """
         if is_loading:
-            self.loading_status_label.config(text="[Loading] Flight data loading in background...")
+            if status_message:
+                text = f"[Loading] {status_message} ({elapsed_seconds:.0f}s elapsed)"
+            else:
+                text = f"[Loading] Fetching flight data... ({elapsed_seconds:.0f}s elapsed)"
+            self.loading_status_label.config(text=text, fg=DarkTheme.FG_SECONDARY)
             self.show_loading_status()
         else:
             self.loading_status_label.config(
