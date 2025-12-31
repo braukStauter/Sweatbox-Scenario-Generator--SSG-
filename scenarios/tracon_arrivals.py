@@ -63,7 +63,7 @@ class TraconArrivalsScenario(BaseScenario):
             logger.error("Failed to fetch arrival flights from API")
             return []
 
-        # Filter valid flights (removes ACTIVE status, missing data, etc.)
+        # Filter valid flights (validates required data fields)
         valid_flights = filter_valid_flights(all_flights)
         logger.info(f"Got {len(valid_flights)} valid flights from API")
 

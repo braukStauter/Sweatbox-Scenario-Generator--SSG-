@@ -82,7 +82,7 @@ class TraconMixedScenario(BaseScenario):
             # Single API call to get ALL arrival flights
             all_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=619, stars=star_names)
             if all_flights:
-                # Filter valid flights (removes ACTIVE status, missing data, etc.)
+                # Filter valid flights (validates required data fields)
                 valid_flights = filter_valid_flights(all_flights)
                 logger.info(f"Got {len(valid_flights)} valid arrival flights from API")
 

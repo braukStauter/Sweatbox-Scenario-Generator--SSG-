@@ -444,7 +444,8 @@ class MainWindow(tk.Tk):
 
         try:
             logger.info(f"Fetching Transient Pool for ARTCC {artcc_id} (artcc=K{artcc_id.upper()})")
-            flights = self.api_client.fetch_artcc_flights(artcc_id, limit=400)
+            result = self.api_client.fetch_artcc_flights(artcc_id, limit=400)
+            flights = result.get('flights', []) if result else []
 
             if flights:
                 # Filter pool
@@ -462,19 +463,16 @@ class MainWindow(tk.Tk):
             self.cached_enroute_transient_pool = []
 
     def _filter_enroute_pool(self, flights: List[Dict], pool_name: str) -> List[Dict]:
-        """Filter enroute pool: Accept ACTIVE and PROPOSED flights with complete flight plans"""
+        """Filter enroute pool: Validate flights have complete flight plans"""
         from utils.flight_data_filter import filter_valid_flights
 
         if not flights:
             return []
 
-        # NEW: Accept both ACTIVE and PROPOSED flights
-        accepted_flights = [f for f in flights if f.get('flightStatus') in ['ACTIVE', 'PROPOSED']]
-        logger.debug(f"{pool_name} Pool: {len(accepted_flights)}/{len(flights)} with ACTIVE/PROPOSED status")
-
+        # API now only returns PROPOSED flights, no client-side status filtering needed
         # Apply standard validity filtering
-        valid_flights = filter_valid_flights(accepted_flights)
-        logger.debug(f"{pool_name} Pool: {len(valid_flights)}/{len(accepted_flights)} passed validity checks")
+        valid_flights = filter_valid_flights(flights)
+        logger.debug(f"{pool_name} Pool: {len(valid_flights)}/{len(flights)} passed validity checks")
 
         # Filter for required fields, complete procedures, and no lat/long in routes
         clean_flights = []

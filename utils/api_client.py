@@ -1,5 +1,5 @@
 """
-API client for fetching real flight data from creativeshrimp.work.gd
+API client for fetching real flight data from flights-api.creativeshrimp.dev
 """
 import requests
 import time
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class FlightDataAPIClient:
     """Client for fetching real flight data from the Creative Shrimp API"""
 
-    BASE_URL = "http://creativeshrimp.work.gd:3000/flights"
+    BASE_URL = "https://flights-api.creativeshrimp.dev/flights"
 
     # Timeout configuration (in seconds)
     DEFAULT_TIMEOUT = 30  # Standard requests (was 15)
@@ -194,32 +194,35 @@ class FlightDataAPIClient:
         departure: Optional[str] = None,
         arrival: Optional[str] = None,
         limit: int = 200,
+        offset: int = 0,
         retries: int = 3,
         depproc: Optional[str] = None,
         arrproc: Optional[str] = None,
         progress_callback: Optional[Callable[[str], None]] = None
-    ) -> Optional[List[Dict[str, Any]]]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Fetch flights from the API
 
         Args:
             departure: Departure airport ICAO code (use "any" for all departures)
             arrival: Arrival airport ICAO code (use "any" for all arrivals)
-            limit: Maximum number of flights to request (API returns up to this many)
+            limit: Maximum number of flights to request (server-side limit)
+            offset: Pagination offset for fetching subsequent pages
             retries: Number of retries if request fails
             depproc: URL-encoded departure procedures filter (e.g., 'EAGUL%2BZZULU')
             arrproc: URL-encoded arrival procedures filter (e.g., 'STAR1%2BSTAR2')
             progress_callback: Optional callback function for progress updates
 
         Returns:
-            List of flight dictionaries or None if request fails
+            Dictionary with 'flights' list and 'pagination' info (offset, hasMore),
+            or None if request fails
         """
-        # Build cache key
+        # Build cache key (include offset for pagination)
         dep = departure or "any"
         arr = arrival or "any"
         dep_proc = depproc or "none"
         arr_proc = arrproc or "none"
-        cache_key = f"{dep}:{arr}:{limit}:{dep_proc}:{arr_proc}"
+        cache_key = f"{dep}:{arr}:{limit}:{offset}:{dep_proc}:{arr_proc}"
 
         # Check cache (disk and memory)
         cached_data = self._get_cached(cache_key)
@@ -227,8 +230,11 @@ class FlightDataAPIClient:
             logger.debug(f"Using cached data for {cache_key}")
             return cached_data
 
-        # Build request parameters
-        params = {}
+        # Build request parameters - use server-side limit and offset
+        params = {
+            'limit': limit,
+            'offset': offset
+        }
         if departure:
             params['departure'] = departure
         if arrival:
@@ -289,23 +295,31 @@ class FlightDataAPIClient:
                         logger.warning(f"API returned success=false: {data}")
                         return None
 
-                    # Extract flight data
+                    # Extract flight data (server already applies limit)
                     flights = data.get('data', [])
+
+                    # Extract pagination info
+                    pagination = data.get('pagination', {'offset': offset, 'hasMore': False})
 
                     if not flights:
                         logger.warning(f"No flights found for {dep} -> {arr}")
-                        return []
-
-                    # Limit to requested count
-                    flights = flights[:limit]
+                        result = {'flights': [], 'pagination': pagination}
+                        self._set_cached(cache_key, result)
+                        return result
 
                     elapsed = time.time() - start_time
-                    logger.info(f"Fetched {len(flights)} flights from API ({dep} -> {arr}) in {elapsed:.1f}s")
+                    logger.info(f"Fetched {len(flights)} flights from API ({dep} -> {arr}) in {elapsed:.1f}s, hasMore={pagination.get('hasMore', False)}")
+
+                    # Build result with pagination info
+                    result = {
+                        'flights': flights,
+                        'pagination': pagination
+                    }
 
                     # Cache the result (both disk and memory)
-                    self._set_cached(cache_key, flights)
+                    self._set_cached(cache_key, result)
 
-                    return flights
+                    return result
 
                 elif response.status_code == 429:
                     # Rate limited, wait and retry
@@ -362,12 +376,16 @@ class FlightDataAPIClient:
         # Format SIDs for API if provided
         depproc = self._format_procedures_for_api(sids)
 
-        return self.fetch_flights(
+        result = self.fetch_flights(
             departure=airport_icao,
             arrival=None,
             limit=limit,
             depproc=depproc
         )
+        # Extract flights list for backwards compatibility
+        if result is None:
+            return None
+        return result.get('flights', [])
 
     def fetch_arrivals(
         self,
@@ -389,32 +407,39 @@ class FlightDataAPIClient:
         # Format STARs for API if provided
         arrproc = self._format_procedures_for_api(stars)
 
-        return self.fetch_flights(
+        result = self.fetch_flights(
             departure=None,
             arrival=airport_icao,
             limit=limit,
             arrproc=arrproc
         )
+        # Extract flights list for backwards compatibility
+        if result is None:
+            return None
+        return result.get('flights', [])
 
     def fetch_artcc_flights(
         self,
         artcc_id: str,
         limit: int = 1000,
+        offset: int = 0,
         progress_callback: Optional[Callable[[str], None]] = None
-    ) -> Optional[List[Dict[str, Any]]]:
+    ) -> Optional[Dict[str, Any]]:
         """
         Fetch flights within a specific ARTCC
 
         Args:
             artcc_id: ARTCC identifier (e.g., "ZAB", "ZLA")
-            limit: Maximum number of flights to fetch
+            limit: Maximum number of flights to fetch (server-side limit)
+            offset: Pagination offset for fetching subsequent pages
             progress_callback: Optional callback function for progress updates
 
         Returns:
-            List of flight dictionaries or None if request fails
+            Dictionary with 'flights' list and 'pagination' info (offset, hasMore),
+            or None if request fails
         """
-        # Build cache key
-        cache_key = f"artcc:{artcc_id}:{limit}"
+        # Build cache key (include offset for pagination)
+        cache_key = f"artcc:{artcc_id}:{limit}:{offset}"
 
         # Check cache (disk and memory)
         cached_data = self._get_cached(cache_key)
@@ -422,9 +447,11 @@ class FlightDataAPIClient:
             logger.debug(f"Using cached data for ARTCC {artcc_id}")
             return cached_data
 
-        # Build request parameters with ARTCC (prefix with K)
+        # Build request parameters with ARTCC (prefix with K) and pagination
         params = {
-            'artcc': f"K{artcc_id.upper()}"
+            'artcc': f"K{artcc_id.upper()}",
+            'limit': limit,
+            'offset': offset
         }
 
         # Try to fetch from API with progressive timeouts
@@ -469,23 +496,31 @@ class FlightDataAPIClient:
                         logger.warning(f"API returned success=false: {data}")
                         return None
 
-                    # Extract flight data
+                    # Extract flight data (server already applies limit)
                     flights = data.get('data', [])
+
+                    # Extract pagination info
+                    pagination = data.get('pagination', {'offset': offset, 'hasMore': False})
 
                     if not flights:
                         logger.warning(f"No flights found for ARTCC {artcc_id}")
-                        return []
-
-                    # Limit to requested count
-                    flights = flights[:limit]
+                        result = {'flights': [], 'pagination': pagination}
+                        self._set_cached(cache_key, result)
+                        return result
 
                     elapsed = time.time() - start_time
-                    logger.info(f"Fetched {len(flights)} flights for ARTCC {artcc_id} in {elapsed:.1f}s")
+                    logger.info(f"Fetched {len(flights)} flights for ARTCC {artcc_id} in {elapsed:.1f}s, hasMore={pagination.get('hasMore', False)}")
+
+                    # Build result with pagination info
+                    result = {
+                        'flights': flights,
+                        'pagination': pagination
+                    }
 
                     # Cache the result (both disk and memory)
-                    self._set_cached(cache_key, flights)
+                    self._set_cached(cache_key, result)
 
-                    return flights
+                    return result
 
                 elif response.status_code == 429:
                     # Rate limited, wait and retry
@@ -521,6 +556,134 @@ class FlightDataAPIClient:
 
         logger.error(f"Failed to fetch ARTCC flights after {retries} attempts")
         return None
+
+    def fetch_all_flights(
+        self,
+        departure: Optional[str] = None,
+        arrival: Optional[str] = None,
+        max_flights: int = 1000,
+        page_size: int = 200,
+        retries: int = 3,
+        depproc: Optional[str] = None,
+        arrproc: Optional[str] = None,
+        progress_callback: Optional[Callable[[str], None]] = None
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch all flights using automatic pagination
+
+        Args:
+            departure: Departure airport ICAO code (use "any" for all departures)
+            arrival: Arrival airport ICAO code (use "any" for all arrivals)
+            max_flights: Maximum total number of flights to fetch across all pages
+            page_size: Number of flights to fetch per API request
+            retries: Number of retries if request fails
+            depproc: URL-encoded departure procedures filter
+            arrproc: URL-encoded arrival procedures filter
+            progress_callback: Optional callback function for progress updates
+
+        Returns:
+            List of all flight dictionaries, or None if request fails
+        """
+        all_flights = []
+        offset = 0
+
+        while len(all_flights) < max_flights:
+            # Calculate limit for this page
+            remaining = max_flights - len(all_flights)
+            limit = min(page_size, remaining)
+
+            if progress_callback:
+                progress_callback(f"Fetching flights {offset + 1}-{offset + limit}...")
+
+            result = self.fetch_flights(
+                departure=departure,
+                arrival=arrival,
+                limit=limit,
+                offset=offset,
+                retries=retries,
+                depproc=depproc,
+                arrproc=arrproc,
+                progress_callback=progress_callback
+            )
+
+            if result is None:
+                # Request failed
+                if all_flights:
+                    # Return what we have so far
+                    logger.warning(f"Pagination stopped early, returning {len(all_flights)} flights")
+                    return all_flights
+                return None
+
+            flights = result.get('flights', [])
+            pagination = result.get('pagination', {})
+
+            all_flights.extend(flights)
+            offset += len(flights)
+
+            # Check if there are more pages
+            if not pagination.get('hasMore', False) or not flights:
+                break
+
+        logger.info(f"Fetched total of {len(all_flights)} flights via pagination")
+        return all_flights
+
+    def fetch_all_artcc_flights(
+        self,
+        artcc_id: str,
+        max_flights: int = 2000,
+        page_size: int = 500,
+        progress_callback: Optional[Callable[[str], None]] = None
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Fetch all flights for an ARTCC using automatic pagination
+
+        Args:
+            artcc_id: ARTCC identifier (e.g., "ZAB", "ZLA")
+            max_flights: Maximum total number of flights to fetch across all pages
+            page_size: Number of flights to fetch per API request
+            progress_callback: Optional callback function for progress updates
+
+        Returns:
+            List of all flight dictionaries, or None if request fails
+        """
+        all_flights = []
+        offset = 0
+
+        while len(all_flights) < max_flights:
+            # Calculate limit for this page
+            remaining = max_flights - len(all_flights)
+            limit = min(page_size, remaining)
+
+            if progress_callback:
+                progress_callback(f"Fetching ARTCC {artcc_id} flights {offset + 1}-{offset + limit}...")
+
+            result = self.fetch_artcc_flights(
+                artcc_id=artcc_id,
+                limit=limit,
+                offset=offset,
+                progress_callback=progress_callback
+            )
+
+            if result is None:
+                # Request failed
+                if all_flights:
+                    # Return what we have so far
+                    logger.warning(f"Pagination stopped early, returning {len(all_flights)} ARTCC flights")
+                    return all_flights
+                return None
+
+            flights = result.get('flights', [])
+            pagination = result.get('pagination', {})
+
+            all_flights.extend(flights)
+            offset += len(flights)
+
+            # Check if there are more pages
+            if not pagination.get('hasMore', False) or not flights:
+                break
+
+        logger.info(f"Fetched total of {len(all_flights)} flights for ARTCC {artcc_id} via pagination")
+        return all_flights
 
     def clear_cache(self):
         """Clear all cached flight data (both disk and memory)"""

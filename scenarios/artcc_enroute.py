@@ -251,10 +251,11 @@ class ArtccEnrouteScenario(BaseScenario):
         for airport in departure_airports:
             try:
                 logger.info(f"Fetching departures from {airport}")
-                flights = self.api_client.fetch_flights(
+                result = self.api_client.fetch_flights(
                     departure=airport,
                     limit=800
                 )
+                flights = result.get('flights', []) if result else []
 
                 if flights:
                     all_flights.extend(flights)
@@ -269,7 +270,7 @@ class ArtccEnrouteScenario(BaseScenario):
             logger.warning(f"No departures fetched for any airports")
             return []
 
-        # Filter: no ACTIVE status, no lat/long in routes
+        # Filter for valid flights with complete data
         filtered = self._filter_pool(all_flights, "Departures")
 
         logger.info(f"Departures Pool: Fetched {len(all_flights)} total, filtered to {len(filtered)}")
@@ -291,10 +292,11 @@ class ArtccEnrouteScenario(BaseScenario):
         for airport in arrival_airports:
             try:
                 logger.info(f"Fetching arrivals to {airport}")
-                flights = self.api_client.fetch_flights(
+                result = self.api_client.fetch_flights(
                     arrival=airport,
                     limit=800
                 )
+                flights = result.get('flights', []) if result else []
 
                 if flights:
                     all_flights.extend(flights)
@@ -309,7 +311,7 @@ class ArtccEnrouteScenario(BaseScenario):
             logger.warning(f"No arrivals fetched for any airports")
             return []
 
-        # Filter: no ACTIVE status, no lat/long in routes
+        # Filter for valid flights with complete data
         filtered = self._filter_pool(all_flights, "Arrivals")
 
         logger.info(f"Arrivals Pool: Fetched {len(all_flights)} total, filtered to {len(filtered)}")
@@ -327,16 +329,17 @@ class ArtccEnrouteScenario(BaseScenario):
         """
         try:
             # Fetch from API using artcc parameter
-            flights = self.api_client.fetch_artcc_flights(
+            result = self.api_client.fetch_artcc_flights(
                 self.artcc_id,
                 limit=800
             )
+            flights = result.get('flights', []) if result else []
 
             if not flights:
                 logger.warning(f"No transient flights fetched for ARTCC {self.artcc_id}")
                 return []
 
-            # Filter: no ACTIVE status, no lat/long in routes
+            # Filter for valid flights with complete data
             filtered = self._filter_pool(flights, "Transient")
 
             # Additional filter: Remove arrivals to specified airports
@@ -358,7 +361,7 @@ class ArtccEnrouteScenario(BaseScenario):
 
     def _filter_pool(self, flights: List[Dict], pool_name: str) -> List[Dict]:
         """
-        Filter flight pool: Accept ACTIVE and PROPOSED flights with complete flight plans
+        Filter flight pool: Validate flights have complete flight plans
 
         Args:
             flights: Raw flight data from API
@@ -367,20 +370,10 @@ class ArtccEnrouteScenario(BaseScenario):
         Returns:
             Filtered list of valid flights
         """
-        # Count initial status distribution
-        status_counts = {}
-        for f in flights:
-            status = f.get('flightStatus', 'UNKNOWN')
-            status_counts[status] = status_counts.get(status, 0) + 1
-        logger.debug(f"{pool_name}: Initial status distribution: {status_counts}")
-
-        # NEW: Accept both ACTIVE and PROPOSED flights
-        # We filter for complete flight plans instead of just status
-        accepted_flights = [f for f in flights if f.get('flightStatus') in ['ACTIVE', 'PROPOSED']]
-        logger.debug(f"{pool_name}: Accepted {len(accepted_flights)} ACTIVE/PROPOSED flights (from {len(flights)} total)")
-
+        # API now only returns PROPOSED flights, no client-side status filtering needed
         # Apply standard validity filtering (checks for basic required fields)
-        valid_flights = filter_valid_flights(accepted_flights)
+        valid_flights = filter_valid_flights(flights)
+        logger.debug(f"{pool_name}: {len(valid_flights)}/{len(flights)} passed validity checks")
 
         # Determine if altitude is required based on pool type
         # For Transient and Arrivals pools, altitude is optional (we'll estimate it if missing)
