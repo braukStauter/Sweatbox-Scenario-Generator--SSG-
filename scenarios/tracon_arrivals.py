@@ -18,11 +18,17 @@ logger = logging.getLogger(__name__)
 class TraconArrivalsScenario(BaseScenario):
     """Scenario for TRACON with arrivals only"""
 
-    def generate(self, num_arrivals: int, arrival_waypoints: List[str],
+    def generate(self, num_arrivals: int, arrival_waypoints: List[str] = None,
                  delay_range=None, spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
                  delay_value: str = None, total_session_minutes: int = None,
                  spawn_delay_range: str = None, difficulty_config=None, active_runways: List[str] = None,
-                 use_cifp_speeds: bool = True) -> List[Aircraft]:
+                 use_cifp_speeds: bool = True,
+                 # FRD mode parameters
+                 arrival_mode: str = "star",
+                 frd_points: List[str] = None,
+                 frd_altitudes: List[int] = None,
+                 frd_speeds: List[int] = None,
+                 frd_initial_routes: List[str] = None) -> List[Aircraft]:
         """
         Generate TRACON arrival scenario
 
@@ -35,10 +41,30 @@ class TraconArrivalsScenario(BaseScenario):
             difficulty_config: Optional dict with 'easy', 'medium', 'hard' counts
             active_runways: List of active runway designators
             use_cifp_speeds: Whether to use CIFP speed restrictions for arrival aircraft
+            arrival_mode: "star" for STAR waypoints mode, "frd" for FRD points mode
+            frd_points: List of FRD strings (e.g., ["HOMRR020015", "JONES030020"]) for FRD mode
+            frd_altitudes: List of altitudes in feet for FRD mode
+            frd_speeds: List of speeds in knots for FRD mode
+            frd_initial_routes: Optional list of initial routes for FRD mode
 
         Returns:
             List of Aircraft objects
         """
+        # Handle FRD mode
+        if arrival_mode == "frd":
+            return self._generate_frd_arrivals(
+                num_arrivals=num_arrivals,
+                frd_points=frd_points,
+                frd_altitudes=frd_altitudes,
+                frd_speeds=frd_speeds,
+                frd_initial_routes=frd_initial_routes,
+                spawn_delay_mode=spawn_delay_mode,
+                delay_value=delay_value,
+                total_session_minutes=total_session_minutes,
+                difficulty_config=difficulty_config,
+                active_runways=active_runways
+            )
+
         # Reset tracking for new generation
         self._reset_tracking()
 
@@ -662,3 +688,185 @@ class TraconArrivalsScenario(BaseScenario):
         initial_path = f"{current_waypoint.name} {star_name}.{runway_clean}"
         logger.debug(f"Initial path: {initial_path} (spawn 3NM before {current_waypoint.name})")
         return initial_path
+
+    # ==================== FRD MODE METHODS ====================
+
+    def _generate_frd_arrivals(self, num_arrivals: int, frd_points: List[str],
+                               frd_altitudes: List[int], frd_speeds: List[int],
+                               frd_initial_routes: List[str] = None,
+                               spawn_delay_mode: SpawnDelayMode = SpawnDelayMode.NONE,
+                               delay_value: str = None, total_session_minutes: int = None,
+                               difficulty_config=None, active_runways: List[str] = None) -> List[Aircraft]:
+        """
+        Generate TRACON arrival scenario using user-specified FRD spawn points.
+
+        Args:
+            num_arrivals: Number of arrival aircraft
+            frd_points: List of FRD strings (e.g., ["HOMRR020015", "JONES030020"])
+            frd_altitudes: List of altitudes in feet (e.g., [11000, 15000])
+            frd_speeds: List of speeds in knots (e.g., [280, 300])
+            frd_initial_routes: Optional list of initial routes (e.g., ["HOMRR EAGUL6.08L", ""])
+            spawn_delay_mode: SpawnDelayMode enum
+            delay_value: For INCREMENTAL mode: delay range/value
+            total_session_minutes: For TOTAL mode: session length
+            difficulty_config: Optional dict with difficulty counts
+            active_runways: List of active runways
+
+        Returns:
+            List of Aircraft objects
+        """
+        self._reset_tracking()
+
+        logger.info(f"Generating TRACON arrival scenario (FRD mode): {num_arrivals} arrivals")
+
+        # Parse and validate FRD points
+        parsed_frds = []
+        for i, frd_string in enumerate(frd_points):
+            try:
+                fix_name, radial, distance = self._parse_frd_string(frd_string.upper())
+                parsed_frds.append({
+                    'frd_string': frd_string.upper(),
+                    'fix_name': fix_name,
+                    'radial': radial,
+                    'distance': distance,
+                    'altitude': frd_altitudes[i],
+                    'speed': frd_speeds[i],
+                    'initial_route': frd_initial_routes[i].strip() if frd_initial_routes and i < len(frd_initial_routes) else ''
+                })
+                logger.debug(f"Parsed FRD {i+1}: {frd_string} -> fix={fix_name}, radial={radial}, dist={distance}NM, alt={frd_altitudes[i]}, spd={frd_speeds[i]}")
+            except (ValueError, IndexError) as e:
+                logger.error(f"Invalid FRD point at index {i}: {e}")
+                continue
+
+        if not parsed_frds:
+            logger.error("No valid FRD points provided")
+            return []
+
+        logger.info(f"Parsed {len(parsed_frds)} valid FRD points")
+
+        # Fetch flights by airport (no STAR filtering for FRD mode)
+        all_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=619)
+        if not all_flights:
+            logger.error("Failed to fetch arrival flights from API")
+            return []
+
+        # Filter valid flights
+        from utils.flight_data_filter import filter_valid_flights
+        valid_flights = filter_valid_flights(all_flights)
+        logger.info(f"Got {len(valid_flights)} valid flights from API")
+
+        # Deduplicate by GUFI
+        unique_flights = self._deduplicate_by_gufi(valid_flights)
+        logger.info(f"After deduplication: {len(unique_flights)} unique flights")
+
+        # Setup difficulty assignment
+        difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
+
+        # Generate aircraft using round-robin among FRD points
+        arrivals_created = 0
+        flight_index = 0
+        frd_index = 0
+        max_attempts = num_arrivals * 3  # Allow some retries for duplicates
+
+        while arrivals_created < num_arrivals and flight_index < len(unique_flights) and flight_index < max_attempts:
+            frd_data = parsed_frds[frd_index % len(parsed_frds)]
+            flight_data = unique_flights[flight_index]
+
+            aircraft = self._create_frd_arrival_aircraft(
+                flight_data=flight_data,
+                frd_data=frd_data,
+                active_runways=active_runways
+            )
+
+            if aircraft:
+                difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                self.aircraft.append(aircraft)
+                arrivals_created += 1
+                frd_index += 1  # Advance round-robin only on success
+
+            flight_index += 1
+
+        if arrivals_created < num_arrivals:
+            logger.warning(f"Could only generate {arrivals_created}/{num_arrivals} FRD arrivals (limited API data)")
+
+        # Apply spawn delays
+        self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
+
+        logger.info(f"Generated {len(self.aircraft)} FRD arrival aircraft (requested {num_arrivals})")
+        return self.aircraft
+
+    def _create_frd_arrival_aircraft(self, flight_data: Dict, frd_data: Dict,
+                                      active_runways: List[str] = None) -> Aircraft:
+        """
+        Create arrival aircraft from flight data using FRD spawn point.
+
+        Args:
+            flight_data: Flight dictionary from API
+            frd_data: Dict with 'frd_string', 'fix_name', 'radial', 'distance',
+                      'altitude', 'speed', 'initial_route'
+            active_runways: List of active runways
+
+        Returns:
+            Aircraft object or None
+        """
+        # Extract flight data
+        departure = flight_data.get('departureAirport', 'KORD')
+        callsign = flight_data.get('aircraftIdentification', '')
+        aircraft_type = flight_data.get('aircraftType', 'B738')
+        route = clean_route_string(flight_data.get('route', ''))
+
+        # Check callsign uniqueness
+        with self.callsign_lock:
+            if callsign in self.used_callsigns:
+                logger.warning(f"Duplicate callsign {callsign}, skipping")
+                return None
+            self.used_callsigns.add(callsign)
+
+        # Add equipment suffix
+        is_ga = self._is_ga_aircraft_type(aircraft_type)
+        aircraft_type = self._add_equipment_suffix(aircraft_type, is_ga)
+
+        # Use user-specified altitude and speed
+        altitude = frd_data['altitude']
+        initial_speed = frd_data['speed']
+
+        # Get cruise speed from flight data (for flight plan only)
+        cruise_speed = self._get_cruise_speed(flight_data, aircraft_type)
+
+        # Determine initial path (navigation_path)
+        initial_route = frd_data.get('initial_route', '').strip()
+        if initial_route:
+            navigation_path = initial_route
+        else:
+            # Direct to airport
+            navigation_path = self.airport_icao
+
+        # Calculate heading: reciprocal of radial (points toward the fix)
+        # Only meaningful if no navigation_path is specified, but vNAS uses FRD anyway
+        heading = get_reciprocal_heading(frd_data['radial'])
+
+        # Determine runway (for flight plan display)
+        runway = active_runways[0] if active_runways else "08L"
+
+        # Create aircraft with FixOrFrd starting conditions
+        aircraft = Aircraft(
+            callsign=callsign,
+            aircraft_type=aircraft_type,
+            latitude=0.0,  # vNAS calculates from FRD
+            longitude=0.0,  # vNAS calculates from FRD
+            altitude=altitude,
+            heading=heading,
+            ground_speed=initial_speed,
+            departure=departure,
+            arrival=self.airport_icao,
+            route=route,
+            cruise_speed=cruise_speed,
+            cruise_altitude=str(altitude),
+            navigation_path=navigation_path,
+            fix=frd_data['frd_string'],  # User's FRD string directly
+            starting_conditions_type="FixOrFrd",
+            arrival_runway=runway
+        )
+
+        logger.debug(f"Created FRD aircraft {callsign}: FRD={frd_data['frd_string']}, alt={altitude}, spd={initial_speed}, path={navigation_path}")
+        return aircraft
