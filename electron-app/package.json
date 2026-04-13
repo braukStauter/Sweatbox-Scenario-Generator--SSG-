@@ -1,0 +1,39 @@
+{
+  "name": "ssg-electron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sweatbox Scenario Generator — Electron/TS frontend",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && tsc -p electron/tsconfig.json && electron .\"",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "build:bridge": "node scripts/build-bridge.mjs",
+    "build:icon": "node scripts/build-icon.mjs",
+    "build": "npm run build:renderer && npm run build:electron",
+    "package": "npm run build && npm run build:bridge && electron-builder --win",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p electron/tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "png-to-ico": "^2.1.8",
+    "electron": "^41.2.0",
+    "electron-builder": "^26.8.1",
+    "typescript": "^5.6.3",
+    "vite": "^7.0.0",
+    "wait-on": "^8.0.1"
+  },
+  "author": {
+    "name": "Creative Shrimp",
+    "email": "noreply@creativeshrimp.dev"
+  }
+}

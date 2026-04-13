@@ -14,8 +14,79 @@ from models.spawn_delay_mode import SpawnDelayMode
 from utils.flight_data_filter import filter_valid_flights, clean_route_string
 from utils.route_positioning import RouteParser
 from utils.artcc_utils import get_artcc_boundaries
+from utils.data_pipeline import load_cifp_index
 
 logger = logging.getLogger(__name__)
+
+
+class _LazyCifpMap(dict):
+    """Dict-like wrapper around `self.cifp_parsers` that lazily materializes a
+    CIFPIndex for any airport on first access. Lets enroute code keep its
+    ``self.cifp_parsers.get(icao)`` call pattern while actually loading
+    procedure data (the bridge previously passed an empty dict, so every
+    lookup silently returned None).
+    """
+
+    def get(self, icao, default=None):
+        if not icao:
+            return default
+        if icao in self:
+            return dict.__getitem__(self, icao)
+        try:
+            idx = load_cifp_index(icao)
+            self[icao] = idx
+            return idx
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Lazy CIFP load failed for {icao}: {exc}")
+            return default
+
+    def __getitem__(self, icao):
+        val = self.get(icao)
+        if val is None:
+            raise KeyError(icao)
+        return val
+
+
+class _LazyGeoJSONMap(dict):
+    """Parallel to _LazyCifpMap: lazy-loads `airport_data/{ICAO}.geojson`.
+
+    Enroute departures need per-airport parking data. The bridge doesn't
+    pre-build these parsers (the list of departure airports is a runtime
+    config), so we load on demand keyed by ICAO. Falls back to stripping
+    the leading `K` (the geojson files are named by 3-letter FAA code).
+    """
+
+    def get(self, icao, default=None):
+        if not icao:
+            return default
+        if icao in self:
+            return dict.__getitem__(self, icao)
+        from parsers.geojson_parser import GeoJSONParser
+        # Go through the bridge's resource_path helper so we pick up the
+        # user-editable `<install>/resources/airport_data/` first and fall
+        # back to the PyInstaller-baked copy second. Works identically in
+        # dev mode (both paths resolve to the repo's airport_data).
+        from ssg_bridge import resource_path
+        candidates = [resource_path('airport_data', f"{icao}.geojson")]
+        if icao.startswith('K') and len(icao) == 4:
+            candidates.append(resource_path('airport_data', f"{icao[1:]}.geojson"))
+        for path in candidates:
+            if path.exists():
+                try:
+                    parser = GeoJSONParser(str(path))
+                    self[icao] = parser
+                    return parser
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f"Failed to load GeoJSON for {icao}: {exc}")
+                    return default
+        logger.warning(f"No GeoJSON file for {icao}; enroute departures from this airport will be skipped")
+        return default
+
+    def __getitem__(self, icao):
+        val = self.get(icao)
+        if val is None:
+            raise KeyError(icao)
+        return val
 
 
 class ArtccEnrouteScenario(BaseScenario):
@@ -49,9 +120,13 @@ class ArtccEnrouteScenario(BaseScenario):
         self.callsign_lock = threading.Lock()
         self.spawn_point_lock = threading.Lock()
 
-        # Store airport-specific parsers
-        self.geojson_parsers = geojson_parsers or {}
-        self.cifp_parsers = cifp_parsers or {}
+        # Store airport-specific parsers. For the bridge path (Electron) we
+        # don't prepopulate a parser dict — instead, cifp_parsers lazy-loads
+        # each airport's CIFPIndex on first access (LRU-cached per process),
+        # so runway-aware code paths keep working without an explicit
+        # construction loop. Legacy PyQt callers pass pre-built dicts.
+        self.geojson_parsers = _LazyGeoJSONMap(geojson_parsers or {})
+        self.cifp_parsers = _LazyCifpMap(cifp_parsers or {})
 
         # Load config (handle being passed the full config or just loading it)
         if config:
@@ -74,10 +149,13 @@ class ArtccEnrouteScenario(BaseScenario):
                  num_enroute: int = 0,
                  num_arrivals: int = 0,
                  num_departures: int = 0,
+                 num_overflight: int = 0,
                  arrival_airports: Optional[List[str]] = None,
                  departure_airports: Optional[List[str]] = None,
                  arrival_airport_runways: Optional[Dict[str, List[str]]] = None,
                  departure_airport_runways: Optional[Dict[str, List[str]]] = None,
+                 per_airport_arrival_counts: Optional[Dict[str, int]] = None,
+                 per_airport_departure_counts: Optional[Dict[str, int]] = None,
                  difficulty_config_enroute: Dict = None,
                  difficulty_config_arrivals: Dict = None,
                  difficulty_config_departures: Dict = None,
@@ -121,8 +199,26 @@ class ArtccEnrouteScenario(BaseScenario):
         # Store configuration for filtering and runway assignment
         self.arrival_airports = arrival_airports or []
         self.arrival_airport_runways = arrival_airport_runways or {}
+        # Per-airport quotas for enroute arrivals/departures (new UI). Keys
+        # are K-prefixed ICAO codes; values are integer counts. If empty,
+        # generator code falls back to proportional splitting of the
+        # aggregate `num_arrivals`/`num_departures` across listed airports.
+        self.per_airport_arrival_counts = {
+            k.upper(): max(0, int(v or 0))
+            for k, v in (per_airport_arrival_counts or {}).items()
+        }
+        self.per_airport_departure_counts = {
+            k.upper(): max(0, int(v or 0))
+            for k, v in (per_airport_departure_counts or {}).items()
+        }
 
         logger.info(f"Generating ARTCC {self.artcc_id} scenario: {num_enroute} enroute, {num_arrivals} arrivals, {num_departures} departures")
+        # Total targets exposed for flight_pool buffer math inside
+        # _fetch_pool_* helpers (they size each per-airport call as
+        # target // len(airports)).
+        self._num_departures_total = num_departures
+        self._num_arrivals_total = num_arrivals
+        self._num_enroute_total = num_enroute
 
         departures_pool = []
         arrivals_pool = []
@@ -221,6 +317,13 @@ class ArtccEnrouteScenario(BaseScenario):
                     num_enroute, transient_pool, difficulty_config_enroute
                 )
 
+            if num_overflight > 0 and transient_pool:
+                logger.info(f"Generating {num_overflight} overflight aircraft...")
+                generation_futures['overflight'] = executor.submit(
+                    self._generate_overflight_aircraft,
+                    num_overflight, transient_pool, difficulty_config_enroute,
+                )
+
             # Wait for all generation tasks to complete
             for gen_type, future in generation_futures.items():
                 try:
@@ -245,75 +348,49 @@ class ArtccEnrouteScenario(BaseScenario):
         Returns:
             Filtered list of departure flights
         """
-        all_flights = []
+        from utils.data_pipeline import fetch_departures as pool_fetch_deps
 
-        # Fetch from each departure airport individually (API only supports single airports)
+        all_flights = []
+        # Roughly split the overall departure count across the listed airports
+        # so each airport's buffer is sized proportionally.
+        per_airport = max(5, getattr(self, '_num_departures_total', 20) // max(1, len(departure_airports)))
         for airport in departure_airports:
             try:
-                logger.info(f"Fetching departures from {airport}")
-                result = self.api_client.fetch_flights(
-                    departure=airport,
-                    limit=800
+                flights, _ = pool_fetch_deps(
+                    self.api_client, airport, num_required=per_airport,
                 )
-                flights = result.get('flights', []) if result else []
-
-                if flights:
-                    all_flights.extend(flights)
-                    logger.info(f"Fetched {len(flights)} departures from {airport}")
-                else:
-                    logger.warning(f"No departures fetched for {airport}")
-
-            except Exception as e:
+                all_flights.extend(flights)
+                logger.info(f"Fetched {len(flights)} departures from {airport}")
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Error fetching departures from {airport}: {e}")
 
         if not all_flights:
-            logger.warning(f"No departures fetched for any airports")
+            logger.warning("No departures fetched for any airports")
             return []
-
-        # Filter for valid flights with complete data
         filtered = self._filter_pool(all_flights, "Departures")
-
         logger.info(f"Departures Pool: Fetched {len(all_flights)} total, filtered to {len(filtered)}")
         return filtered
 
     def _fetch_pool_arrivals(self, arrival_airports: List[str]) -> List[Dict]:
-        """
-        Fetch Arrivals Pool from API (fetches each airport individually)
+        """Fetch arrivals across the configured airports via FlightPool."""
+        from utils.data_pipeline import fetch_arrivals as pool_fetch_arrs
 
-        Args:
-            arrival_airports: List of arrival airport ICAOs
-
-        Returns:
-            Filtered list of arrival flights
-        """
         all_flights = []
-
-        # Fetch from each arrival airport individually (API only supports single airports)
+        per_airport = max(5, getattr(self, '_num_arrivals_total', 20) // max(1, len(arrival_airports)))
         for airport in arrival_airports:
             try:
-                logger.info(f"Fetching arrivals to {airport}")
-                result = self.api_client.fetch_flights(
-                    arrival=airport,
-                    limit=800
+                flights, _ = pool_fetch_arrs(
+                    self.api_client, airport, num_required=per_airport,
                 )
-                flights = result.get('flights', []) if result else []
-
-                if flights:
-                    all_flights.extend(flights)
-                    logger.info(f"Fetched {len(flights)} arrivals to {airport}")
-                else:
-                    logger.warning(f"No arrivals fetched for {airport}")
-
-            except Exception as e:
+                all_flights.extend(flights)
+                logger.info(f"Fetched {len(flights)} arrivals to {airport}")
+            except Exception as e:  # noqa: BLE001
                 logger.error(f"Error fetching arrivals to {airport}: {e}")
 
         if not all_flights:
-            logger.warning(f"No arrivals fetched for any airports")
+            logger.warning("No arrivals fetched for any airports")
             return []
-
-        # Filter for valid flights with complete data
         filtered = self._filter_pool(all_flights, "Arrivals")
-
         logger.info(f"Arrivals Pool: Fetched {len(all_flights)} total, filtered to {len(filtered)}")
         return filtered
 
@@ -328,18 +405,16 @@ class ArtccEnrouteScenario(BaseScenario):
             Filtered list of transient flights
         """
         try:
-            # Fetch from API using artcc parameter
-            result = self.api_client.fetch_artcc_flights(
-                self.artcc_id,
-                limit=800
+            from utils.data_pipeline import fetch_artcc as pool_fetch_artcc
+            flights, _ = pool_fetch_artcc(
+                self.api_client, self.artcc_id,
+                num_required=getattr(self, '_num_enroute_total', 20),
             )
-            flights = result.get('flights', []) if result else []
-
             if not flights:
                 logger.warning(f"No transient flights fetched for ARTCC {self.artcc_id}")
                 return []
 
-            # Filter for valid flights with complete data
+            # Filter for valid flights with complete data (double-pass safety)
             filtered = self._filter_pool(flights, "Transient")
 
             # Additional filter: Remove arrivals to specified airports
@@ -375,10 +450,11 @@ class ArtccEnrouteScenario(BaseScenario):
         valid_flights = filter_valid_flights(flights)
         logger.debug(f"{pool_name}: {len(valid_flights)}/{len(flights)} passed validity checks")
 
-        # Determine if altitude is required based on pool type
-        # For Transient and Arrivals pools, altitude is optional (we'll estimate it if missing)
-        # For Departures, altitude is required (they start on ground)
-        require_altitude = (pool_name == "Departures")
+        # Altitude is optional on every pool: the downstream aircraft factory
+        # falls back to the aircraft type's cruise altitude when the API
+        # record omits requestedAltitude/assignedAltitude (which, empirically,
+        # is common for filed departure records at many airports).
+        require_altitude = False
 
         # Filter for required fields and no lat/long in routes
         clean_flights = []
@@ -400,12 +476,17 @@ class ArtccEnrouteScenario(BaseScenario):
                     logger.debug(f"{pool_name}: Skipping {callsign} - arrival airport {arrival_airport} not in configured list")
                     continue
 
-            # NEW: Require complete flight plans (both departure and arrival procedures)
-            if not dep_proc:
+            # Procedure requirements are direction-specific. The earlier
+            # version rejected every flight without BOTH procedures, which
+            # killed the Departures pool to zero because filed flight plans
+            # commonly carry only the SID at the origin end.
+            require_dep_proc = pool_name == "Departures"
+            require_arr_proc = pool_name == "Arrivals"
+            if require_dep_proc and not dep_proc:
                 missing_dep_proc += 1
                 logger.debug(f"{pool_name}: Skipping {callsign} - missing departure procedure")
                 continue
-            if not arr_proc:
+            if require_arr_proc and not arr_proc:
                 missing_arr_proc += 1
                 logger.debug(f"{pool_name}: Skipping {callsign} - missing arrival procedure")
                 continue
@@ -538,32 +619,61 @@ class ArtccEnrouteScenario(BaseScenario):
 
     def _generate_arrival_aircraft(self, count: int, flight_pool: List[Dict],
                                     difficulty_config: Dict = None):
-        """Generate arrival aircraft"""
+        """Generate arrival aircraft with per-airport quotas when configured."""
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
 
         if not flight_pool:
             logger.warning("No flights in Arrivals Pool")
             return
 
+        per_airport = getattr(self, 'per_airport_arrival_counts', {}) or {}
+        # Only honor per-airport mode when at least one airport has a
+        # non-zero quota. Otherwise fall back to the old "just hit `count`"
+        # behavior for legacy configs.
+        use_quotas = any(v > 0 for v in per_airport.values())
+        remaining = dict(per_airport) if use_quotas else None
+        target = sum(remaining.values()) if use_quotas else count
+
         created = 0
         attempts = 0
-        max_attempts = count * 20
+        max_attempts = target * 20
 
-        while created < count and attempts < max_attempts and flight_pool:
-            flight_data = random.choice(flight_pool)
+        while created < target and attempts < max_attempts and flight_pool:
+            if use_quotas:
+                # Pick only from flights whose destination still has quota.
+                eligible = [
+                    f for f in flight_pool
+                    if remaining.get((f.get('arrivalAirport') or '').upper(), 0) > 0
+                ]
+                if not eligible:
+                    logger.info("All per-airport arrival quotas filled")
+                    break
+                flight_data = random.choice(eligible)
+            else:
+                flight_data = random.choice(flight_pool)
 
             aircraft = self._create_arrival_aircraft(flight_data)
-
             if aircraft:
                 difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
-                # Thread-safe append
                 with self.aircraft_lock:
                     self.aircraft.append(aircraft)
+                if use_quotas:
+                    dest = (flight_data.get('arrivalAirport') or '').upper()
+                    if dest in remaining:
+                        remaining[dest] = max(0, remaining[dest] - 1)
                 created += 1
 
             attempts += 1
 
-        logger.info(f"Created {created} arrival aircraft (requested {count})")
+        if use_quotas:
+            short = {a: n for a, n in remaining.items() if n > 0}
+            logger.info(
+                f"Created {created} arrival aircraft (per-airport quotas: "
+                f"filled {target - sum(remaining.values())}/{target}"
+                + (f", unfilled {short}" if short else "") + ")"
+            )
+        else:
+            logger.info(f"Created {created} arrival aircraft (requested {target})")
 
     def _generate_departure_aircraft(self, count: int, flight_pool: List[Dict],
                                       difficulty_config: Dict = None,
@@ -631,6 +741,13 @@ class ArtccEnrouteScenario(BaseScenario):
         # Shuffle parking spots for variety
         random.shuffle(all_parking_spots)
 
+        # Per-airport quotas override the aggregate `count` when configured.
+        per_airport = getattr(self, 'per_airport_departure_counts', {}) or {}
+        use_quotas = any(v > 0 for v in per_airport.values())
+        remaining = dict(per_airport) if use_quotas else None
+        if use_quotas:
+            count = sum(remaining.values())
+
         created = 0
         for spot in all_parking_spots:
             if created >= count:
@@ -638,6 +755,10 @@ class ArtccEnrouteScenario(BaseScenario):
 
             # Get the airport for this parking spot
             airport_icao = airport_parking_map[spot.name]
+
+            # Skip spots at airports whose quota is already filled.
+            if use_quotas and remaining.get(airport_icao, 0) <= 0:
+                continue
 
             # Filter flights departing from this airport
             airport_flights = [f for f in flight_pool if f.get('departureAirport', '').upper() == airport_icao]
@@ -672,9 +793,196 @@ class ArtccEnrouteScenario(BaseScenario):
                 # Thread-safe append
                 with self.aircraft_lock:
                     self.aircraft.append(aircraft)
+                if use_quotas:
+                    remaining[airport_icao] = max(0, remaining[airport_icao] - 1)
                 created += 1
 
-        logger.info(f"Created {created} departure aircraft at parking spots (requested {count})")
+        if use_quotas:
+            short = {a: n for a, n in remaining.items() if n > 0}
+            logger.info(
+                f"Created {created} departure aircraft (per-airport quotas: "
+                f"{count - sum(remaining.values())}/{count}"
+                + (f", unfilled {short}" if short else "") + ")"
+            )
+        else:
+            logger.info(f"Created {created} departure aircraft at parking spots (requested {count})")
+
+    def _generate_overflight_aircraft(self, count: int, flight_pool: List[Dict],
+                                       difficulty_config: Dict = None):
+        """Generate overflight aircraft that enter the ARTCC from a neighbor.
+
+        Shares the transient flight pool (any flight whose filed route crosses
+        our airspace but whose destination is outside our configured arrival
+        list). The spawn position is offset ~15 NM outside the ARTCC boundary
+        on the reverse bearing from the first inside-ARTCC waypoint, with
+        heading pointed AT that waypoint — so the aircraft appears to be
+        handed off from the adjacent facility.
+        """
+        difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
+        if not flight_pool:
+            logger.warning("No flights in pool for overflights")
+            return
+
+        created = 0
+        attempts = 0
+        max_attempts = count * 20
+
+        while created < count and attempts < max_attempts and flight_pool:
+            flight_data = random.choice(flight_pool)
+            aircraft = self._create_overflight_aircraft(flight_data)
+            if aircraft:
+                difficulty_index = self._assign_difficulty(aircraft, difficulty_list, difficulty_index)
+                with self.aircraft_lock:
+                    self.aircraft.append(aircraft)
+                created += 1
+            attempts += 1
+
+        logger.info(f"Created {created} overflight aircraft (requested {count})")
+
+    def _find_overflight_spawn_on_route(self, route: str) -> Optional[Dict]:
+        """Return a spawn state for an overflight: position offset ~15 NM
+        outside the ARTCC boundary on the reverse bearing from the first
+        waypoint that's inside the ARTCC.
+
+        Returns dict matching `_find_spawn_waypoint_on_route`'s contract:
+        `{waypoint, latitude, longitude, heading, initial_route}`.
+        """
+        from utils.geo_utils import calculate_bearing, calculate_destination
+
+        waypoints = self.route_parser.parse_route_string(route)
+        if not waypoints:
+            return None
+        route_coords = self.route_parser.get_route_waypoint_coordinates(waypoints)
+        if len(route_coords) < 2:
+            return None
+
+        # Find the first waypoint that's inside the ARTCC — that's our
+        # handoff/entry point.
+        entry_idx = None
+        for i, (wp_name, lat, lon) in enumerate(route_coords):
+            if self.artcc_boundaries.is_point_in_artcc(lat, lon, self.artcc_id):
+                entry_idx = i
+                break
+        if entry_idx is None:
+            return None
+
+        entry_name, entry_lat, entry_lon = route_coords[entry_idx]
+
+        # Establish the "outbound from the boundary" bearing:
+        # - If there's a waypoint upstream (outside ARTCC), use its bearing
+        #   to the entry waypoint — that's the actual approach direction.
+        # - Otherwise fall back to the bearing FROM the NEXT in-ARTCC waypoint
+        #   TO the entry, which still points roughly into our airspace.
+        if entry_idx > 0:
+            up_name, up_lat, up_lon = route_coords[entry_idx - 1]
+            inbound_heading = calculate_bearing(up_lat, up_lon, entry_lat, entry_lon)
+        elif entry_idx + 1 < len(route_coords):
+            nxt_name, nxt_lat, nxt_lon = route_coords[entry_idx + 1]
+            inbound_heading = calculate_bearing(entry_lat, entry_lon, nxt_lat, nxt_lon)
+        else:
+            return None
+
+        # Place the aircraft 15 NM BEHIND the entry waypoint on the reverse
+        # bearing, still pointed AT the entry (matches what the adjacent
+        # facility would see on their scope just before handoff).
+        reverse_bearing = (inbound_heading + 180) % 360
+        spawn_lat, spawn_lon = calculate_destination(entry_lat, entry_lon, reverse_bearing, 15)
+
+        # Initial navigation: target the entry waypoint, then the rest of
+        # the route. Start the initial_route at the entry waypoint.
+        remainder = ' '.join(wp for wp, _, _ in route_coords[entry_idx:])
+        return {
+            'waypoint': entry_name,
+            'latitude': spawn_lat,
+            'longitude': spawn_lon,
+            'heading': int(inbound_heading),
+            'initial_route': remainder,
+        }
+
+    def _create_overflight_aircraft(self, flight_data: Dict) -> Optional[Aircraft]:
+        """Build a single overflight aircraft. Same API-data plumbing as
+        `_create_enroute_aircraft` but spawns at the boundary-entry position.
+        """
+        callsign = flight_data.get('aircraftIdentification', '')
+        aircraft_type = flight_data.get('aircraftType', 'B738')
+        filed_route = flight_data.get('route', '')
+        departure = flight_data.get('departureAirport', 'KORD')
+        arrival = flight_data.get('arrivalAirport', 'KLAX')
+
+        with self.callsign_lock:
+            if callsign in self.used_callsigns:
+                return None
+            self.used_callsigns.add(callsign)
+
+        aircraft_type = self._add_equipment_suffix(aircraft_type, False)
+
+        clean_route = clean_route_string(filed_route)
+        spawn_info = self._find_overflight_spawn_on_route(clean_route)
+        if not spawn_info:
+            logger.debug(f"No ARTCC boundary-entry found for {callsign}; skipping overflight")
+            with self.callsign_lock:
+                self.used_callsigns.discard(callsign)
+            return None
+
+        # Let two overflights share an entry waypoint (they're offset 15 NM
+        # apart along the airway already); only dedupe if the exact lat/lon
+        # pair collides. Key by rounded position.
+        spawn_key = f"OVF:{round(spawn_info['latitude'], 3)},{round(spawn_info['longitude'], 3)}"
+        with self.spawn_point_lock:
+            if spawn_key in self.used_spawn_points:
+                with self.callsign_lock:
+                    self.used_callsigns.discard(callsign)
+                return None
+            self.used_spawn_points.add(spawn_key)
+
+        requested_alt = flight_data.get('requestedAltitude') or flight_data.get('assignedAltitude')
+        if requested_alt:
+            try:
+                altitude = int(float(requested_alt))
+            except (ValueError, TypeError):
+                altitude = self._estimate_cruise_altitude(departure, arrival, aircraft_type)
+        else:
+            altitude = self._estimate_cruise_altitude(departure, arrival, aircraft_type)
+        cruise_altitude = str(altitude)
+
+        filed_speed = flight_data.get('requestedAirspeed')
+        if filed_speed:
+            try:
+                ground_speed = int(float(filed_speed))
+            except (ValueError, TypeError):
+                ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
+        else:
+            ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
+        cruise_speed = ground_speed
+
+        primary_airport_3letter = None
+        if self.arrival_airport_runways:
+            first_airport = list(self.arrival_airport_runways.keys())[0]
+            primary_airport_3letter = first_airport[1:] if first_airport.startswith('K') else first_airport[-3:]
+
+        aircraft = Aircraft(
+            callsign=callsign,
+            aircraft_type=aircraft_type,
+            latitude=spawn_info['latitude'],
+            longitude=spawn_info['longitude'],
+            altitude=altitude,
+            heading=int(spawn_info['heading']),
+            ground_speed=ground_speed,
+            # Spawn at a bare lat/lon (no fix) — the aircraft isn't yet over
+            # the entry waypoint, it's outside the boundary. vNAS handles
+            # FixOrFrd spawns or we leave starting_conditions_type default.
+            starting_conditions_type='FixOrFrd',
+            fix=spawn_info['waypoint'],
+            departure=departure,
+            arrival=arrival,
+            route=clean_route,
+            cruise_altitude=cruise_altitude,
+            cruise_speed=cruise_speed,
+            flight_rules="I",
+            primary_airport=primary_airport_3letter,
+            spawn_delay=0,
+        )
+        return aircraft
 
     def _create_enroute_aircraft(self, flight_data: Dict) -> Optional[Aircraft]:
         """Create enroute transient aircraft spawned along their route within ARTCC"""
@@ -723,9 +1031,15 @@ class ArtccEnrouteScenario(BaseScenario):
             logger.debug(f"{callsign}: Estimated altitude {altitude} ft (API data not available)")
         cruise_altitude = str(altitude)
 
-        # Get filed speed from API - guaranteed to exist due to filtering
-        filed_speed = flight_data.get('requestedAirspeed')  # API uses 'requestedAirspeed' not 'cruiseSpeed'
-        ground_speed = int(float(filed_speed))
+        # Filed speed, with aircraft-type fallback when the API omits it.
+        filed_speed = flight_data.get('requestedAirspeed')
+        if filed_speed:
+            try:
+                ground_speed = int(float(filed_speed))
+            except (ValueError, TypeError):
+                ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
+        else:
+            ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
         cruise_speed = ground_speed
 
         # Navigation path: next waypoint after spawn, followed by remainder of filed route
@@ -805,9 +1119,14 @@ class ArtccEnrouteScenario(BaseScenario):
         altitude = self._get_altitude_from_cifp(spawn_waypoint_obj, arr_proc, departure, arrival, aircraft_type)
         cruise_altitude = str(altitude)
 
-        # Get filed speed from API - guaranteed to exist due to filtering
         filed_speed = flight_data.get('requestedAirspeed')
-        ground_speed = int(float(filed_speed))
+        if filed_speed:
+            try:
+                ground_speed = int(float(filed_speed))
+            except (ValueError, TypeError):
+                ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
+        else:
+            ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
         cruise_speed = ground_speed
 
         # Calculate heading from CIFP inbound course
@@ -938,13 +1257,26 @@ class ArtccEnrouteScenario(BaseScenario):
         # Extract 3-letter airport code from ICAO (e.g., KPHX -> PHX)
         departure_3letter = departure[1:] if departure.startswith('K') else departure[-3:]
 
-        # Get filed altitude from API - guaranteed to exist due to filtering
+        # The filter relaxed the altitude/speed requirement (many filed plans
+        # omit these fields), so fall back to the aircraft-type defaults when
+        # the API didn't supply a value.
         requested_alt = flight_data.get('requestedAltitude') or flight_data.get('assignedAltitude')
-        cruise_altitude = str(int(float(requested_alt)))
+        if requested_alt:
+            try:
+                cruise_altitude = str(int(float(requested_alt)))
+            except (ValueError, TypeError):
+                cruise_altitude = '35000'
+        else:
+            cruise_altitude = '35000'  # sensible jet cruise default
 
-        # Get filed speed from API - guaranteed to exist due to filtering
-        filed_speed = flight_data.get('requestedAirspeed')  # API uses 'requestedAirspeed' not 'cruiseSpeed'
-        cruise_speed = int(float(filed_speed))
+        filed_speed = flight_data.get('requestedAirspeed')
+        if filed_speed:
+            try:
+                cruise_speed = int(float(filed_speed))
+            except (ValueError, TypeError):
+                cruise_speed = self.api_client._calculate_cruise_speed(aircraft_type)
+        else:
+            cruise_speed = self.api_client._calculate_cruise_speed(aircraft_type)
 
         # Create aircraft at parking spot
         aircraft = Aircraft(
@@ -1036,14 +1368,20 @@ class ArtccEnrouteScenario(BaseScenario):
             return None
 
         # For arrivals, select the FIRST waypoint in ARTCC (maximize time in airspace)
-        # For enroute, select a random waypoint
+        # For enroute, prefer a randomly-chosen *unused* waypoint so that two
+        # transient aircraft on the same airway don't both claim the same fix
+        # (which caused the earlier "Spawn point X already in use, skipping"
+        # warnings and reduced the generated-count).
         if is_arrival:
-            # Select first waypoint in ARTCC (maximize time aircraft spends in airspace)
             selected_idx, wp_name, lat, lon = waypoints_in_artcc[0]
             logger.debug(f"Selected first waypoint within ARTCC: {wp_name} at index {selected_idx}")
         else:
-            # Select a random waypoint from those in ARTCC
-            selected_idx, wp_name, lat, lon = random.choice(waypoints_in_artcc)
+            shuffled = list(waypoints_in_artcc)
+            random.shuffle(shuffled)
+            used = getattr(self, 'used_spawn_points', set())
+            unused = [w for w in shuffled if w[1] not in used]
+            candidates = unused if unused else shuffled
+            selected_idx, wp_name, lat, lon = candidates[0]
 
         # Calculate heading to next waypoint
         heading = 0
@@ -1320,29 +1658,6 @@ class ArtccEnrouteScenario(BaseScenario):
             return difficulty_index + 1
         return difficulty_index
 
-    def apply_spawn_delays(self, aircraft_list: List[Aircraft],
-                          spawn_delay_mode: SpawnDelayMode,
-                          delay_value: str = None,
-                          total_session_minutes: int = None):
-        """
-        Apply spawn delays (simplified version from BaseScenario)
-        """
-        if spawn_delay_mode == SpawnDelayMode.NONE:
-            for aircraft in aircraft_list:
-                aircraft.spawn_delay = 0
-        elif spawn_delay_mode == SpawnDelayMode.INCREMENTAL:
-            if delay_value:
-                # Parse delay value
-                try:
-                    delay_minutes = int(delay_value.split('-')[0])
-                    delay_seconds = delay_minutes * 60
-
-                    for i, aircraft in enumerate(aircraft_list):
-                        aircraft.spawn_delay = i * delay_seconds
-                except:
-                    logger.warning(f"Invalid delay value: {delay_value}")
-        elif spawn_delay_mode == SpawnDelayMode.TOTAL:
-            if total_session_minutes:
-                total_seconds = total_session_minutes * 60
-                for aircraft in aircraft_list:
-                    aircraft.spawn_delay = random.randint(0, total_seconds)
+    # Enroute now inherits apply_spawn_delays from BaseScenario so all
+    # scenarios share the stratified-realistic TOTAL mode and the proper
+    # min-max range handling for INCREMENTAL mode.

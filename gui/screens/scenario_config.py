@@ -281,11 +281,35 @@ class ScenarioConfigScreen(tk.Frame):
                 errors.append("Active runways are required")
 
         elif current_category_id == "arrivals_approach":
-            # Validate TRACON arrival waypoints if applicable
+            # Validate TRACON arrival configuration if applicable
             if scenario_type in ['tracon_arrivals', 'tracon_mixed']:
-                arrival_waypoints = config.get('arrival_waypoints', '').strip()
-                if not arrival_waypoints:
-                    errors.append("STAR Waypoints are required (e.g., EAGUL.EAGUL6, PINNG.PINNG1)")
+                arrival_mode = config.get('arrival_mode', 'star')
+                if arrival_mode == 'star':
+                    arrival_waypoints = config.get('arrival_waypoints', '').strip()
+                    if not arrival_waypoints:
+                        errors.append("STAR Waypoints are required (e.g., EAGUL.EAGUL6, PINNG.PINNG1)")
+                else:  # FRD mode
+                    frd_points = config.get('frd_points', '').strip()
+                    frd_altitudes = config.get('frd_altitudes', '').strip()
+                    frd_speeds = config.get('frd_speeds', '').strip()
+
+                    if not frd_points:
+                        errors.append("FRD Points are required (e.g., HOMRR020015)")
+                    if not frd_altitudes:
+                        errors.append("Altitudes are required for FRD points")
+                    if not frd_speeds:
+                        errors.append("Speeds are required for FRD points")
+
+                    # Validate count matching
+                    if frd_points and frd_altitudes and frd_speeds:
+                        points_list = [p.strip() for p in frd_points.split(',') if p.strip()]
+                        alts_list = [a.strip() for a in frd_altitudes.split(',') if a.strip()]
+                        speeds_list = [s.strip() for s in frd_speeds.split(',') if s.strip()]
+
+                        if len(alts_list) != len(points_list):
+                            errors.append(f"Number of altitudes ({len(alts_list)}) must match number of FRD points ({len(points_list)})")
+                        if len(speeds_list) != len(points_list):
+                            errors.append(f"Number of speeds ({len(speeds_list)}) must match number of FRD points ({len(points_list)})")
 
         elif current_category_id == "enroute_aircraft":
             # Validate enroute aircraft counts
@@ -1026,9 +1050,14 @@ class ScenarioConfigScreen(tk.Frame):
             grid.columnconfigure(3, weight=1)
             grid.columnconfigure(5, weight=1)
 
-        # Create difficulty sections for each category
-        create_category_difficulty(difficulty_frame, "Departures", "difficulty_departures")
-        create_category_difficulty(difficulty_frame, "Arrivals", "difficulty_arrivals")
+        # Create difficulty sections for each category (conditional based on scenario type)
+        has_departures = getattr(self, 'scenario_has_departures', True)
+        has_arrivals = getattr(self, 'scenario_has_arrivals', True)
+
+        if has_departures:
+            create_category_difficulty(difficulty_frame, "Departures", "difficulty_departures")
+        if has_arrivals:
+            create_category_difficulty(difficulty_frame, "Arrivals", "difficulty_arrivals")
 
         # Store references for toggling
         self.difficulty_section = section
@@ -1323,32 +1352,103 @@ class ScenarioConfigScreen(tk.Frame):
         section = ThemedFrame(parent)
         section.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
 
+        # Arrival Mode Selection (STAR Waypoints vs FRD Points)
+        mode_label = ThemedLabel(
+            section,
+            text="Arrival Spawn Mode:",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
+        )
+        mode_label.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        arrival_mode_var = tk.StringVar(value="star")
+        self.inputs['arrival_mode'] = arrival_mode_var
+
+        mode_frame = ThemedFrame(section)
+        mode_frame.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        # STAR Waypoints radio button
+        star_radio = tk.Radiobutton(
+            mode_frame,
+            text="STAR Waypoints",
+            variable=arrival_mode_var,
+            value="star",
+            bg=DarkTheme.BG_PRIMARY,
+            fg=DarkTheme.FG_PRIMARY,
+            selectcolor=DarkTheme.BG_TERTIARY,
+            activebackground=DarkTheme.BG_PRIMARY,
+            activeforeground=DarkTheme.FG_PRIMARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            cursor='hand2',
+            command=lambda: self._toggle_arrival_mode("star")
+        )
+        star_radio.pack(anchor='w', padx=(DarkTheme.PADDING_MEDIUM, 0))
+
+        star_mode_hint = ThemedLabel(
+            mode_frame,
+            text="Spawn aircraft at CIFP waypoints along published STARs",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=550
+        )
+        star_mode_hint.pack(anchor='w', padx=(DarkTheme.PADDING_XLARGE, 0),
+                           pady=(0, DarkTheme.PADDING_SMALL))
+
+        # FRD Points radio button
+        frd_radio = tk.Radiobutton(
+            mode_frame,
+            text="FRD Points",
+            variable=arrival_mode_var,
+            value="frd",
+            bg=DarkTheme.BG_PRIMARY,
+            fg=DarkTheme.FG_PRIMARY,
+            selectcolor=DarkTheme.BG_TERTIARY,
+            activebackground=DarkTheme.BG_PRIMARY,
+            activeforeground=DarkTheme.FG_PRIMARY,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL),
+            cursor='hand2',
+            command=lambda: self._toggle_arrival_mode("frd")
+        )
+        frd_radio.pack(anchor='w', padx=(DarkTheme.PADDING_MEDIUM, 0))
+
+        frd_mode_hint = ThemedLabel(
+            mode_frame,
+            text="Spawn aircraft at custom Fix/Radial/Distance points with user-specified altitudes and speeds",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=550
+        )
+        frd_mode_hint.pack(anchor='w', padx=(DarkTheme.PADDING_XLARGE, 0))
+
+        # === STAR Mode Frame (shown by default) ===
+        self.star_mode_frame = ThemedFrame(section)
+        self.star_mode_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
+
         # STAR Waypoints - Required field with red asterisk
-        label_frame = tk.Frame(section, bg=DarkTheme.BG_PRIMARY)
-        label_frame.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
+        star_label_frame = tk.Frame(self.star_mode_frame, bg=DarkTheme.BG_PRIMARY)
+        star_label_frame.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
 
         ThemedLabel(
-            label_frame,
+            star_label_frame,
             text="STAR Waypoints:",
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold')
         ).pack(side='left')
 
         tk.Label(
-            label_frame,
+            star_label_frame,
             text=" *",
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
             fg='#FF4444',
             bg=DarkTheme.BG_PRIMARY
         ).pack(side='left')
 
-        waypoints_entry = ThemedEntry(section,
+        waypoints_entry = ThemedEntry(self.star_mode_frame,
                                      placeholder="e.g., EAGUL.JESSE3, PINNG.PINNG1, etc.",
                                      validate_type="waypoint")
         waypoints_entry.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
         self.inputs['arrival_waypoints'] = waypoints_entry
 
         waypoint_hint = ThemedLabel(
-            section,
+            self.star_mode_frame,
             text="Format: WAYPOINT.STAR. The aircraft will spawn 3NM prior to that fix along the lateral course of the arrival. The generation will only function appropriately if you pick a waypoint prior to any runway-specific splits.",
             fg=DarkTheme.FG_DISABLED,
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
@@ -1356,11 +1456,11 @@ class ScenarioConfigScreen(tk.Frame):
         )
         waypoint_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM))
 
-        # Use CIFP Speeds checkbox
+        # Use CIFP Speeds checkbox (STAR mode only)
         use_cifp_speeds_var = tk.BooleanVar(value=True)
 
         use_cifp_speeds_checkbox = tk.Checkbutton(
-            section,
+            self.star_mode_frame,
             text="Use CIFP Speed Restrictions",
             variable=use_cifp_speeds_var,
             bg=DarkTheme.BG_PRIMARY,
@@ -1374,15 +1474,193 @@ class ScenarioConfigScreen(tk.Frame):
         use_cifp_speeds_checkbox.pack(anchor='w', pady=(0, DarkTheme.PADDING_SMALL))
         self.inputs['use_cifp_speeds'] = use_cifp_speeds_var
 
-        # Hint for CIFP speeds
         cifp_speed_hint = ThemedLabel(
-            section,
+            self.star_mode_frame,
             text="When enabled, arrival aircraft will spawn at speeds matching CIFP parsed speed restrictions for the arrival procedure. Falls back to altitude-based calculation if no restriction exists.",
             fg=DarkTheme.FG_DISABLED,
             font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
             wraplength=550
         )
         cifp_speed_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM))
+
+        # === FRD Mode Frame (hidden by default) ===
+        self.frd_mode_frame = ThemedFrame(section)
+        # Don't pack yet - hidden by default
+
+        # Initialize list to store FRD row widgets
+        self.frd_rows = []
+
+        # Description/hint
+        frd_hint = ThemedLabel(
+            self.frd_mode_frame,
+            text="Define spawn points using Fix/Radial/Distance format (e.g., HOMRR020015 = 15NM from HOMRR on 020 radial). Initial Route is optional - leave blank for direct-to-airport.",
+            fg=DarkTheme.FG_DISABLED,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            wraplength=550
+        )
+        frd_hint.pack(anchor='w', pady=(0, DarkTheme.PADDING_MEDIUM))
+
+        # Single grid container for headers and data rows (ensures column alignment)
+        self.frd_grid_container = tk.Frame(self.frd_mode_frame, bg=DarkTheme.BG_PRIMARY)
+        self.frd_grid_container.pack(fill='x', pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Configure column weights
+        self.frd_grid_container.columnconfigure(0, weight=2, minsize=120)  # FRD Point
+        self.frd_grid_container.columnconfigure(1, weight=1, minsize=70)   # Altitude
+        self.frd_grid_container.columnconfigure(2, weight=1, minsize=70)   # Speed
+        self.frd_grid_container.columnconfigure(3, weight=3, minsize=150)  # Initial Route
+        self.frd_grid_container.columnconfigure(4, weight=0, minsize=30)   # Remove button
+
+        # Row 0: Column headers
+        # FRD Point header with asterisk
+        frd_header = tk.Frame(self.frd_grid_container, bg=DarkTheme.BG_PRIMARY)
+        frd_header.grid(row=0, column=0, sticky='w', padx=(0, DarkTheme.PADDING_SMALL), pady=(0, DarkTheme.PADDING_SMALL))
+        ThemedLabel(frd_header, text="FRD Point", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL, 'bold')).pack(side='left')
+        tk.Label(frd_header, text=" *", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL, 'bold'), fg='#FF4444', bg=DarkTheme.BG_PRIMARY).pack(side='left')
+
+        # Altitude header with asterisk
+        alt_header = tk.Frame(self.frd_grid_container, bg=DarkTheme.BG_PRIMARY)
+        alt_header.grid(row=0, column=1, sticky='w', padx=(0, DarkTheme.PADDING_SMALL), pady=(0, DarkTheme.PADDING_SMALL))
+        ThemedLabel(alt_header, text="Alt (ft)", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL, 'bold')).pack(side='left')
+        tk.Label(alt_header, text=" *", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL, 'bold'), fg='#FF4444', bg=DarkTheme.BG_PRIMARY).pack(side='left')
+
+        # Speed header with asterisk
+        spd_header = tk.Frame(self.frd_grid_container, bg=DarkTheme.BG_PRIMARY)
+        spd_header.grid(row=0, column=2, sticky='w', padx=(0, DarkTheme.PADDING_SMALL), pady=(0, DarkTheme.PADDING_SMALL))
+        ThemedLabel(spd_header, text="Spd (kts)", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL, 'bold')).pack(side='left')
+        tk.Label(spd_header, text=" *", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL, 'bold'), fg='#FF4444', bg=DarkTheme.BG_PRIMARY).pack(side='left')
+
+        # Initial Route header (no asterisk - optional)
+        ThemedLabel(self.frd_grid_container, text="Initial Route (optional)", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL, 'bold')).grid(row=0, column=3, sticky='w', padx=(0, DarkTheme.PADDING_SMALL), pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Empty header for remove button column
+        ThemedLabel(self.frd_grid_container, text="", font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL)).grid(row=0, column=4, sticky='w', pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Track next row index for data rows (row 0 is headers)
+        self.frd_next_row = 1
+
+        # Add first row by default
+        self._add_frd_row()
+
+        # Add More button (smaller style)
+        add_row_btn = tk.Button(
+            self.frd_mode_frame,
+            text="+ Add",
+            command=self._add_frd_row,
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_SMALL),
+            fg=DarkTheme.FG_PRIMARY,
+            bg=DarkTheme.BG_TERTIARY,
+            activeforeground=DarkTheme.FG_PRIMARY,
+            activebackground=DarkTheme.ACCENT_HOVER,
+            relief='flat',
+            cursor='hand2',
+            padx=DarkTheme.PADDING_MEDIUM,
+            pady=DarkTheme.PADDING_SMALL
+        )
+        add_row_btn.pack(anchor='w', pady=(DarkTheme.PADDING_SMALL, DarkTheme.PADDING_MEDIUM))
+
+    def _toggle_arrival_mode(self, mode):
+        """Toggle between STAR Waypoints and FRD Points arrival modes"""
+        if mode == "star":
+            self.frd_mode_frame.pack_forget()
+            self.star_mode_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
+        else:
+            self.star_mode_frame.pack_forget()
+            self.frd_mode_frame.pack(fill='x', pady=(DarkTheme.PADDING_SMALL, 0))
+
+    def _add_frd_row(self):
+        """Add a new FRD input row to the grid container"""
+        row_idx = self.frd_next_row
+        self.frd_next_row += 1
+
+        # FRD Point entry
+        frd_entry = ThemedEntry(self.frd_grid_container, placeholder="HOMRR020015")
+        frd_entry.grid(row=row_idx, column=0, sticky='ew', padx=(0, DarkTheme.PADDING_SMALL), pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Altitude entry
+        alt_entry = ThemedEntry(self.frd_grid_container, placeholder="11000", validate_type="integer")
+        alt_entry.grid(row=row_idx, column=1, sticky='ew', padx=(0, DarkTheme.PADDING_SMALL), pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Speed entry
+        spd_entry = ThemedEntry(self.frd_grid_container, placeholder="280", validate_type="integer")
+        spd_entry.grid(row=row_idx, column=2, sticky='ew', padx=(0, DarkTheme.PADDING_SMALL), pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Initial Route entry
+        route_entry = ThemedEntry(self.frd_grid_container, placeholder="HOMRR EAGUL6.08L")
+        route_entry.grid(row=row_idx, column=3, sticky='ew', padx=(0, DarkTheme.PADDING_SMALL), pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Remove button (X)
+        remove_btn = tk.Button(
+            self.frd_grid_container,
+            text="×",
+            font=(DarkTheme.FONT_FAMILY, DarkTheme.FONT_SIZE_NORMAL, 'bold'),
+            fg=DarkTheme.FG_SECONDARY,
+            bg=DarkTheme.BG_PRIMARY,
+            activeforeground='#FF4444',
+            activebackground=DarkTheme.BG_PRIMARY,
+            relief='flat',
+            borderwidth=0,
+            cursor='hand2',
+            width=2
+        )
+        remove_btn.grid(row=row_idx, column=4, sticky='e', pady=(0, DarkTheme.PADDING_SMALL))
+
+        # Store row data (including all widgets for removal)
+        row_data = {
+            'row_idx': row_idx,
+            'frd_entry': frd_entry,
+            'alt_entry': alt_entry,
+            'spd_entry': spd_entry,
+            'route_entry': route_entry,
+            'remove_btn': remove_btn
+        }
+        self.frd_rows.append(row_data)
+
+        # Configure remove button command (needs row_data reference)
+        remove_btn.configure(command=lambda rd=row_data: self._remove_frd_row(rd))
+
+    def _remove_frd_row(self, row_data):
+        """Remove an FRD input row"""
+        # Don't allow removing the last row
+        if len(self.frd_rows) <= 1:
+            return
+
+        # Find and remove the row from our list
+        if row_data in self.frd_rows:
+            self.frd_rows.remove(row_data)
+            # Destroy all widgets in this row
+            row_data['frd_entry'].destroy()
+            row_data['alt_entry'].destroy()
+            row_data['spd_entry'].destroy()
+            row_data['route_entry'].destroy()
+            row_data['remove_btn'].destroy()
+
+    def _get_frd_config_values(self):
+        """Get FRD configuration values from the dynamic rows"""
+        frd_points = []
+        frd_altitudes = []
+        frd_speeds = []
+        frd_initial_routes = []
+
+        for row_data in self.frd_rows:
+            frd_point = row_data['frd_entry'].get_value().strip().upper()
+            altitude = row_data['alt_entry'].get_value().strip()
+            speed = row_data['spd_entry'].get_value().strip()
+            route = row_data['route_entry'].get_value().strip()
+
+            # Only include rows that have at least an FRD point
+            if frd_point:
+                frd_points.append(frd_point)
+                frd_altitudes.append(altitude)
+                frd_speeds.append(speed)
+                frd_initial_routes.append(route)
+
+        return {
+            'frd_points': ','.join(frd_points) if frd_points else '',
+            'frd_altitudes': ','.join(frd_altitudes) if frd_altitudes else '',
+            'frd_speeds': ','.join(frd_speeds) if frd_speeds else '',
+            'frd_initial_routes': ','.join(frd_initial_routes) if frd_initial_routes else ''
+        }
 
     def _add_vfr_aircraft_section(self, parent):
         """Add VFR aircraft configuration section"""
@@ -1683,6 +1961,11 @@ class ScenarioConfigScreen(tk.Frame):
         # Include preset command rules
         values['preset_command_rules'] = self.preset_command_rules
 
+        # Include FRD row values (from dynamic rows)
+        if hasattr(self, 'frd_rows') and self.frd_rows:
+            frd_values = self._get_frd_config_values()
+            values.update(frd_values)
+
         return values
 
     def on_back(self):
@@ -1908,7 +2191,7 @@ class ScenarioConfigScreen(tk.Frame):
                     except ValueError:
                         errors.append("Total session minutes must be a valid number")
 
-        # Validate TRACON arrival waypoints (required for TRACON arrivals/mixed scenarios)
+        # Validate TRACON arrival configuration (required for TRACON arrivals/mixed scenarios)
         if scenario_type in ['tracon_arrivals', 'tracon_mixed']:
             # Check if arrivals are being generated
             num_arrivals = config.get('num_arrivals', '')
@@ -1931,11 +2214,64 @@ class ScenarioConfigScreen(tk.Frame):
                 except ValueError:
                     pass
 
-            # If generating arrivals, waypoints are required
+            # If generating arrivals, validate based on mode
             if has_arrivals:
-                arrival_waypoints = config.get('arrival_waypoints', '').strip()
-                if not arrival_waypoints:
-                    errors.append("STAR Waypoints are required for TRACON scenarios with arrivals (e.g., EAGUL.EAGUL6, PINNG.PINNG1)")
+                arrival_mode = config.get('arrival_mode', 'star')
+                if arrival_mode == 'star':
+                    arrival_waypoints = config.get('arrival_waypoints', '').strip()
+                    if not arrival_waypoints:
+                        errors.append("STAR Waypoints are required for TRACON scenarios with arrivals (e.g., EAGUL.EAGUL6, PINNG.PINNG1)")
+                else:  # FRD mode
+                    frd_points = config.get('frd_points', '').strip()
+                    frd_altitudes = config.get('frd_altitudes', '').strip()
+                    frd_speeds = config.get('frd_speeds', '').strip()
+
+                    if not frd_points:
+                        errors.append("FRD Points are required for TRACON scenarios with arrivals")
+                    if not frd_altitudes:
+                        errors.append("Altitudes are required for FRD points")
+                    if not frd_speeds:
+                        errors.append("Speeds are required for FRD points")
+
+                    # Validate FRD format and count matching
+                    if frd_points and frd_altitudes and frd_speeds:
+                        points_list = [p.strip().upper() for p in frd_points.split(',') if p.strip()]
+                        alts_list = [a.strip() for a in frd_altitudes.split(',') if a.strip()]
+                        speeds_list = [s.strip() for s in frd_speeds.split(',') if s.strip()]
+
+                        # Validate count matching
+                        if len(alts_list) != len(points_list):
+                            errors.append(f"Number of altitudes ({len(alts_list)}) must match number of FRD points ({len(points_list)})")
+                        if len(speeds_list) != len(points_list):
+                            errors.append(f"Number of speeds ({len(speeds_list)}) must match number of FRD points ({len(points_list)})")
+
+                        # Validate FRD format (min 7 chars, last 6 must be digits)
+                        for frd in points_list:
+                            if len(frd) < 7:
+                                errors.append(f"Invalid FRD format: '{frd}' (too short, must be FIX + 3-digit radial + 3-digit distance)")
+                            elif not frd[-6:].isdigit():
+                                errors.append(f"Invalid FRD format: '{frd}' (last 6 characters must be digits for radial and distance)")
+                            else:
+                                # Validate radial range (0-359)
+                                try:
+                                    radial = int(frd[-6:-3])
+                                    if radial < 0 or radial > 359:
+                                        errors.append(f"Invalid FRD format: '{frd}' (radial {radial} must be 0-359)")
+                                except ValueError:
+                                    errors.append(f"Invalid FRD format: '{frd}' (radial not numeric)")
+
+                        # Validate altitudes and speeds are numeric
+                        for alt in alts_list:
+                            try:
+                                int(alt)
+                            except ValueError:
+                                errors.append(f"Invalid altitude: '{alt}' (must be a number)")
+
+                        for spd in speeds_list:
+                            try:
+                                int(spd)
+                            except ValueError:
+                                errors.append(f"Invalid speed: '{spd}' (must be a number)")
 
         return errors
 

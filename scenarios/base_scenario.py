@@ -5,7 +5,7 @@ import random
 import logging
 import json
 import threading
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from abc import ABC, abstractmethod
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -13,13 +13,28 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from models.aircraft import Aircraft
 from models.spawn_delay_mode import SpawnDelayMode
 from parsers.geojson_parser import GeoJSONParser
-from parsers.cifp_parser import CIFPParser
+# NOTE: scenarios accept either parsers.CIFPParser or utils.data_pipeline.CIFPIndex
+# (duck-typed). The legacy PyQt GUI still instantiates CIFPParser directly; the
+# Electron bridge uses CIFPIndex for per-process caching + the runway fix.
 from utils.api_client import FlightDataAPIClient
 from utils.constants import POPULAR_US_AIRPORTS, LESS_COMMON_AIRPORTS, COMMON_JETS, COMMON_GA_AIRCRAFT
 from utils.flight_data_filter import (
     filter_valid_flights, categorize_flights, filter_by_parking_airline, is_ga_aircraft,
     get_airline_from_callsign, clean_route_string
 )
+from utils.data_pipeline import (
+    matches_any,
+    strip_suffix,
+    format_procedures_param,
+    WakeBudget,
+    WAKE_CATEGORIES,
+    bucket_by_wake,
+    normalize_category,
+    to_icao,
+    dedupe_by_gufi,
+)
+# Back-compat alias for the leading-underscore form used inside this module.
+_normalize_category = normalize_category
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +43,7 @@ class BaseScenario(ABC):
     """Base class for all scenario types"""
 
     def __init__(self, airport_icao: str, geojson_parser: GeoJSONParser,
-                 cifp_parser: CIFPParser, api_client: FlightDataAPIClient,
+                 cifp_parser, api_client: FlightDataAPIClient,
                  cached_flights: Dict[str, List] = None):
         """
         Initialize the scenario
@@ -55,9 +70,69 @@ class BaseScenario(ABC):
         self.departure_flight_pool = []
         self.current_sids = None
 
+        # Wake-category budgets (populated by bridge before generate()).
+        self.dep_wake_budget: Optional[WakeBudget] = None
+        self.arr_wake_budget: Optional[WakeBudget] = None
+
         self.callsign_lock = threading.Lock()
         self.parking_lock = threading.Lock()
         self.aircraft_lock = threading.Lock()
+
+    def set_wake_budgets(self, dep_counts: Dict[str, int], arr_counts: Dict[str, int]) -> None:
+        """Install per-category target counts for departures and arrivals.
+
+        Called by the bridge after scenario construction. Budgets are consumed
+        as flights are picked; short categories backfill from whichever bucket
+        still has supply (see WakeBudget for backfill accounting).
+        """
+        self.dep_wake_budget = WakeBudget.from_counts(dep_counts or {})
+        self.arr_wake_budget = WakeBudget.from_counts(arr_counts or {})
+
+    def set_ga_config(self, ga_config: Optional[Dict]) -> None:
+        """Install the GA config block from the bridge.
+
+        Expected shape: {
+            enabled: bool,
+            departures: {count: int, mode: 'VFR'|'IFR'},
+            arrivals:   {count: int, mode: 'VFR'|'IFR'},
+        }
+
+        When `enabled` is False (the default), GA-tagged parking spots are
+        skipped entirely and no synthetic GA arrivals are injected. When
+        True, the per-direction count caps how many GA aircraft are placed;
+        additional GA spots beyond the count are skipped (no airline
+        aircraft placed on them).
+        """
+        self.ga_config = ga_config or {'enabled': False}
+        self.ga_dep_consumed = 0
+        self.ga_arr_consumed = 0
+        self.ga_used_gufis: set = set()
+
+    def _consume_ga_spot_for_departure(self) -> Optional[str]:
+        """Return 'VFR'/'IFR' if this GA spot should be filled, or None to skip."""
+        ga = getattr(self, 'ga_config', None) or {}
+        if not ga.get('enabled'):
+            return None
+        dep = ga.get('departures') or {}
+        count = int(dep.get('count') or 0)
+        if getattr(self, 'ga_dep_consumed', 0) >= count:
+            return None
+        self.ga_dep_consumed = getattr(self, 'ga_dep_consumed', 0) + 1
+        return dep.get('mode', 'VFR')
+
+    def _ga_arrival_budget(self) -> int:
+        """Number of GA arrival aircraft remaining to spawn."""
+        ga = getattr(self, 'ga_config', None) or {}
+        if not ga.get('enabled'):
+            return 0
+        arr = ga.get('arrivals') or {}
+        total = int(arr.get('count') or 0)
+        return max(0, total - getattr(self, 'ga_arr_consumed', 0))
+
+    def _ga_arrival_mode(self) -> str:
+        ga = getattr(self, 'ga_config', None) or {}
+        arr = ga.get('arrivals') or {}
+        return arr.get('mode', 'VFR')
 
     @abstractmethod
     def generate(self, **kwargs) -> List[Aircraft]:
@@ -219,22 +294,37 @@ class BaseScenario(ABC):
                 logger.warning("Invalid total_session_minutes for TOTAL mode, defaulting to 30")
                 total_session_minutes = 30
 
+            # "Realistic" spawn distribution. Pure uniform-random bunches
+            # aircraft and leaves stagnant windows, so we use stratified
+            # sampling: divide the session into N equal strata, pick one
+            # time from each stratum's inner 60% (avoids the extremes of
+            # adjacent strata colliding), then shuffle assignments so the
+            # aircraft-to-stratum mapping isn't tied to creation order.
             max_delay_seconds = total_session_minutes * 60
-
-            # Assign sequential spawn delays to preserve aircraft creation order
-            # (important for maintaining alternating STAR/runway distributions)
-            num_aircraft = len(aircraft_list)
-            if num_aircraft > 1:
-                # Spread aircraft evenly across the session time
-                interval_seconds = max_delay_seconds / (num_aircraft - 1)
-                for i, aircraft in enumerate(aircraft_list):
-                    aircraft.spawn_delay = int(i * interval_seconds)
+            n = len(aircraft_list)
+            if n == 0:
+                return
+            if n == 1:
+                aircraft_list[0].spawn_delay = random.randint(0, max_delay_seconds)
             else:
-                # Single aircraft spawns at time 0
-                aircraft_list[0].spawn_delay = 0
+                stratum = max_delay_seconds / n
+                margin = stratum * 0.2  # 20 % padding on each side
+                times = [
+                    random.randint(
+                        int(i * stratum + margin),
+                        int((i + 1) * stratum - margin),
+                    )
+                    for i in range(n)
+                ]
+                random.shuffle(times)
+                for aircraft, t in zip(aircraft_list, times):
+                    aircraft.spawn_delay = max(0, min(max_delay_seconds, t))
 
-            logger.info(f"Applied TOTAL spawn delays: {len(aircraft_list)} aircraft "
-                       f"distributed sequentially across {total_session_minutes} minutes (0-{max_delay_seconds}s)")
+            logger.info(
+                f"Applied TOTAL spawn delays: {n} aircraft stratified across "
+                f"{total_session_minutes} min ({max_delay_seconds}s window, "
+                f"stratum ~{int(max_delay_seconds / max(1, n))}s)"
+            )
 
     def _parse_delay_value(self, delay_value: str) -> tuple:
         """
@@ -264,12 +354,19 @@ class BaseScenario(ABC):
 
     def _load_config(self) -> Dict:
         """
-        Load configuration from config.json file
+        Load configuration from config.json.
 
-        Returns:
-            Configuration dictionary
+        Goes through `ssg_bridge.resource_path` so we prefer the user-editable
+        copy at `<install>/resources/config.json` (shipped as extraResources
+        by electron-builder) and fall back to the PyInstaller-baked default
+        when the user hasn't customized anything.
         """
-        config_path = Path("config.json")
+        try:
+            from ssg_bridge import resource_path
+            config_path = resource_path('config.json')
+        except Exception:
+            # Legacy PyQt path: fall back to CWD lookup.
+            config_path = Path('config.json')
         if config_path.exists():
             try:
                 with open(config_path, 'r') as f:
@@ -656,141 +753,141 @@ class BaseScenario(ABC):
 
         return unique_sids
 
-    def _prepare_departure_flight_pool(self, active_runways: List[str] = None,
-                                        enable_cifp_sids: bool = False,
-                                        manual_sids: List[str] = None):
+    def _resolve_allowed_sids(self, active_runways, enable_cifp_sids, manual_sids):
+        """Return (allowed_sids, strict) per the SID rules.
+
+        - enable_cifp_sids=False -> (None, False): no SID filter.
+        - manual_sids provided -> use those verbatim, strict filter.
+        - Otherwise: CIFP SIDs for active_runways union CIFP runway-agnostic SIDs.
+          * If CIFP has no SIDs at all for this airport -> (None, False).
+          * If CIFP has SIDs but none match the active runways (even after
+            including runway-agnostic) -> raise ValueError.
         """
-        Prepare the pool of departure flights, using API filtering when possible
+        if not enable_cifp_sids:
+            return None, False
 
-        Args:
-            active_runways: List of active runway names
-            enable_cifp_sids: Whether to filter by SID/runway compatibility
-            manual_sids: Manual SID list if specified (overrides auto-detection)
+        if manual_sids:
+            allowed = [s.strip().upper() for s in manual_sids if s and s.strip()]
+            logger.info(f"Using manual SIDs: {allowed}")
+            return allowed, True
+
+        all_sids = self.cifp_parser.get_available_sids() or []
+        if not all_sids:
+            logger.info(
+                f"CIFP has no SIDs for {self.airport_icao}; disabling SID filter (pass-through)."
+            )
+            return None, False
+
+        runway_specific = []
+        for rwy in (active_runways or []):
+            runway_specific.extend(self.cifp_parser.get_sids_for_runway(rwy) or [])
+
+        runway_agnostic = [
+            s for s in all_sids
+            if not (self.cifp_parser.get_runways_for_departure(s) or [])
+        ]
+
+        merged = list(dict.fromkeys([*runway_specific, *runway_agnostic]))
+        if not merged:
+            raise ValueError(
+                f"No SIDs at {self.airport_icao} serve runways {active_runways} "
+                f"(CIFP lists {len(all_sids)} SIDs overall). Pick different "
+                "runways, supply manual SIDs, or disable CIFP SID filtering."
+            )
+
+        logger.info(
+            f"Allowed SIDs for runways {active_runways}: "
+            f"{len(runway_specific)} runway-specific + {len(runway_agnostic)} runway-agnostic "
+            f"= {len(merged)} total"
+        )
+        return merged, True
+
+    def _prepare_departure_flight_pool(self, active_runways=None,
+                                        enable_cifp_sids=False,
+                                        manual_sids=None,
+                                        num_required=0):
+        """Fetch and bucket departure flights for this airport.
+
+        Uses `utils.data_pipeline.flight_pool.fetch_departures` so the API
+        call is server-filtered by the allowed SID list and capped at a
+        `num_required * 3` buffer (min 100, max 1000). Surviving flights are
+        bucketed as `{airline: {L/M/H: [...]}}` for the wake-aware picker.
         """
-        # Determine which SIDs to use
-        sids_to_fetch = None
-
-        if enable_cifp_sids:
-            if manual_sids:
-                # User manually specified SIDs - use those
-                sids_to_fetch = manual_sids
-                logger.info(f"Using manual SIDs: {sids_to_fetch}")
-            elif active_runways:
-                # Auto-detect valid SIDs from CIFP based on active runways
-                sids_to_fetch = self._get_sids_for_active_runways(active_runways)
-                if sids_to_fetch:
-                    logger.info(f"Auto-detected {len(sids_to_fetch)} SIDs from CIFP for runways {active_runways}: {sids_to_fetch}")
-                else:
-                    logger.warning(f"No SIDs found in CIFP data for active runways {active_runways}")
-
-        # Store SIDs for later refetching if pool depletes
-        self.current_sids = sids_to_fetch
-        # Store active runways for validation
-        self.active_runways = active_runways
-
-        # Always use cached flights first (already loaded with 1000 limit in background)
-        valid_flights = filter_valid_flights(self.cached_flights['departures'])
-        logger.info(f"Filtered {len(valid_flights)} valid departures from {len(self.cached_flights['departures'])} cached flights")
-
-        # Pre-filter and segment flights for efficient lookup
         from collections import defaultdict
-        self.departure_flights_by_airline = defaultdict(list)
+        from utils.flight_data_filter import extract_sid_from_route
+        from utils.data_pipeline import fetch_departures as pool_fetch_departures
+
+        self.active_runways = active_runways
+        allowed_sids, strict_sid_filter = self._resolve_allowed_sids(
+            active_runways, enable_cifp_sids, manual_sids,
+        )
+        self.current_sids = allowed_sids
+
+        # Pass the wake budget so the pool can fan out per-category server-side
+        # (wakecat=H/M/L). Without this, small airports with thin heavy traffic
+        # wouldn't return enough H-wake flights to honor a heavy-biased budget.
+        wake_counts = (self.dep_wake_budget.budget
+                       if getattr(self, 'dep_wake_budget', None) else None)
+        valid_flights, warnings = pool_fetch_departures(
+            self.api_client, self.airport_icao,
+            num_required=num_required, allowed_sids=allowed_sids,
+            wake_counts=wake_counts,
+        )
+        self.pool_warnings = getattr(self, 'pool_warnings', []) + list(warnings)
+
+        # by_airline_wake[airline][wake] -> list of flights
+        self.departure_flights_by_airline_wake = defaultdict(
+            lambda: {c: [] for c in WAKE_CATEGORIES}
+        )
         self.ga_departure_flights = []
 
-        filtered_ga = 0
-        filtered_sid = 0
-        flights_no_sid = 0
-        flights_sid_not_in_cifp = 0
-        sids_found_in_data = {}  # Track SIDs found in flight data
-        sids_matched = {}  # Track SIDs that matched our allowed list
+        stats = {
+            'ga': 0, 'accepted': 0,
+            'rejected_no_sid': 0, 'rejected_sid_mismatch': 0,
+        }
+        sids_seen = defaultdict(int)
 
         for flight in valid_flights:
             aircraft_type = flight.get('aircraftType', '')
-            operator = flight.get('operator', 'UNKNOWN')
+            operator = flight.get('operator') or 'UNKNOWN'
             route = flight.get('route', '')
 
-            # Try to get SID from departureProcedure field first, then extract from route
-            sid = flight.get('departureProcedure', '')
+            sid = flight.get('departureProcedure') or ''
             if not sid and route:
-                # Extract SID from route (format: AIRPORT.SID.WAYPOINT...)
-                from utils.flight_data_filter import extract_sid_from_route
-                sid = extract_sid_from_route(route)
+                sid = extract_sid_from_route(route) or ''
+            if sid:
+                sids_seen[sid] += 1
 
-            # Separate GA flights into their own pool
             if self._is_ga_aircraft_type(aircraft_type):
                 self.ga_departure_flights.append(flight)
-                filtered_ga += 1
+                stats['ga'] += 1
                 continue
 
-            # Track all SIDs found in data for debugging
-            if sid:
-                sids_found_in_data[sid] = sids_found_in_data.get(sid, 0) + 1
-
-            # Filter by SID if needed (only when enable_cifp_sids is True)
-            if self.current_sids:
-                # STRICT MODE: Only allow flights with SIDs that match our current_sids list
+            if strict_sid_filter and allowed_sids:
+                # API already pre-filtered, but double-check in case the
+                # server returned something unexpected.
                 if not sid:
-                    flights_no_sid += 1
-                    filtered_sid += 1
-                    continue  # Reject flights without SIDs
+                    stats['rejected_no_sid'] += 1
+                    continue
+                if not matches_any(sid, allowed_sids):
+                    stats['rejected_sid_mismatch'] += 1
+                    continue
 
-                # Check if flight's SID matches our allowed list
-                # Support both exact match (BROAK1) and base match (BROAK matches BROAK1)
-                sid_matched = False
+            wake = normalize_category(flight.get('wakeTurbulence'))
+            self.departure_flights_by_airline_wake[operator][wake].append(flight)
+            stats['accepted'] += 1
 
-                # Try exact match first
-                if sid in self.current_sids:
-                    sid_matched = True
-                else:
-                    # Try base name match (strip trailing digits from both)
-                    import re
-                    sid_base = re.sub(r'\d+$', '', sid)  # BROAK1 -> BROAK, or BROAK -> BROAK
+        # Flat back-compat view (wake-agnostic).
+        self.departure_flights_by_airline = {
+            airline: [f for bucket in cats.values() for f in bucket]
+            for airline, cats in self.departure_flights_by_airline_wake.items()
+        }
 
-                    for allowed_sid in self.current_sids:
-                        allowed_base = re.sub(r'\d+$', '', allowed_sid)
-                        if sid_base == allowed_base:
-                            sid_matched = True
-                            break
-
-                if not sid_matched:
-                    # Check if SID exists in CIFP but doesn't match our runways
-                    sid_runways = self.cifp_parser.get_runways_for_departure(sid)
-                    if sid_runways:
-                        # SID exists in CIFP but serves different runways
-                        filtered_sid += 1
-                    else:
-                        # SID not in CIFP at all
-                        flights_sid_not_in_cifp += 1
-                        filtered_sid += 1
-                    continue  # Reject
-                else:
-                    # Track matched SIDs
-                    sids_matched[sid] = sids_matched.get(sid, 0) + 1
-
-            # Segment by airline for O(1) lookup
-            self.departure_flights_by_airline[operator].append(flight)
-
-        # Calculate total usable flights
-        total_usable = sum(len(flights) for flights in self.departure_flights_by_airline.values())
-
-        logger.info(f"Departure pool segmented: {total_usable} airline flights, {len(self.ga_departure_flights)} GA flights")
-        if self.current_sids:
-            logger.info(f"STRICT SID filtering enabled for runways {self.active_runways}, allowed SIDs: {self.current_sids}")
-            logger.info(f"  - {flights_no_sid} flights without SID (rejected)")
-            logger.info(f"  - {flights_sid_not_in_cifp} flights with SID not in CIFP (rejected)")
-            logger.info(f"  - {filtered_sid} total flights rejected due to SID mismatch")
-            logger.info(f"  - {total_usable} flights matched allowed SIDs")
-
-            # Show what SIDs were found in the data
-            logger.info(f"SIDs found in flight data (top 15): {', '.join([f'{k}={v}' for k, v in sorted(sids_found_in_data.items(), key=lambda x: x[1], reverse=True)[:15]])}")
-            if sids_matched:
-                logger.info(f"SIDs that matched allowed list: {', '.join([f'{k}={v}' for k, v in sorted(sids_matched.items(), key=lambda x: x[1], reverse=True)])}")
-            else:
-                logger.warning("NO SIDs in the data matched the allowed list! This means the API data doesn't contain flights with the required SIDs.")
-        logger.info(f"Airlines available: {len(self.departure_flights_by_airline)}")
-        logger.info(f"Top 10 airlines: {', '.join([f'{k}={len(v)}' for k, v in sorted(self.departure_flights_by_airline.items(), key=lambda x: len(x[1]), reverse=True)[:10]])}")
-
-        # Keep old pool for fallback/refetch scenarios
+        logger.info(
+            f"Departure pool: {stats['accepted']} airline accepted, "
+            f"{stats['ga']} GA, {stats['rejected_no_sid']} rejected (no SID), "
+            f"{stats['rejected_sid_mismatch']} rejected (SID mismatch)"
+        )
         self.departure_flight_pool = valid_flights
 
     def _is_valid_departure_flight(self, flight: Dict) -> bool:
@@ -841,67 +938,146 @@ class BaseScenario(ABC):
         logger.debug(f"Skipping flight with SID {sid} (serves runways {sid_runways}, but active runways are {self.active_runways})")
         return False
 
-    def _get_next_departure_flight(self, parking_spot_name: str = None, is_ga_spot: bool = False) -> Dict:
-        """
-        Get the next departure flight from the pool using pre-segmented airline lookup
+    def _get_next_departure_flight(self, parking_spot_name=None, is_ga_spot=False):
+        """Pick the next departure flight.
 
-        Args:
-            parking_spot_name: Optional parking spot name for airline matching
-            is_ga_spot: True if this is a GA parking spot
-
-        Returns:
-            Flight dictionary or None if pool is empty
+        - GA spots draw from self.ga_departure_flights.
+        - Airline spots honor the wake budget (prefer the wake category with
+          the most remaining quota that still has flights for an acceptable
+          airline) and the parking-spot airline restriction.
+        - If the preferred wake category has no matching flight, we backfill
+          from other categories (consuming the *preferred* category's budget
+          slot and incrementing the backfill counter).
         """
-        # Handle GA spots - use GA pool directly
         if is_ga_spot:
             if self.ga_departure_flights:
                 return self.ga_departure_flights.pop(0)
             logger.warning("GA departure pool depleted")
-            # Track failure reason
             if parking_spot_name:
                 self.gate_failure_reasons[parking_spot_name] = "GA pool depleted"
             return None
 
-        # Get airline restrictions for this gate
+        allowed_airlines = None
         if parking_spot_name:
             parking_airlines = self._get_airline_for_parking(parking_spot_name)
-
-            # If gate is marked as BLANK, skip it entirely
             if parking_airlines == "BLANK":
-                logger.debug(f"Skipping gate {parking_spot_name} - marked as BLANK (prohibited)")
+                logger.debug(
+                    f"Skipping gate {parking_spot_name} - marked as BLANK (prohibited)"
+                )
                 self.gate_failure_reasons[parking_spot_name] = "BLANK (prohibited)"
                 return None
-
             if parking_airlines:
-                # Convert single airline to list for uniform handling
-                if isinstance(parking_airlines, str):
-                    parking_airlines = [parking_airlines]
+                allowed_airlines = (
+                    [parking_airlines] if isinstance(parking_airlines, str)
+                    else list(parking_airlines)
+                )
 
-                logger.debug(f"Gate {parking_spot_name} allows airlines {parking_airlines}")
+        flight = self._pick_airline_flight(allowed_airlines)
+        if flight is None:
+            if allowed_airlines and parking_spot_name:
+                counts = {a: sum(len(v) for v in
+                                 self.departure_flights_by_airline_wake.get(a, {}).values())
+                          for a in allowed_airlines}
+                logger.warning(
+                    f"[NO MATCH] Gate {parking_spot_name} allows {allowed_airlines} "
+                    f"but no flights available: {counts}"
+                )
+                counts_str = ', '.join(f'{a}={c}' for a, c in counts.items())
+                self.gate_failure_reasons[parking_spot_name] = (
+                    f"No flights for allowed airlines ({counts_str})"
+                )
+            else:
+                logger.warning("All departure flight pools depleted")
+        return flight
 
-                # Try each allowed airline in order
-                for airline in parking_airlines:
-                    if airline in self.departure_flights_by_airline and self.departure_flights_by_airline[airline]:
-                        flight = self.departure_flights_by_airline[airline].pop(0)
-                        logger.debug(f"[MATCH] Assigned {flight.get('aircraftIdentification')} ({airline}) to gate {parking_spot_name}")
-                        return flight
+    def _pick_airline_flight(self, allowed_airlines):
+        """Wake-aware pick from self.departure_flights_by_airline_wake.
 
-                # No flights found for any allowed airline
-                available_counts = {airline: len(self.departure_flights_by_airline.get(airline, [])) for airline in parking_airlines}
-                logger.warning(f"[NO MATCH] Gate {parking_spot_name} allows {parking_airlines} but no flights available: {available_counts}")
-                # Track failure reason with airline counts
-                airlines_str = ', '.join([f"{a}={c}" for a, c in available_counts.items()])
-                self.gate_failure_reasons[parking_spot_name] = f"No flights for allowed airlines ({airlines_str})"
+        Honors the README's airline-weighting convention: the `allowed_airlines`
+        list may repeat codes (`["AAL", "AAL", "DAL"]` = 67 %/33 %), so we
+        sample a preferred airline proportionally. If that airline's pool for
+        the preferred wake cat is empty we redraw; if nothing matches after
+        enough tries we fall back to the old first-match-wins order to avoid
+        starving the scenario.
+
+        Returns a flight dict (and updates wake budget) or None if no matching
+        flight exists.
+        """
+        airlines = (
+            allowed_airlines
+            if allowed_airlines
+            else list(self.departure_flights_by_airline_wake.keys())
+        )
+        budget = self.dep_wake_budget
+
+        def pool(airline, wake):
+            return self.departure_flights_by_airline_wake.get(airline, {}).get(wake, [])
+
+        def pick_weighted(airlines_with_weight):
+            """Weighted random sample of an airline from the list, preserving
+            duplicates as the weight signal (random.choice already does this
+            on a list with repeats). Returns the sampled airline or None if
+            the list is empty."""
+            if not airlines_with_weight:
                 return None
+            return random.choice(airlines_with_weight)
 
-        # Fallback: no gate restriction, use any available airline flight
-        for airline, flights in self.departure_flights_by_airline.items():
-            if flights:
-                flight = flights.pop(0)
-                logger.debug(f"Assigned {flight.get('aircraftIdentification')} ({airline}) (no gate restriction)")
-                return flight
+        # -------- No wake bias: pick weighted, fall back to any supplier --------
+        if budget is None:
+            # Try the weighted sample first (up to a few retries so a repeated
+            # "heavy" weight doesn't deadlock on an empty pool).
+            for _ in range(min(16, len(airlines) * 2)):
+                airline = pick_weighted(airlines)
+                for cat in WAKE_CATEGORIES:
+                    if pool(airline, cat):
+                        return pool(airline, cat).pop(0)
+            # Retries exhausted — take the first non-empty airline in order.
+            for airline in airlines:
+                for cat in WAKE_CATEGORIES:
+                    if pool(airline, cat):
+                        return pool(airline, cat).pop(0)
+            return None
 
-        logger.warning("All departure flight pools depleted")
+        # -------- Wake bias active: prefer the highest-remaining-budget cat --------
+        available = {c: sum(len(pool(a, c)) for a in airlines) for c in WAKE_CATEGORIES}
+        preferred = budget.preferred_category(available)
+        if preferred is not None:
+            for _ in range(min(16, len(airlines) * 2)):
+                airline = pick_weighted(airlines)
+                if pool(airline, preferred):
+                    flight = pool(airline, preferred).pop(0)
+                    budget.consume(preferred, actual=preferred)
+                    return flight
+            # Fall through to ordered scan for the preferred cat only.
+            for airline in airlines:
+                if pool(airline, preferred):
+                    flight = pool(airline, preferred).pop(0)
+                    budget.consume(preferred, actual=preferred)
+                    return flight
+
+        # -------- Backfill: any wake cat, weighted by airline --------
+        for _ in range(min(16, len(airlines) * 2)):
+            airline = pick_weighted(airlines)
+            for cat in WAKE_CATEGORIES:
+                if pool(airline, cat):
+                    flight = pool(airline, cat).pop(0)
+                    shortfall = budget.shortfall_summary()
+                    intended = max(
+                        WAKE_CATEGORIES, key=lambda c: shortfall.get(c, 0),
+                    ) if any(shortfall.values()) else cat
+                    budget.consume(intended, actual=cat)
+                    return flight
+        # Final ordered scan.
+        for airline in airlines:
+            for cat in WAKE_CATEGORIES:
+                if pool(airline, cat):
+                    flight = pool(airline, cat).pop(0)
+                    shortfall = budget.shortfall_summary()
+                    intended = max(
+                        WAKE_CATEGORIES, key=lambda c: shortfall.get(c, 0),
+                    ) if any(shortfall.values()) else cat
+                    budget.consume(intended, actual=cat)
+                    return flight
         return None
 
     def _create_departure_aircraft(self, parking_spot, destination: str = None,
@@ -1030,17 +1206,88 @@ class BaseScenario(ABC):
         # GA flights are already filtered, just return the next one
         return self.ga_departure_flights.pop(0)
 
-    def _prepare_arrival_flight_pool(self):
-        """Prepare pool of arrival flights from cached arrival data"""
-        valid_flights = filter_valid_flights(self.cached_flights['arrivals'])
-        # For arrivals, we want commercial flights (non-GA)
-        _, commercial_flights = categorize_flights(valid_flights)
+    def _prepare_arrival_flight_pool(self, requested_stars=None, num_required=0):
+        """Fetch and bucket arrival flights for this airport.
 
-        self.arrival_flight_pool = commercial_flights
-        logger.info(f"Prepared arrival flight pool with {len(commercial_flights)} aircraft")
+        Uses `utils.data_pipeline.flight_pool.fetch_arrivals` for server-side
+        STAR filtering + buffered pagination. When `requested_stars` is given
+        the pool is bucketed as `{star_base: {L/M/H: [...]}}` for the
+        wake-aware picker; otherwise flights land in a flat commercial pool.
+        """
+        from utils.data_pipeline import fetch_arrivals as pool_fetch_arrivals
+
+        wake_counts = (self.arr_wake_budget.budget
+                       if getattr(self, 'arr_wake_budget', None) else None)
+        valid_flights, warnings = pool_fetch_arrivals(
+            self.api_client, self.airport_icao,
+            num_required=num_required, requested_stars=requested_stars,
+            wake_counts=wake_counts,
+        )
+        self.pool_warnings = getattr(self, 'pool_warnings', []) + list(warnings)
+        _, commercial = categorize_flights(valid_flights)
+
+        if requested_stars:
+            bases = [b for b in (strip_suffix(s) for s in requested_stars) if b]
+            from collections import defaultdict
+            self.arrivals_by_star_wake = defaultdict(
+                lambda: {c: [] for c in WAKE_CATEGORIES}
+            )
+            for f in commercial:
+                proc = f.get('arrivalProcedure')
+                if not proc:
+                    continue
+                proc_base = strip_suffix(proc)
+                for b in bases:
+                    if proc_base == b:
+                        wake = normalize_category(f.get('wakeTurbulence'))
+                        self.arrivals_by_star_wake[b][wake].append(f)
+                        break
+            per_star = {b: sum(len(v) for v in self.arrivals_by_star_wake[b].values())
+                        for b in bases}
+            logger.info(f"Arrival pool by STAR: {per_star}")
+            self.arrival_flight_pool = commercial
+            return
+
+        self.arrival_flight_pool = commercial
+        self.arrivals_by_star_wake = None
+        logger.info(f"Prepared arrival flight pool with {len(commercial)} aircraft")
+
+    def _pick_arrival_flight(self, star_base):
+        """Pick one arrival flight for the given STAR base, honoring the wake
+        budget. Returns None if no flight remains for that STAR."""
+        if not getattr(self, 'arrivals_by_star_wake', None):
+            return None
+        key = strip_suffix(star_base)
+        pools = self.arrivals_by_star_wake.get(key)
+        if not pools:
+            return None
+
+        available = {c: len(pools[c]) for c in WAKE_CATEGORIES}
+        budget = self.arr_wake_budget
+
+        if budget is not None:
+            preferred = budget.preferred_category(available)
+            if preferred is not None and pools[preferred]:
+                flight = pools[preferred].pop(0)
+                budget.consume(preferred, actual=preferred)
+                return flight
+
+        # Backfill: any category with supply.
+        for cat in WAKE_CATEGORIES:
+            if pools[cat]:
+                flight = pools[cat].pop(0)
+                if budget is not None:
+                    shortfall = budget.shortfall_summary()
+                    intended = max(
+                        WAKE_CATEGORIES, key=lambda c: shortfall.get(c, 0),
+                    ) if any(shortfall.values()) else cat
+                    budget.consume(intended, actual=cat)
+                return flight
+        return None
 
     def _get_next_arrival_flight(self) -> Dict:
-        """Get next arrival flight from pool"""
+        """Legacy flat-pool picker (no STAR/wake awareness). Kept for scenarios
+        that haven't migrated to _pick_arrival_flight."""
         if not hasattr(self, 'arrival_flight_pool'):
             self._prepare_arrival_flight_pool()
 
@@ -1055,8 +1302,17 @@ class BaseScenario(ABC):
 
         return self.arrival_flight_pool.pop(0) if self.arrival_flight_pool else None
 
-    def _create_ga_aircraft(self, parking_spot, destination: str = None) -> Aircraft:
-        """Create a GA (general aviation) aircraft using API data"""
+    def _create_ga_aircraft(self, parking_spot, destination: str = None,
+                            ga_mode: Optional[str] = None) -> Aircraft:
+        """Create a GA aircraft at a parking spot.
+
+        `ga_mode` ∈ {'VFR', 'IFR', None}:
+          - 'VFR': synthesize a plan from `data_pipeline.ga_fleet` (no API).
+          - 'IFR': pick a matching GA-type plan from the main departure pool
+            that's already been fetched; falls back to the legacy auto-GA pool
+            when no match is available.
+          - None: legacy behavior (picks from `self.ga_departure_flights`).
+        """
         if parking_spot.name in self.used_parking_spots:
             logger.warning(f"Parking spot {parking_spot.name} is already in use, skipping")
             return None
@@ -1064,7 +1320,21 @@ class BaseScenario(ABC):
         self.used_parking_spots.add(parking_spot.name)
         logger.debug(f"Assigned parking spot: {parking_spot.name}")
 
-        flight_data = self._get_next_ga_flight()
+        flight_data = None
+        if ga_mode == 'VFR':
+            from utils.data_pipeline import synthesize_vfr_plan
+            flight_data = synthesize_vfr_plan(origin=self.airport_icao)
+            logger.debug(f"Synthesized VFR GA plan {flight_data['aircraftIdentification']} at {parking_spot.name}")
+        elif ga_mode == 'IFR':
+            from utils.data_pipeline import pick_ifr_plan_from_pool
+            flight_data = pick_ifr_plan_from_pool(
+                self.departure_flight_pool, self.ga_used_gufis,
+            )
+            if flight_data is None:
+                logger.info("No GA-type IFR flight in departure pool; falling back to legacy GA pool")
+                flight_data = self._get_next_ga_flight()
+        else:
+            flight_data = self._get_next_ga_flight()
 
         if flight_data:
             # Use API data - ALWAYS use the API callsign to keep data matched

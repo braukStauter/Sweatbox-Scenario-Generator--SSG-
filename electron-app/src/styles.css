@@ -1,0 +1,83 @@
+:root {
+  --bg-primary: #1e1e1e;
+  --bg-secondary: #2d2d2d;
+  --bg-tertiary: #3d3d3d;
+  --fg-primary: #ffffff;
+  --fg-secondary: #b0b0b0;
+  --fg-disabled: #666666;
+  --accent: #0078d4;
+  --accent-hover: #106ebe;
+  --accent-pressed: #005a9e;
+  --success: #107c10;
+  --warning: #ff8c00;
+  --error: #e81123;
+  --border: #404040;
+  --radius: 4px;
+}
+
+* { box-sizing: border-box; }
+
+/* Hide all scrollbars but preserve scroll behavior */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg-primary);
+  color: var(--fg-primary);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+}
+
+button.themed, input.themed, select.themed {
+  font-family: inherit;
+  font-size: 14px;
+  border-radius: var(--radius);
+  border: 2px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  padding: 8px 12px;
+  outline: none;
+}
+input.themed:focus, select.themed:focus {
+  border-color: var(--accent);
+}
+button.themed {
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 36px;
+  min-width: 120px;
+}
+button.themed:hover { background: var(--accent-hover); }
+button.themed:active { background: var(--accent-pressed); }
+button.themed.secondary {
+  background: var(--bg-tertiary);
+  font-weight: 400;
+}
+button.themed.secondary:hover { background: var(--bg-secondary); }
+button.themed:disabled { background: var(--bg-tertiary); color: var(--fg-disabled); cursor: not-allowed; }
+input.themed:disabled, select.themed:disabled {
+  color: var(--fg-disabled);
+  background: var(--bg-tertiary);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.card {
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+
+.heading {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+
+.row { display: flex; gap: 12px; align-items: center; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.grow { flex: 1; }

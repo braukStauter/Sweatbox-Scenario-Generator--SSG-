@@ -818,10 +818,28 @@ class MainWindow(tk.Tk):
                     except ValueError:
                         total_session_minutes = 30
 
-            # Parse waypoints
+            # Parse arrival mode (STAR or FRD)
+            arrival_mode = config.get('arrival_mode', 'star')
+
+            # Parse waypoints (for STAR mode)
             arrival_waypoints = []
             if config.get('arrival_waypoints'):
                 arrival_waypoints = [w.strip().upper() for w in config['arrival_waypoints'].split(',')]
+
+            # Parse FRD parameters (for FRD mode)
+            frd_points = []
+            frd_altitudes = []
+            frd_speeds = []
+            frd_initial_routes = []
+            if arrival_mode == 'frd':
+                if config.get('frd_points'):
+                    frd_points = [p.strip().upper() for p in config['frd_points'].split(',') if p.strip()]
+                if config.get('frd_altitudes'):
+                    frd_altitudes = [int(a.strip()) for a in config['frd_altitudes'].split(',') if a.strip()]
+                if config.get('frd_speeds'):
+                    frd_speeds = [int(s.strip()) for s in config['frd_speeds'].split(',') if s.strip()]
+                if config.get('frd_initial_routes'):
+                    frd_initial_routes = [r.strip() for r in config['frd_initial_routes'].split(',')]
 
             # Parse CIFP speed configuration for arrivals
             use_cifp_speeds = config.get('use_cifp_speeds', True)
@@ -1014,7 +1032,13 @@ class MainWindow(tk.Tk):
                 difficulty_config_departures,
                 # Mixed scenario separate difficulty configs
                 difficulty_departures_config,
-                difficulty_arrivals_config
+                difficulty_arrivals_config,
+                # FRD mode parameters
+                arrival_mode,
+                frd_points,
+                frd_altitudes,
+                frd_speeds,
+                frd_initial_routes
             )
 
             if not aircraft:
@@ -1223,7 +1247,10 @@ class MainWindow(tk.Tk):
                           difficulty_config_enroute=None, difficulty_config_arrivals=None,
                           difficulty_config_departures=None,
                           # Mixed scenario separate difficulty configs
-                          difficulty_departures_config=None, difficulty_arrivals_config=None):
+                          difficulty_departures_config=None, difficulty_arrivals_config=None,
+                          # FRD mode parameters
+                          arrival_mode="star", frd_points=None, frd_altitudes=None,
+                          frd_speeds=None, frd_initial_routes=None):
         """Generate aircraft based on scenario type"""
         # Handle enroute scenario
         if self.is_enroute_scenario:
@@ -1269,14 +1296,24 @@ class MainWindow(tk.Tk):
             return scenario.generate(num_arrivals, arrival_waypoints,
                                     delay_range, spawn_delay_mode, delay_value,
                                     total_session_minutes, None, difficulty_config, active_runways,
-                                    use_cifp_speeds)
+                                    use_cifp_speeds,
+                                    arrival_mode=arrival_mode,
+                                    frd_points=frd_points,
+                                    frd_altitudes=frd_altitudes,
+                                    frd_speeds=frd_speeds,
+                                    frd_initial_routes=frd_initial_routes)
         elif self.scenario_type == 'tracon_mixed':
             return scenario.generate(num_departures, num_arrivals, arrival_waypoints,
                                     delay_range, spawn_delay_mode,
                                     delay_value, total_session_minutes, None,
                                     difficulty_config, active_runways, enable_cifp_sids, manual_sids,
                                     use_cifp_speeds, num_vfr, vfr_spawn_locations,
-                                    difficulty_departures_config, difficulty_arrivals_config)
+                                    difficulty_departures_config, difficulty_arrivals_config,
+                                    arrival_mode=arrival_mode,
+                                    frd_points=frd_points,
+                                    frd_altitudes=frd_altitudes,
+                                    frd_speeds=frd_speeds,
+                                    frd_initial_routes=frd_initial_routes)
         else:
             raise ValueError(f"Unknown scenario type: {self.scenario_type}")
 

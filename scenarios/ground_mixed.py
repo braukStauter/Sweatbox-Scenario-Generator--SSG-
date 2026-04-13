@@ -55,9 +55,10 @@ class GroundMixedScenario(BaseScenario):
 
         # Prepare flight pools from cached data
         logger.info("Preparing flight pools...")
-        self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids)
+        self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids,
+                                            num_required=num_departures)
         self._prepare_ga_flight_pool()
-        self._prepare_arrival_flight_pool()
+        self._prepare_arrival_flight_pool(num_required=num_arrivals)
 
         # Get parallel runway information for separation calculations
         parallel_info = self.geojson_parser.get_parallel_runway_info()
@@ -93,10 +94,13 @@ class GroundMixedScenario(BaseScenario):
             spot = random.choice(available_spots)
             available_spots.remove(spot)
 
-            # Check if parking spot is for GA (has "GA" in the name)
             if "GA" in spot.name.upper():
-                logger.info(f"Creating GA aircraft for parking spot: {spot.name}")
-                aircraft = self._create_ga_aircraft(spot)
+                ga_mode = self._consume_ga_spot_for_departure()
+                if ga_mode is None:
+                    attempts += 1
+                    continue
+                logger.info(f"Creating {ga_mode} GA aircraft for parking spot: {spot.name}")
+                aircraft = self._create_ga_aircraft(spot, ga_mode=ga_mode)
             else:
                 aircraft = self._create_departure_aircraft(
                     spot,
