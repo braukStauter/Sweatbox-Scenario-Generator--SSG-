@@ -11,9 +11,12 @@ files:
   - dist-electron/**/*
   - package.json
 
-# Ship the standalone PyInstaller-built bridge binary and the geojson airport
-# list. End users need NO Python interpreter. (FAACIFP18 and all Python code
-# are already compiled into ssg_bridge.exe by PyInstaller.)
+# Ship the standalone PyInstaller-built bridge binary plus the airport data
+# bundle. End users need NO Python interpreter. The PyInstaller exe still
+# embeds a fallback copy of `airport_data/` and `config.json`; the outer
+# copies below are what users can actually edit at runtime (new `.geojson`
+# airports, AIRAC cycle updates, parking-airline tweaks). The bridge's
+# `resource_path()` helper prefers these over the baked-in defaults.
 extraResources:
   - from: "../dist/ssg_bridge.exe"
     to: "bridge/ssg_bridge.exe"
@@ -21,6 +24,9 @@ extraResources:
     to: "airport_data"
     filter:
       - "*.geojson"
+      - "FAACIFP18"
+  - from: "../config.json"
+    to: "config.json"
 
 win:
   target:
