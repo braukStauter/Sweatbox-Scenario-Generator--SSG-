@@ -64,10 +64,7 @@ function registerIpc() {
     // mode we prefer the user-editable copy next to the exe (same dir as
     // the rest of airport_data), falling back to the bundled default.
     const candidates = app.isPackaged
-      ? [
-          path.join(process.resourcesPath, 'airport_data', 'config.json'),
-          path.join(process.resourcesPath, 'config.json'),
-        ]
+      ? [path.join(process.resourcesPath, 'config.json')]
       : [path.resolve(__dirname, '..', '..', '..', '..', 'config.json')];
     for (const p of candidates) {
       try {

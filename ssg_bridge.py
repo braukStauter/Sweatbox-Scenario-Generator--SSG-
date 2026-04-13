@@ -29,30 +29,35 @@ REPO_ROOT = _resource_root()
 sys.path.insert(0, str(REPO_ROOT))
 
 
-def _user_airport_data_root():
-    """Return the user-editable `airport_data` directory next to the bundled
-    exe, or None in dev mode.
+def _user_resources_root():
+    """Return the user-editable resources directory next to the bundled exe,
+    or None in dev mode.
 
-    The electron-builder config ships `airport_data/` as extraResources at
-    `<install>/resources/airport_data/`, and the PyInstaller bridge exe lives
-    at `<install>/resources/bridge/ssg_bridge.exe`. Users drop new `.geojson`
-    files and updated CIFP cycles into that sibling dir so they can customize
-    without rebuilding the bridge. We prefer it over the baked-in copy.
+    The electron-builder config ships our extraResources to
+    `<install>/resources/`, and the PyInstaller bridge exe lives at
+    `<install>/resources/bridge/ssg_bridge.exe`. Users drop updated airport
+    files, AIRAC cycles, and a customized `config.json` into that sibling
+    tree so they can customize without rebuilding the bridge.
     """
     if not getattr(sys, 'frozen', False):
         return None
     exe_dir = Path(sys.executable).resolve().parent
-    # resources/bridge/ → resources/airport_data/
-    candidate = exe_dir.parent / 'airport_data'
-    return candidate if candidate.is_dir() else None
+    # <install>/resources/bridge/ → <install>/resources/
+    return exe_dir.parent
 
 
 def resource_path(*parts):
-    """Resolve `airport_data/<file>` (or similar) trying the user-editable
-    sibling directory first, then the baked-in PyInstaller bundle."""
-    user = _user_airport_data_root()
-    if user is not None and parts and parts[0] == 'airport_data':
-        candidate = user.joinpath(*parts[1:])
+    """Resolve a bundled-resource path (airport_data/..., config.json, ...).
+
+    Lookup order:
+      1. User-editable copy under `<install>/resources/` — so users can edit
+         airport geojsons, drop a new FAACIFP18 cycle, or tweak config.json
+         without rebuilding the bundled exe.
+      2. PyInstaller-baked fallback at `_MEIPASS/` (or repo root in dev).
+    """
+    user = _user_resources_root()
+    if user is not None:
+        candidate = user.joinpath(*parts)
         if candidate.exists():
             return candidate
     return REPO_ROOT.joinpath(*parts)

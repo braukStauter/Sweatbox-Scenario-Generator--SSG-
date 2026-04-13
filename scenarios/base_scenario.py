@@ -354,12 +354,19 @@ class BaseScenario(ABC):
 
     def _load_config(self) -> Dict:
         """
-        Load configuration from config.json file
+        Load configuration from config.json.
 
-        Returns:
-            Configuration dictionary
+        Goes through `ssg_bridge.resource_path` so we prefer the user-editable
+        copy at `<install>/resources/config.json` (shipped as extraResources
+        by electron-builder) and fall back to the PyInstaller-baked default
+        when the user hasn't customized anything.
         """
-        config_path = Path("config.json")
+        try:
+            from ssg_bridge import resource_path
+            config_path = resource_path('config.json')
+        except Exception:
+            # Legacy PyQt path: fall back to CWD lookup.
+            config_path = Path('config.json')
         if config_path.exists():
             try:
                 with open(config_path, 'r') as f:
