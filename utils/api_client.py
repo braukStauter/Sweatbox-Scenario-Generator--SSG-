@@ -198,6 +198,7 @@ class FlightDataAPIClient:
         retries: int = 3,
         depproc: Optional[str] = None,
         arrproc: Optional[str] = None,
+        wakecat: Optional[str] = None,
         progress_callback: Optional[Callable[[str], None]] = None
     ) -> Optional[Dict[str, Any]]:
         """
@@ -211,6 +212,10 @@ class FlightDataAPIClient:
             retries: Number of retries if request fails
             depproc: URL-encoded departure procedures filter (e.g., 'EAGUL%2BZZULU')
             arrproc: URL-encoded arrival procedures filter (e.g., 'STAR1%2BSTAR2')
+            wakecat: Server-side wake category filter: 'L', 'M', or 'H'.
+                     Lets small airports with few heavies actually return the
+                     heavies we care about (rather than diluting them in an
+                     overwhelmingly medium pool).
             progress_callback: Optional callback function for progress updates
 
         Returns:
@@ -222,7 +227,8 @@ class FlightDataAPIClient:
         arr = arrival or "any"
         dep_proc = depproc or "none"
         arr_proc = arrproc or "none"
-        cache_key = f"{dep}:{arr}:{limit}:{offset}:{dep_proc}:{arr_proc}"
+        wake = (wakecat or "any").upper() if wakecat else "any"
+        cache_key = f"{dep}:{arr}:{limit}:{offset}:{dep_proc}:{arr_proc}:{wake}"
 
         # Check cache (disk and memory)
         cached_data = self._get_cached(cache_key)
@@ -243,6 +249,8 @@ class FlightDataAPIClient:
             params['depproc'] = depproc
         if arrproc:
             params['arrproc'] = arrproc
+        if wakecat:
+            params['wakecat'] = wakecat.upper()
 
         # Try to fetch from API with progressive timeouts
         for attempt in range(retries):
@@ -257,6 +265,8 @@ class FlightDataAPIClient:
                     log_msg += f", depproc={depproc}"
                 if arrproc:
                     log_msg += f", arrproc={arrproc}"
+                if wakecat:
+                    log_msg += f", wakecat={wakecat.upper()}"
                 log_msg += f" (attempt {attempt + 1}/{retries}, timeout={timeout}s)"
                 logger.info(log_msg)
 
@@ -566,6 +576,7 @@ class FlightDataAPIClient:
         retries: int = 3,
         depproc: Optional[str] = None,
         arrproc: Optional[str] = None,
+        wakecat: Optional[str] = None,
         progress_callback: Optional[Callable[[str], None]] = None
     ) -> Optional[List[Dict[str, Any]]]:
         """
@@ -579,6 +590,7 @@ class FlightDataAPIClient:
             retries: Number of retries if request fails
             depproc: URL-encoded departure procedures filter
             arrproc: URL-encoded arrival procedures filter
+            wakecat: Server-side wake category filter ('L', 'M', 'H').
             progress_callback: Optional callback function for progress updates
 
         Returns:
@@ -603,6 +615,7 @@ class FlightDataAPIClient:
                 retries=retries,
                 depproc=depproc,
                 arrproc=arrproc,
+                wakecat=wakecat,
                 progress_callback=progress_callback
             )
 

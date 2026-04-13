@@ -1,0 +1,23 @@
+// Ported from gui/theme.py DarkTheme
+export const theme = {
+  bgPrimary: '#1e1e1e',
+  bgSecondary: '#2d2d2d',
+  bgTertiary: '#3d3d3d',
+  fgPrimary: '#ffffff',
+  fgSecondary: '#b0b0b0',
+  fgDisabled: '#666666',
+  accent: '#0078d4',
+  accentHover: '#106ebe',
+  accentPressed: '#005a9e',
+  success: '#107c10',
+  warning: '#ff8c00',
+  error: '#e81123',
+  border: '#404040',
+  divider: '#2d2d2d',
+  fontFamily: '"Segoe UI", system-ui, sans-serif',
+  radius: 4,
+  padSm: 8,
+  padMd: 16,
+  padLg: 24,
+  padXl: 32,
+} as const;

@@ -3,8 +3,73 @@ Converter utility for transforming Aircraft objects to vNAS format
 """
 import time
 import logging
+import re
 from typing import List, Dict, Optional
 from models.aircraft import Aircraft
+
+
+# ICAO aircraft types that are always heavy/super regardless of whether
+# the wake_turbulence field is populated correctly on the API flight.
+# Matching is done on the base type (suffixes like /L /G /H are stripped).
+_ALWAYS_HEAVY = {
+    # Boeing widebodies
+    'B742', 'B743', 'B744', 'B748', 'B74F', 'B74R', 'B74S',
+    'B762', 'B763', 'B764',
+    'B772', 'B773', 'B77F', 'B77L', 'B77W', 'B778', 'B779',
+    'B788', 'B789', 'B78X',
+    # Airbus widebodies
+    'A306', 'A30B', 'A310',
+    'A332', 'A333', 'A338', 'A339',
+    'A342', 'A343', 'A345', 'A346',
+    'A359', 'A35K',
+    # McDonnell Douglas
+    'DC10', 'MD11',
+    # Ilyushin / other
+    'IL76', 'IL96',
+}
+_ALWAYS_SUPER = {
+    'A388',       # A380
+    'B74S',       # 747-SP is heavy, but some datasets use B74S for SCA
+    # Add more super-category aircraft as needed (B748I sometimes marked super)
+}
+
+
+_WAKE_PREFIX_RE = re.compile(r'^(?:H|J|B|L|M)/', re.IGNORECASE)
+
+
+def _strip_existing_wake_prefix(aircraft_type: str) -> str:
+    """Remove any leading wake prefix (repeatedly so `H/H/B744` normalizes)."""
+    while True:
+        m = _WAKE_PREFIX_RE.match(aircraft_type)
+        if not m:
+            return aircraft_type
+        aircraft_type = aircraft_type[m.end():]
+
+
+def apply_wake_prefix(aircraft_type: str, wake_cat: Optional[str]) -> str:
+    """Prepend the vNAS/ICAO wake-class prefix to a formatted aircraft type.
+
+    - Heavy (H, J) → `H/<type>` (ATC convention treats Super as Heavy for
+      symbology purposes in most radar clients).
+    - Otherwise returns the type unchanged.
+    - Idempotent: an already-prefixed type is normalized (`H/H/B744` → `H/B744`).
+    - Fallback: if `wake_cat` isn't populated but the base ICAO type is a
+      known heavy/super, add the prefix anyway so the scenario doesn't ship
+      a `B744/L` that the controller then has to fix up manually.
+    """
+    if not aircraft_type:
+        return aircraft_type
+
+    stripped = _strip_existing_wake_prefix(aircraft_type.strip())
+    base_type = stripped.split('/')[0].upper()
+
+    cat = (wake_cat or '').strip().upper()
+    is_heavy_by_category = cat in ('H', 'J')
+    is_heavy_by_type = base_type in _ALWAYS_HEAVY or base_type in _ALWAYS_SUPER
+
+    if is_heavy_by_category or is_heavy_by_type:
+        return f'H/{stripped}'
+    return stripped
 
 try:
     from ulid import ULID
@@ -52,10 +117,11 @@ class VNASConverter:
         Args:
             aircraft: Aircraft object to convert
         """
+        formatted_type = apply_wake_prefix(aircraft.aircraft_type, aircraft.wake_turbulence)
         vnas_aircraft = {
             "id": generate_ulid(),
             "aircraftId": aircraft.callsign,
-            "aircraftType": aircraft.aircraft_type,
+            "aircraftType": formatted_type,
             "transponderMode": "Standby" if aircraft.squawk_mode == "S" else "C",
             "startingConditions": self._get_starting_conditions(aircraft),
             "onAltitudeProfile": aircraft.ground_speed > 0,
@@ -102,7 +168,9 @@ class VNASConverter:
                 "cruiseSpeed": aircraft.cruise_speed if aircraft.cruise_speed else 0,
                 "route": route,
                 "remarks": aircraft.remarks or "/V/",
-                "aircraftType": aircraft.aircraft_type  # Keep equipment suffix (e.g., "B738/L", "C172/G")
+                # Same H/-prefix normalization as the top-level aircraftType —
+                # vNAS expects the flight-plan type to match the aircraft type.
+                "aircraftType": formatted_type,
             }
             vnas_aircraft["flightplan"] = flightplan
 

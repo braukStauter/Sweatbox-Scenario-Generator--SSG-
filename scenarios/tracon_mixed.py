@@ -78,7 +78,8 @@ class TraconMixedScenario(BaseScenario):
 
         # Prepare flight pools from cached data (departures only)
         logger.info("Preparing departure flight pools...")
-        self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids)
+        self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids,
+                                            num_required=num_departures)
         self._prepare_ga_flight_pool()
 
         # Handle arrivals based on mode (STAR or FRD)
@@ -87,42 +88,25 @@ class TraconMixedScenario(BaseScenario):
         arrival_flights_pool = []  # For FRD mode
 
         if arrival_mode == "frd":
-            # FRD mode: fetch flights by airport (no STAR filtering)
-            logger.info(f"FRD mode: fetching arrival flights for {self.airport_icao}")
-            all_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=619)
-            if all_flights:
-                valid_flights = filter_valid_flights(all_flights)
-                logger.info(f"Got {len(valid_flights)} valid arrival flights from API")
-                arrival_flights_pool = self._deduplicate_by_gufi(valid_flights)
-                logger.info(f"After deduplication: {len(arrival_flights_pool)} unique arrival flights")
+            # FRD mode: unfiltered arrivals to this airport (no STAR needed).
+            from utils.data_pipeline import to_icao, dedupe_by_gufi
+            icao = to_icao(self.airport_icao)
+            logger.info(f"FRD mode: fetching arrivals arrival={icao}")
+            raw = self.api_client.fetch_all_flights(arrival=icao, max_flights=1000)
+            raw = dedupe_by_gufi(raw or [])
+            if raw:
+                valid_flights = filter_valid_flights(raw)
+                arrival_flights_pool = valid_flights
+                logger.info(f"FRD arrival pool: {len(arrival_flights_pool)} flights")
             else:
-                logger.warning("Failed to fetch arrival flights from API")
+                logger.warning("No arrival flights available")
         else:
-            # STAR mode: parse transitions and fetch by STAR
+            # STAR mode: server-side STAR filter + wake-aware per-STAR buckets.
             star_transitions = self._parse_star_transitions(arrival_waypoints, active_runways)
-
-            # Fetch and prepare arrival flights using new simplified approach
             if star_transitions:
-                star_names = list(set([self._strip_numbers(star) for _, star in star_transitions if star]))
-                logger.info(f"Fetching flights for STARs: {star_names}")
-
-                # Single API call to get ALL arrival flights
-                all_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=619, stars=star_names)
-                if all_flights:
-                    # Filter valid flights (validates required data fields)
-                    valid_flights = filter_valid_flights(all_flights)
-                    logger.info(f"Got {len(valid_flights)} valid arrival flights from API")
-
-                    # Deduplicate by GUFI
-                    unique_flights = self._deduplicate_by_gufi(valid_flights)
-                    logger.info(f"After deduplication: {len(unique_flights)} unique arrival flights")
-
-                    # Group by STAR
-                    flights_by_star = self._group_flights_by_star(unique_flights)
-                    for star, flights in flights_by_star.items():
-                        logger.info(f"  {star}: {len(flights)} flights")
-                else:
-                    logger.warning("Failed to fetch arrival flights from API")
+                requested_stars = list({s for _, s in star_transitions if s})
+                self._prepare_arrival_flight_pool(requested_stars=requested_stars,
+                                                  num_required=num_arrivals)
             else:
                 logger.info("No STAR transitions specified for arrivals")
 
@@ -155,10 +139,16 @@ class TraconMixedScenario(BaseScenario):
         while len(departures_list) < num_departures and attempts < max_attempts and available_spots:
             spot = random.choice(available_spots)
 
-            # Check if parking spot is for GA (has "GA" in the name)
             if "GA" in spot.name.upper():
-                logger.info(f"Creating GA aircraft for parking spot: {spot.name}")
-                aircraft = self._create_ga_aircraft(spot)
+                ga_mode = self._consume_ga_spot_for_departure()
+                if ga_mode is None:
+                    # GA disabled or per-direction count exhausted; skip this
+                    # spot entirely (airline aircraft don't fit on GA spots).
+                    available_spots.remove(spot)
+                    attempts += 1
+                    continue
+                logger.info(f"Creating {ga_mode} GA aircraft for parking spot: {spot.name}")
+                aircraft = self._create_ga_aircraft(spot, ga_mode=ga_mode)
             else:
                 aircraft = self._create_departure_aircraft(
                     spot,
@@ -238,82 +228,44 @@ class TraconMixedScenario(BaseScenario):
                 else:
                     logger.warning("No valid FRD points or no arrival flights available")
         else:
-            # STAR mode: generate arrivals using STAR waypoints
             if not star_transitions:
                 logger.warning("No valid STAR waypoints provided for arrivals")
             else:
-                # Track which flight index we're using for each STAR
-                star_flight_indices = defaultdict(int)
-
                 arrivals_created = 0
                 attempts = 0
-                max_attempts = num_arrivals * 10  # Allow 10x attempts to handle missing data/waypoints
-                star_round_robin_index = 0  # Track round-robin position (only advances on successful creation)
+                max_attempts = num_arrivals * 10
+                star_round_robin_index = 0
 
                 while arrivals_created < num_arrivals and attempts < max_attempts:
                     waypoint_name, star_name = star_transitions[star_round_robin_index % len(star_transitions)]
 
-                    # Get waypoint for this STAR
                     waypoint = self.cifp_parser.get_transition_waypoint(waypoint_name, star_name)
-
                     if not waypoint:
-                        error_msg = f"Waypoint {waypoint_name}.{star_name} not found in CIFP data"
-                        logger.warning(error_msg)
-                        if error_msg not in self.cifp_waypoint_errors:
-                            self.cifp_waypoint_errors.append(error_msg)
+                        msg = f"Waypoint {waypoint_name}.{star_name} not found in CIFP data"
+                        logger.warning(msg)
+                        if msg not in self.cifp_waypoint_errors:
+                            self.cifp_waypoint_errors.append(msg)
                         attempts += 1
+                        star_round_robin_index += 1
                         continue
-
-                    # Check if waypoint has valid coordinates
                     if waypoint.latitude == 0.0 and waypoint.longitude == 0.0:
-                        error_msg = f"Waypoint {waypoint.name} has no coordinate data"
-                        logger.warning(error_msg)
-                        if error_msg not in self.cifp_waypoint_errors:
-                            self.cifp_waypoint_errors.append(error_msg)
+                        msg = f"Waypoint {waypoint.name} has no coordinate data"
+                        logger.warning(msg)
+                        if msg not in self.cifp_waypoint_errors:
+                            self.cifp_waypoint_errors.append(msg)
                         attempts += 1
+                        star_round_robin_index += 1
                         continue
 
-                    # Get flights for this STAR
-                    star_base = self._strip_numbers(star_name).upper() if star_name else None
-                    available_flights = flights_by_star.get(star_base, []) if star_base else []
-
-                    if not available_flights:
-                        logger.warning(f"No flights available for STAR {star_base}")
+                    flight_data = self._pick_arrival_flight(star_name)
+                    if flight_data is None:
+                        logger.warning(f"No flights available for STAR {star_name}")
                         attempts += 1
+                        star_round_robin_index += 1
                         continue
 
-                    # Get next unused flight for this STAR
-                    flight_index = star_flight_indices[star_base]
-                    if flight_index >= len(available_flights):
-                        # Try to fetch more flights from API
-                        logger.info(f"Flight pool exhausted for STAR {star_base}, fetching more from API...")
-                        additional_flights = self.api_client.fetch_arrivals(self.airport_icao, limit=100, stars=[star_base])
-                        if additional_flights:
-                            valid_flights = filter_valid_flights(additional_flights)
-                            unique_flights = self._deduplicate_by_gufi(valid_flights)
-                            if unique_flights:
-                                # Add to the flight pool for this STAR
-                                if star_base not in flights_by_star:
-                                    flights_by_star[star_base] = []
-                                flights_by_star[star_base].extend(unique_flights)
-                                available_flights = flights_by_star[star_base]
-                                logger.info(f"Added {len(unique_flights)} more flights for STAR {star_base}")
-                            else:
-                                logger.warning(f"No additional valid flights found for STAR {star_base}")
-                                attempts += 1
-                                continue
-                        else:
-                            logger.warning(f"Failed to fetch additional flights for STAR {star_base}")
-                            attempts += 1
-                            continue
-
-                    flight_data = available_flights[flight_index]
-                    star_flight_indices[star_base] += 1
-
-                    # Create aircraft from flight data
                     aircraft = self._create_arrival_at_waypoint(waypoint, flight_data, star_name, active_runways)
                     if aircraft is not None:
-                        # Legacy mode: apply random spawn delay
                         if spawn_delay_range and not delay_value:
                             aircraft.spawn_delay = random.randint(min_delay, max_delay)
                             logger.info(f"Set spawn_delay={aircraft.spawn_delay}s for {aircraft.callsign} (legacy mode)")
@@ -495,51 +447,15 @@ class TraconMixedScenario(BaseScenario):
         return aircraft
 
     def _get_altitude_from_cifp(self, waypoint, star_name: str) -> int:
-        """Get altitude from CIFP waypoint data"""
-        if waypoint.max_altitude:
-            return waypoint.max_altitude
-        if waypoint.min_altitude:
-            return waypoint.min_altitude
-        return 11000
+        """ARINC 424 descriptor-aware altitude pick (see data_pipeline.constraints)."""
+        from utils.data_pipeline import resolve_altitude
+        return resolve_altitude(waypoint)
 
     def _get_speed_from_cifp(self, waypoint, star_name: str) -> Optional[int]:
-        """
-        Get speed restriction from CIFP waypoint data.
-
-        Checks the current waypoint and walks backwards through the STAR procedure
-        to find the most recent speed restriction that applies.
-
-        Args:
-            waypoint: Current waypoint object from CIFP
-            star_name: STAR name
-
-        Returns:
-            Speed restriction in knots, or None if no restriction found
-        """
-        # First check if current waypoint has a speed limit
-        if waypoint.speed_limit:
-            logger.debug(f"Found CIFP speed {waypoint.speed_limit} kts at waypoint {waypoint.name}")
-            return waypoint.speed_limit
-
-        # If not, walk backwards through the STAR to find the most recent speed restriction
-        if star_name not in self.cifp_parser.star_waypoints:
-            return None
-
-        current_sequence = waypoint.sequence_number
-        if not current_sequence:
-            return None
-
-        # Get all waypoints in this STAR
-        star_wpts = self.cifp_parser.star_waypoints[star_name]
-
-        # Walk backwards from current sequence to find most recent speed restriction
-        for seq in range(current_sequence - 10, 0, -10):
-            for wpt_name, wpt in star_wpts.items():
-                if wpt.sequence_number == seq and wpt.speed_limit:
-                    logger.debug(f"Found CIFP speed {wpt.speed_limit} kts from previous waypoint {wpt_name} (seq {seq})")
-                    return wpt.speed_limit
-
-        return None
+        """CIFP speed limit at this waypoint, cascading upstream through the STAR."""
+        from utils.data_pipeline import resolve_speed
+        star_wpts = self.cifp_parser.star_waypoints.get(star_name) if star_name else None
+        return resolve_speed(waypoint, star_waypoints=star_wpts, use_cifp_speeds=True)
 
     def _calculate_realistic_arrival_speed(self, altitude: int, aircraft_type: str, waypoint=None, star_name: str = None) -> int:
         """
@@ -858,7 +774,7 @@ class TraconMixedScenario(BaseScenario):
         """Group flights by their arrivalProcedure field"""
         groups = defaultdict(list)
         for flight in flights:
-            star = flight.get('arrivalProcedure', 'UNKNOWN').upper()
+            star = (flight.get('arrivalProcedure') or 'UNKNOWN').upper()
             groups[star].append(flight)
         return dict(groups)
 

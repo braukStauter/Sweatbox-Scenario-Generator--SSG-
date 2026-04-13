@@ -63,9 +63,10 @@ class TowerMixedScenario(BaseScenario):
 
         # Prepare flight pools from cached data
         logger.info("Preparing flight pools...")
-        self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids)
+        self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids,
+                                            num_required=num_departures)
         self._prepare_ga_flight_pool()
-        self._prepare_arrival_flight_pool()
+        self._prepare_arrival_flight_pool(num_required=num_arrivals)
 
         # Get parallel runway information for separation calculations
         parallel_info = self.geojson_parser.get_parallel_runway_info()
@@ -93,13 +94,16 @@ class TowerMixedScenario(BaseScenario):
 
         logger.info(f"Generating Tower scenario: {num_departures} departures, {num_arrivals} arrivals")
 
-        # Calculate how many GA aircraft to include (10-20% of departures if GA spots exist)
-        num_ga = 0
-        if ga_spots:
-            num_ga = min(len(ga_spots), max(1, int(num_departures * 0.15)))
+        # GA aircraft count is user-controlled via the GA config block.
+        # When ga.enabled is False (default), no GA aircraft are placed and
+        # all departures go to commercial spots.
+        ga_cfg = getattr(self, 'ga_config', None) or {}
+        ga_mode = (ga_cfg.get('departures') or {}).get('mode', 'VFR') if ga_cfg.get('enabled') else None
+        num_ga = int((ga_cfg.get('departures') or {}).get('count') or 0) if ga_cfg.get('enabled') else 0
+        num_ga = min(num_ga, len(ga_spots)) if ga_spots else 0
 
         # Generate commercial departures
-        num_commercial = num_departures - num_ga
+        num_commercial = max(0, num_departures - num_ga)
         commercial_spots = [spot for spot in parking_spots if 'GA' not in spot.name.upper()]
 
         if num_commercial > 0:
@@ -144,7 +148,7 @@ class TowerMixedScenario(BaseScenario):
             while num_ga_created < num_ga and attempts < max_attempts and available_ga_spots:
                 spot = random.choice(available_ga_spots)
 
-                aircraft = self._create_ga_aircraft(spot)
+                aircraft = self._create_ga_aircraft(spot, ga_mode=ga_mode)
                 if aircraft is not None:
                     # Only remove spot if aircraft was successfully created
                     available_ga_spots.remove(spot)

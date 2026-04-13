@@ -41,7 +41,8 @@ class GroundDeparturesScenario(BaseScenario):
         self._reset_tracking()
 
         logger.info("Preparing departure flight pool...")
-        self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids)
+        self._prepare_departure_flight_pool(active_runways, enable_cifp_sids, manual_sids,
+                                            num_required=num_departures)
         self._prepare_ga_flight_pool()
 
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
@@ -70,8 +71,11 @@ class GroundDeparturesScenario(BaseScenario):
 
             try:
                 if "GA" in spot.name.upper():
-                    logger.info(f"Creating GA aircraft for parking spot: {spot.name}")
-                    aircraft = self._create_ga_aircraft(spot)
+                    ga_mode = self._consume_ga_spot_for_departure()
+                    if ga_mode is None:
+                        continue
+                    logger.info(f"Creating {ga_mode} GA aircraft for parking spot: {spot.name}")
+                    aircraft = self._create_ga_aircraft(spot, ga_mode=ga_mode)
                 else:
                     aircraft = self._create_departure_aircraft(
                         spot,

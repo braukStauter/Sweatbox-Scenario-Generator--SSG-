@@ -1,0 +1,38 @@
+appId: dev.creativeshrimp.ssg
+productName: Sweatbox Scenario Generator
+copyright: Copyright © 2026 Creative Shrimp
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - package.json
+
+# Ship the standalone PyInstaller-built bridge binary and the geojson airport
+# list. End users need NO Python interpreter. (FAACIFP18 and all Python code
+# are already compiled into ssg_bridge.exe by PyInstaller.)
+extraResources:
+  - from: "../dist/ssg_bridge.exe"
+    to: "bridge/ssg_bridge.exe"
+  - from: "../airport_data"
+    to: "airport_data"
+    filter:
+      - "*.geojson"
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: logo.ico
+  artifactName: ${productName}-${version}-Setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Sweatbox Scenario Generator
