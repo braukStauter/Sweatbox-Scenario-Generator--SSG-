@@ -63,31 +63,55 @@ class WaypointDatabase:
             self._loaded = True
 
     def _load_waypoints(self):
-        """Load all waypoint definitions from CIFP file"""
+        """Load all waypoint definitions from CIFP file.
+
+        ARINC 424 record layout (relevant sections):
+          * ``SUSAE A`` — enroute fixes (5-letter names like BAYLR, HOMRR).
+          * ``SUSAD`` subsection ' ' — VHF navaids (VOR, VORTAC, VOR/DME,
+            TACAN, DME-only). 3-letter idents like GUP, JCT, ABQ.
+          * ``SUSAD`` subsection 'B' — NDBs.
+          * ``SUSAP`` byte-12 'C' — airport terminal waypoints.
+
+        We collect all of these into a single name-keyed dict. Enroute fixes
+        are loaded FIRST so that if a navaid shares an identifier with a
+        5-letter fix (rare but possible), the fix wins — the navaid can
+        still be referenced by its exact 3/4-letter ident without overwrite.
+        """
         if not os.path.exists(self.cifp_path):
             logger.warning(f"CIFP file not found: {self.cifp_path}")
             return
 
         try:
+            # Two-pass load: enroute + terminal waypoints first, then navaids.
+            # Keeps the explicit-fix records authoritative when a collision
+            # would occur; navaids only populate idents that aren't already
+            # covered by a true waypoint record.
+            navaid_lines = []
             with open(self.cifp_path, 'r', encoding='latin-1') as f:
                 for line in f:
-                    # Parse waypoint definition lines (subsection C)
-                    # Format: SUSAE + subsection 'C' or subsection 'A' for airport waypoints
                     if len(line) < 50:
                         continue
 
-                    record_type = line[0:5].strip()
-
-                    # Only parse waypoint definition records
+                    record_type = line[0:5]
                     if record_type == 'SUSAE':
                         subsection = line[5] if len(line) > 5 else ''
-                        if subsection == 'A':  # Enroute waypoints
+                        if subsection == 'A':
                             self._parse_waypoint_definition(line)
-                    elif record_type in ['SUSAP', 'SUSAD']:
-                        # Terminal area waypoints (airport-specific)
-                        subsection = line[12] if len(line) > 12 else ''
-                        if subsection == 'C':
+                    elif record_type == 'SUSAP':
+                        # Terminal-area waypoints: byte 12 == 'C'.
+                        if len(line) > 12 and line[12] == 'C':
                             self._parse_waypoint_definition(line)
+                    elif record_type == 'SUSAD':
+                        # Deferred: parse after enroute/terminal fixes so a
+                        # rare ident collision resolves to the fix record.
+                        navaid_lines.append(line)
+
+            for line in navaid_lines:
+                subsection = line[5] if len(line) > 5 else ''
+                # ' ' = VHF navaid (VOR/VORTAC/TACAN/DME).
+                # 'B' = NDB.
+                if subsection in (' ', 'B'):
+                    self._parse_navaid_definition(line)
 
             logger.info(f"Loaded {len(self.waypoints)} waypoints from CIFP")
 
@@ -95,7 +119,7 @@ class WaypointDatabase:
             logger.error(f"Error loading waypoint database: {e}")
 
     def _parse_waypoint_definition(self, line: str):
-        """Parse a waypoint definition line from CIFP"""
+        """Parse an enroute/terminal waypoint record from CIFP."""
         try:
             # Waypoint name at position 13-18
             waypoint_name = line[13:18].strip()
@@ -117,25 +141,47 @@ class WaypointDatabase:
                     latitude=latitude,
                     longitude=longitude
                 )
-
-                # Store with full name
+                # Store only by the exact ident. The previous loader aliased
+                # the last 3 chars of every 5-letter fix (meant for
+                # international ICAO-prefixed names like "ET*"), but on
+                # FAACIFP18 (USA) this created massive false matches — e.g.
+                # "COGUP" in Arkansas being aliased as "GUP" and masking the
+                # real Gallup VOR. Route resolution relied on that alias to
+                # "find" navaids the loader never actually parsed, which is
+                # how unrelated 5-letter fixes in other states leaked into
+                # filed-route geometry.
                 self.waypoints[waypoint_name] = waypoint
-
-                # Also store without common prefixes for better matching
-                # Common prefixes: ET, BI, CY, EN, PA, etc.
-                if len(waypoint_name) == 5:
-                    # Try storing without first 2 chars as prefix
-                    suffix = waypoint_name[2:]
-                    if len(suffix) == 3:
-                        # Only store if we don't already have this shorter name
-                        if suffix not in self.waypoints:
-                            self.waypoints[suffix] = waypoint
-                            logger.debug(f"Also stored waypoint as: {suffix}")
-
-                logger.debug(f"Loaded waypoint: {waypoint_name} at {latitude}, {longitude}")
 
         except Exception as e:
             logger.debug(f"Error parsing waypoint definition: {e}")
+
+    def _parse_navaid_definition(self, line: str):
+        """Parse a VHF navaid (VOR/VORTAC/TACAN/DME) or NDB record from CIFP.
+
+        Format (ARINC 424 section D): ident at bytes 13-17 (3- or 4-letter),
+        position latitude at 32-41, longitude at 41-51. Only loads idents
+        not already covered by an enroute/terminal waypoint record so the
+        explicit fix form always wins on the rare name collision."""
+        try:
+            ident = line[13:17].strip()
+            if not ident:
+                return
+            if ident in self.waypoints:
+                # Already loaded as a fix; keep the fix record authoritative.
+                return
+            lat_str = line[32:41].strip()
+            lon_str = line[41:51].strip()
+            latitude = self._parse_coordinate(lat_str, is_latitude=True)
+            longitude = self._parse_coordinate(lon_str, is_latitude=False)
+            if latitude is None or longitude is None:
+                return
+            self.waypoints[ident] = Waypoint(
+                name=ident,
+                latitude=latitude,
+                longitude=longitude,
+            )
+        except Exception as e:
+            logger.debug(f"Error parsing navaid definition: {e}")
 
     def _parse_coordinate(self, coord_str: str, is_latitude: bool) -> Optional[float]:
         """

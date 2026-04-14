@@ -5,10 +5,21 @@ import type {
   VNASUploadResult,
 } from '../shared/types';
 
+interface ProgressEvent {
+  stage: string;
+  message: string;
+  percent: number;
+}
+
 contextBridge.exposeInMainWorld('ssg', {
   scenario: {
     generate: (config: ScenarioConfig): Promise<ScenarioResult> =>
       ipcRenderer.invoke('scenario:generate', config),
+    onProgress: (cb: (ev: ProgressEvent) => void): (() => void) => {
+      const listener = (_e: unknown, data: ProgressEvent) => cb(data);
+      ipcRenderer.on('scenario:progress', listener);
+      return () => ipcRenderer.removeListener('scenario:progress', listener);
+    },
   },
   fs: {
     saveScenario: (filename: string, contents: string): Promise<string> =>

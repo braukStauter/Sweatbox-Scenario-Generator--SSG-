@@ -40,6 +40,10 @@ export function SelectableCard({
         fontFamily: 'inherit',
         fontSize: 14,
         boxSizing: 'border-box',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
       }}
       onMouseEnter={e => {
         if (!selected) (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-tertiary)';
@@ -48,10 +52,14 @@ export function SelectableCard({
         if (!selected) (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-secondary)';
       }}
     >
-      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: description ? 4 : 0 }}>{title}</div>
-      {description && (
-        <div style={{ color: 'var(--fg-secondary)', fontSize: 12 }}>{description}</div>
-      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, marginBottom: description ? 4 : 0 }}>
+          {title}
+        </div>
+        {description && (
+          <div style={{ color: 'var(--fg-secondary)', fontSize: 12 }}>{description}</div>
+        )}
+      </div>
       {children && (
         <div
           // Stop clicks/keys inside the embedded content from bubbling up
@@ -59,7 +67,7 @@ export function SelectableCard({
           // focus from inputs).
           onClick={e => e.stopPropagation()}
           onKeyDown={e => e.stopPropagation()}
-          style={{ marginTop: 12 }}
+          style={{ flexShrink: 0 }}
         >
           {children}
         </div>

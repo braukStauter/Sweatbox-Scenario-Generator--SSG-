@@ -108,7 +108,13 @@ process.on('uncaughtException', err => console.error('[main] uncaughtException',
 process.on('unhandledRejection', err => console.error('[main] unhandledRejection', err));
 
 function registerIpc() {
-  ipcMain.handle('scenario:generate', (_e, config: ScenarioConfig) => generateScenario(config));
+  ipcMain.handle('scenario:generate', (e, config: ScenarioConfig) =>
+    generateScenario(config, progress => {
+      if (!e.sender.isDestroyed()) {
+        e.sender.send('scenario:progress', progress);
+      }
+    }),
+  );
   ipcMain.handle('airports:list', () => listAirports());
   ipcMain.handle('fs:saveScenario', async (_e, filename: string, contents: string) => {
     const res = await dialog.showSaveDialog({ defaultPath: filename });

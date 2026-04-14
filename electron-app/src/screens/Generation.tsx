@@ -8,11 +8,20 @@ type PushState =
   | { kind: 'pushing' }
   | { kind: 'done'; ok: boolean; message: string };
 
+interface Progress {
+  message: string;
+  percent: number;
+}
+
 export function Generation() {
   const { config, importedScenario, setScreen, reset } = useScenarioStore();
   const [result, setResult] = useState<ScenarioResult | null>(importedScenario);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(!importedScenario);
+  const [progress, setProgress] = useState<Progress>({
+    message: 'Starting scenario generator…',
+    percent: 0,
+  });
   const [push, setPush] = useState<PushState>({ kind: 'idle' });
   const isImported = !!importedScenario;
 
@@ -24,6 +33,10 @@ export function Generation() {
       return;
     }
     let cancelled = false;
+    const unsubscribe = window.ssg.scenario.onProgress(ev => {
+      if (cancelled) return;
+      setProgress({ message: ev.message, percent: ev.percent });
+    });
     (async () => {
       try {
         const sum = (d: { easy: number; medium: number; hard: number }) =>
@@ -59,12 +72,48 @@ export function Generation() {
     })();
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [config, importedScenario]);
 
   return (
     <Card title={isImported ? 'Loaded Scenario' : 'Generated Scenario'}>
-      {loading && <p>Fetching flights and generating scenario…</p>}
+      {loading && (
+        <div className="stack" style={{ gap: 10 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'baseline',
+              fontSize: 13,
+              gap: 12,
+            }}
+          >
+            <span>{progress.message}</span>
+            <span style={{ color: 'var(--fg-secondary)', fontVariantNumeric: 'tabular-nums' }}>
+              {Math.max(1, Math.round(progress.percent))}%
+            </span>
+          </div>
+          <div
+            style={{
+              width: '100%',
+              height: 6,
+              background: 'var(--bg-tertiary, #2a2a2a)',
+              borderRadius: 3,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: `${Math.max(2, progress.percent)}%`,
+                height: '100%',
+                background: 'var(--accent, #3b82f6)',
+                transition: 'width 0.4s ease',
+              }}
+            />
+          </div>
+        </div>
+      )}
       {error && <p style={{ color: 'var(--error)' }}>Error: {error}</p>}
       {result && (
         <div className="stack">

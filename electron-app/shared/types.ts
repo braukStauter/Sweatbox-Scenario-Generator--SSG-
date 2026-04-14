@@ -207,6 +207,9 @@ declare global {
     ssg: {
       scenario: {
         generate(config: ScenarioConfig): Promise<ScenarioResult>;
+        onProgress(
+          cb: (ev: { stage: string; message: string; percent: number }) => void,
+        ): () => void;
       };
       fs: {
         saveScenario(filename: string, contents: string): Promise<string>;

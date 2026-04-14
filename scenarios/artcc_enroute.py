@@ -1312,7 +1312,14 @@ class ArtccEnrouteScenario(BaseScenario):
             spawn_fix = reserved['fix']
             starting_type = 'FixOrFrd'
         else:
-            initial_route = spawn_info.get('initial_route', clean_route)
+            # When the aircraft spawns exactly on a named waypoint, its nav
+            # path must start at the NEXT fix — not the waypoint it's already
+            # over. `initial_route` from the spawn finder already excludes the
+            # current waypoint. If it's empty (spawn landed on the last route
+            # waypoint), fall back to the arrival airport rather than the full
+            # filed route (which would re-include the spawn fix as the first
+            # nav token).
+            initial_route = spawn_info.get('initial_route') or arrival
             spawn_lat = spawn_info['latitude']
             spawn_lon = spawn_info['longitude']
             spawn_fix = spawn_info['waypoint']
@@ -1334,7 +1341,7 @@ class ArtccEnrouteScenario(BaseScenario):
             departure=departure,
             arrival=arrival,
             route=clean_route,  # Cleaned route (dots to spaces, airports/time removed)
-            navigation_path=initial_route or clean_route,
+            navigation_path=initial_route or arrival,
             cruise_altitude=cruise_altitude,
             cruise_speed=cruise_kias,
             mach=mach_value,
@@ -1475,49 +1482,73 @@ class ArtccEnrouteScenario(BaseScenario):
         which has been the source of wrong-direction spawns.
         """
         cifp_parser = self.cifp_parsers.get(arrival_icao)
-        star_waypoints_list = (
-            cifp_parser.get_arrival_waypoints(star_name) if (cifp_parser and star_name) else []
-        )
         next_fix_name: Optional[str] = None
 
-        # STAR spawn: next STAR waypoint, if any.
-        if spawn.get('on_star') and star_waypoints_list:
-            for idx, wp_name in enumerate(star_waypoints_list):
-                if wp_name.upper() == spawn['fix'].upper():
-                    if idx + 1 < len(star_waypoints_list):
-                        next_fix_name = star_waypoints_list[idx + 1]
-                    break
+        # STAR spawn: walk the STAR's waypoint graph segment-aware so forks
+        # between runway transitions are respected. If the spawn is at the
+        # end of the common segment, the next fix is the first waypoint of
+        # the transition that matches ``arrival_runway``.
+        if spawn.get('on_star') and star_name and cifp_parser is not None:
+            next_fix_name = self._next_star_waypoint(
+                cifp_parser, star_name, spawn['fix'], arrival_runway,
+            )
 
         # Non-STAR or FRD spawn: walk the filed-route polyline forward past
         # the spawn's forward-distance and pick the first *named* node that
-        # comes after it.
+        # comes after it. Skip only the spawn fix itself (aircraft already
+        # over it) — don't filter by transition type; vNAS resolves STAR
+        # geometry from the ``<STAR>.<RWY>`` token at the end of the nav
+        # path, so targeting an enroute-transition waypoint is fine.
         if next_fix_name is None:
             poly_names = spawn.get('_polyline_names') or []
             poly_coords = spawn.get('_polyline_coords') or []
             forward_nm = spawn.get('_polyline_forward_nm')
+            spawn_upper = str(spawn.get('fix', '')).upper()
             if poly_names and poly_coords and forward_nm is not None:
                 from utils.geo_utils import calculate_distance_nm
                 cum = 0.0
+                past_spawn = False
                 for i in range(len(poly_coords) - 1):
                     leg = calculate_distance_nm(
                         poly_coords[i][0], poly_coords[i][1],
                         poly_coords[i + 1][0], poly_coords[i + 1][1],
                     )
                     cum += leg
-                    if cum > forward_nm + 0.1 and i + 1 < len(poly_names):
-                        next_fix_name = poly_names[i + 1]
-                        break
+                    if not past_spawn and cum > forward_nm + 0.1:
+                        past_spawn = True
+                    if not past_spawn or i + 1 >= len(poly_names):
+                        continue
+                    candidate = poly_names[i + 1]
+                    if candidate.upper() == spawn_upper:
+                        continue
+                    next_fix_name = candidate
+                    break
 
         # Boundary-entry spawn: use the entry waypoint itself as the next
         # target (that's the point the aircraft is flying toward from
-        # outside the ARTCC).
+        # outside the ARTCC). Prefer the plain entry name over ``spawn['fix']``
+        # which is now an FRD string like "EAGUL180015".
         if next_fix_name is None and spawn.get('boundary_entry'):
-            next_fix_name = spawn['fix']
+            next_fix_name = spawn.get('boundary_entry_name') or spawn.get('fix')
 
-        # Last-resort fallback: use the spawn's own fix. Not ideal but
-        # preserves legacy behavior for paths we can't resolve.
+        # If the polyline walk couldn't locate a downstream fix and we have
+        # a STAR, try the STAR traversal again from the seam (first STAR
+        # waypoint), which at least keeps the aircraft on-procedure.
+        if next_fix_name is None and star_name and cifp_parser is not None:
+            wps = cifp_parser.get_arrival_waypoints(star_name) or []
+            # Pick the earliest waypoint whose name differs from the spawn
+            # fix so we never echo the spawn's own waypoint here.
+            spawn_upper = str(spawn.get('fix', '')).upper()
+            for wp in wps:
+                if wp.upper() != spawn_upper:
+                    next_fix_name = wp
+                    break
+
+        # Last-resort fallback: the arrival airport. Never re-emit the spawn
+        # fix — the aircraft is already there, and vNAS would have nothing
+        # to steer toward.
         if not next_fix_name:
-            next_fix_name = spawn['fix']
+            next_fix_name = arrival_icao
 
         if star_name and arrival_runway:
             runway_suffix = self._star_runway_suffix(
@@ -1898,6 +1929,13 @@ class ArtccEnrouteScenario(BaseScenario):
     # this far upstream along its filed route.
     WAYPOINT_COLLISION_BACKUP_NM: float = 20.0
 
+    # How far outside the ARTCC boundary an arrival may still spawn while
+    # satisfying the band requirement. Needed for cases like SKW5669/PHX
+    # where the in-band named waypoints on the filed route (e.g., BOILE)
+    # sit ~200 NM outside ZAB but BLH is only ~40 NM outside — BLH is a
+    # reasonable spawn anchor; BOILE isn't.
+    ARRIVAL_BAND_BOUNDARY_TOLERANCE_NM: float = 50.0
+
     def _shift_spawn_back_on_polyline(
         self,
         polyline_coords: List[Tuple[float, float]],
@@ -1927,26 +1965,46 @@ class ArtccEnrouteScenario(BaseScenario):
             return None
         lat, lon, heading = interp
 
-        # Pin the FRD to the nearest upstream named waypoint so vNAS can
-        # render a readable "FIX<radial><dist>" string.
+        # Pin the FRD to the nearest upstream named waypoint. vNAS uses the
+        # ``fix`` field as the raw starting-position reference — a bare
+        # waypoint name spawns the aircraft AT that waypoint, ignoring the
+        # lat/lon we computed. Encode the proper FixRadialDistance string
+        # (``<NAME><RRR><DDD>``) so vNAS actually places the aircraft at the
+        # shifted-back position.
         cum = 0.0
         upstream_name = polyline_names[0] if polyline_names else ''
+        upstream_lat = polyline_coords[0][0] if polyline_coords else None
+        upstream_lon = polyline_coords[0][1] if polyline_coords else None
         for i in range(len(polyline_coords) - 1):
             leg = calculate_distance_nm(
                 polyline_coords[i][0], polyline_coords[i][1],
                 polyline_coords[i + 1][0], polyline_coords[i + 1][1],
             )
             if cum + leg >= new_forward:
-                upstream_name = polyline_names[i] if i < len(polyline_names) else upstream_name
+                if i < len(polyline_names):
+                    upstream_name = polyline_names[i]
+                upstream_lat = polyline_coords[i][0]
+                upstream_lon = polyline_coords[i][1]
                 break
             cum += leg
+
+        if upstream_name and upstream_lat is not None and upstream_lon is not None:
+            brg = int(round(calculate_bearing(
+                upstream_lat, upstream_lon, lat, lon,
+            ))) % 360
+            dist = max(1, int(round(calculate_distance_nm(
+                upstream_lat, upstream_lon, lat, lon,
+            ))))
+            fix_str = f"{upstream_name}{brg:03d}{dist:03d}"
+        else:
+            fix_str = upstream_name
 
         distance_to_dest = (
             calculate_distance_nm(lat, lon, anchor_lat, anchor_lon)
             if anchor_lat is not None and anchor_lon is not None else None
         )
         return {
-            'fix': upstream_name,
+            'fix': fix_str,
             'latitude': lat,
             'longitude': lon,
             'heading': int(heading),
@@ -2018,6 +2076,43 @@ class ArtccEnrouteScenario(BaseScenario):
         logger.debug(f"{callsign}: exhausted collision shift-backs")
         return None
 
+    def _nm_to_artcc_boundary(self, lat: float, lon: float) -> float:
+        """Great-circle distance (NM) from ``(lat, lon)`` to the nearest
+        vertex of this ARTCC's polygon. Returns 0 if the point is inside,
+        ``inf`` if the polygon is missing.
+
+        Used as the "near-boundary" test for arrival-band checks. Vertex
+        distance is a conservative (upper-bound) approximation of true
+        point-to-edge distance — good enough at the ~50 NM tolerance we
+        apply here."""
+        if self.artcc_boundaries.is_point_in_artcc(lat, lon, self.artcc_id):
+            return 0.0
+        poly = self.artcc_boundaries.get_artcc_polygon(self.artcc_id) or []
+        if not poly:
+            return float('inf')
+        from utils.geo_utils import calculate_distance_nm
+        best = float('inf')
+        for plon, plat in poly:
+            d = calculate_distance_nm(lat, lon, plat, plon)
+            if d < best:
+                best = d
+        return best
+
+    def _point_in_band_and_reachable(self, lat: float, lon: float,
+                                       dist_to_dest: float,
+                                       min_nm: float, max_nm: float) -> bool:
+        """True if the point sits inside the [min_nm, max_nm] distance band
+        AND either lies inside the ARTCC or within the configured boundary
+        tolerance of it."""
+        if not (min_nm <= dist_to_dest <= max_nm):
+            return False
+        if self.artcc_boundaries.is_point_in_artcc(lat, lon, self.artcc_id):
+            return True
+        return (
+            self._nm_to_artcc_boundary(lat, lon)
+            <= self.ARRIVAL_BAND_BOUNDARY_TOLERANCE_NM
+        )
+
     def _find_boundary_entry_spawn(self, nodes: List[Tuple],
                                      anchor_lat: float, anchor_lon: float,
                                      matching_star: Optional[str]) -> Optional[Dict]:
@@ -2082,8 +2177,17 @@ class ArtccEnrouteScenario(BaseScenario):
             spawn_lat, spawn_lon, anchor_lat, anchor_lon,
         )
 
+        # vNAS ignores the aircraft's lat/lon for ``FixOrFrd`` starts and
+        # uses the ``fix`` string as the position reference. A bare waypoint
+        # name would spawn the aircraft AT the entry waypoint (inside the
+        # ARTCC), defeating the whole point of a boundary-entry handoff.
+        # Build the FRD form ``<FIX><RRR><DDD>`` — radial on the reverse
+        # bearing from the entry fix, distance = offset_nm — so vNAS places
+        # the aircraft at the computed outside-ARTCC position.
+        frd_fix = f"{entry_name}{int(reverse_bearing) % 360:03d}{max(1, int(round(offset_nm))):03d}"
+
         return {
-            'fix': entry_name,
+            'fix': frd_fix,
             'latitude': spawn_lat,
             'longitude': spawn_lon,
             'heading': int(inbound_heading),
@@ -2098,6 +2202,10 @@ class ArtccEnrouteScenario(BaseScenario):
             'node_index': entry_idx,
             'distance_to_dest_nm': distance_to_dest,
             'boundary_entry': True,
+            # The name of the entry waypoint (before FRD encoding) so the
+            # nav-path builder can put it as the first fly-to fix — the
+            # aircraft is approaching that waypoint from outside the ARTCC.
+            'boundary_entry_name': entry_name,
         }
 
     def _find_arrival_spawn_on_route(self, filed_route: str, arrival_icao: str,
@@ -2136,7 +2244,6 @@ class ArtccEnrouteScenario(BaseScenario):
         # 1a. Clean filed route → named waypoints with coords.
         clean = clean_route_string(filed_route)
         filed_names = self.route_parser.parse_route_string(clean)
-        filed_coords = self.route_parser.get_route_waypoint_coordinates(filed_names)
 
         # 1b. Resolve the STAR name via the same base-match the old code used.
         available_stars = cifp_parser.get_available_stars()
@@ -2147,11 +2254,81 @@ class ArtccEnrouteScenario(BaseScenario):
                 matching_star = s
                 break
         star_nodes: List[Tuple[str, float, float, object]] = []
+        # Waypoint-name → (lat, lon) map pulled from the STAR's CIFP records.
+        # Used to override the global waypoint DB for filed-route tokens that
+        # collide with unrelated waypoints (e.g., "GUP" as the EAGUL6 enroute
+        # transition in western NM vs. an identically-named fix in Arkansas).
+        star_wp_coords: Dict[str, Tuple[float, float]] = {}
         if matching_star:
             for wp_name in cifp_parser.get_arrival_waypoints(matching_star) or []:
                 wp_obj = cifp_parser.get_transition_waypoint(wp_name, matching_star)
                 if wp_obj and wp_obj.latitude and wp_obj.longitude:
                     star_nodes.append((wp_name, wp_obj.latitude, wp_obj.longitude, wp_obj))
+                    star_wp_coords.setdefault(
+                        wp_name.upper(), (wp_obj.latitude, wp_obj.longitude),
+                    )
+            star_wps = getattr(cifp_parser, 'star_waypoints', {}).get(matching_star, {})
+            for name, wp in star_wps.items():
+                if wp.latitude and wp.longitude:
+                    star_wp_coords.setdefault(
+                        name.upper(), (wp.latitude, wp.longitude),
+                    )
+
+        # 1a'. Resolve filed tokens with STAR-CIFP priority. For tokens the
+        # STAR knows (e.g., "GUP" on EAGUL6), use the CIFP coords — the
+        # global waypoint DB is subject to name collisions that distort the
+        # polyline geometry (a 1000 NM dogleg through a same-named fix in
+        # another ARTCC will wreck every downstream band/tolerance check).
+        filed_coords: List[Tuple[str, float, float]] = []
+        for tok in filed_names:
+            tok_u = tok.upper()
+            if tok_u in star_wp_coords:
+                lat, lon = star_wp_coords[tok_u]
+                filed_coords.append((tok, lat, lon))
+                continue
+            coord = self.route_parser.waypoint_db.get_coordinates(tok)
+            if coord:
+                filed_coords.append((tok, coord[0], coord[1]))
+
+        # 1a''. Dogleg sanity check — any filed waypoint whose leg from the
+        # previous node exceeds 500 NM AND bears away from the destination is
+        # almost certainly a name collision (the correct waypoint would be
+        # close to the route corridor). Drop it so it doesn't poison the
+        # polyline scan.
+        def _drop_dogleg(
+            coords: List[Tuple[str, float, float]],
+            dest_lat: Optional[float], dest_lon: Optional[float],
+        ) -> List[Tuple[str, float, float]]:
+            if not coords or dest_lat is None or dest_lon is None:
+                return coords
+            out = [coords[0]]
+            for name, lat, lon in coords[1:]:
+                plast_name, plast_lat, plast_lon = out[-1]
+                leg = calculate_distance_nm(plast_lat, plast_lon, lat, lon)
+                if leg > 500:
+                    # Is the jump heading away from (or wildly off from) the
+                    # destination? If so, reject.
+                    brg = calculate_bearing(plast_lat, plast_lon, lat, lon)
+                    dest_brg = calculate_bearing(plast_lat, plast_lon, dest_lat, dest_lon)
+                    diff = abs((brg - dest_brg + 540) % 360 - 180)
+                    if diff > 45:
+                        logger.debug(
+                            f"Dropping filed token {name}: {leg:.0f} NM leg "
+                            f"from {plast_name} bears {diff:.0f}° off destination"
+                        )
+                        continue
+                out.append((name, lat, lon))
+            return out
+
+        # Destination anchor for the dogleg check. Use the last STAR waypoint
+        # when available (most reliable); else the last filed coord we have.
+        _dest_lat = star_nodes[-1][1] if star_nodes else (
+            filed_coords[-1][1] if filed_coords else None
+        )
+        _dest_lon = star_nodes[-1][2] if star_nodes else (
+            filed_coords[-1][2] if filed_coords else None
+        )
+        filed_coords = _drop_dogleg(filed_coords, _dest_lat, _dest_lon)
 
         # 1c. Build the full forward polyline. Seam-dedupe: if the last filed
         # waypoint equals the first STAR waypoint, drop the duplicate.
@@ -2182,13 +2359,17 @@ class ArtccEnrouteScenario(BaseScenario):
             for _, lat, lon, _, _ in nodes
         ]
 
-        # 3. Named-node path in band, inside ARTCC.
+        # 3. Named-node path in band — inside ARTCC OR within the
+        # boundary-tolerance. Named waypoints sitting just outside the ARTCC
+        # boundary (e.g., BLH ~40 NM outside ZAB for PHX arrivals) are still
+        # valid spawn anchors; filed plans that only cross into ZAB deep in
+        # the band otherwise get pushed to the boundary-entry fallback and
+        # lose their band compliance.
         in_band_named: List[Tuple[int, float]] = [
             (i, dist_to_dest[i])
             for i in range(len(nodes))
-            if min_nm <= dist_to_dest[i] <= max_nm
-            and self.artcc_boundaries.is_point_in_artcc(
-                nodes[i][1], nodes[i][2], self.artcc_id
+            if self._point_in_band_and_reachable(
+                nodes[i][1], nodes[i][2], dist_to_dest[i], min_nm, max_nm,
             )
         ]
 
@@ -2228,7 +2409,8 @@ class ArtccEnrouteScenario(BaseScenario):
 
         def _with_polyline(d: Dict, forward_nm: float) -> Dict:
             """Attach polyline context so the creator can shift back on
-            waypoint collision."""
+            waypoint collision and so the nav-path builder can walk to the
+            next downstream named fix."""
             d['_polyline_coords'] = polyline
             d['_polyline_names'] = polyline_names
             d['_polyline_forward_nm'] = forward_nm
@@ -2260,59 +2442,118 @@ class ArtccEnrouteScenario(BaseScenario):
                     'distance_to_dest_nm': dist_dest,
                 }, polyline_cum[candidate_idx])
 
-        # 4. Interpolate along the polyline at the band midpoint, measured
-        # from the destination. We want `target_from_dest` NM back from the
-        # anchor. Convert to forward distance along the polyline.
+        # 4. FRD synthesis. Scan the polyline in small steps for the position
+        # that best satisfies BOTH the band AND the boundary tolerance. The
+        # previous single-midpoint interpolation used to fall through to
+        # ``_find_boundary_entry_spawn`` whenever the band midpoint was >50
+        # NM outside the ARTCC — that's how arrivals like SWA9058 on
+        # ``FRITR3 CNERY BLH HYDRR1`` ended up spawning at HYDRR (~50 NM
+        # from PHX, far inside the boundary and well below the 200–300 NM
+        # band). The scan finds any polyline position where the route is
+        # simultaneously in-band and within ``ARRIVAL_BAND_BOUNDARY_TOLERANCE_NM``
+        # of the boundary, picking the one closest to the band midpoint.
         total_len = polyline_cum[-1] if polyline_cum else 0.0
-        target_from_dest = 0.5 * (min_nm + max_nm)
-        target_forward = total_len - target_from_dest
-        if target_forward <= 0 or target_forward >= total_len:
-            # Band is longer than the whole filed route (or inverted) — hand
-            # off at the ARTCC boundary instead of silently dropping.
-            return self._find_boundary_entry_spawn(nodes, anchor_lat, anchor_lon, matching_star)
-        interp = interpolate_along_path(polyline, target_forward)
-        if not interp:
-            return self._find_boundary_entry_spawn(nodes, anchor_lat, anchor_lon, matching_star)
-        synth_lat, synth_lon, heading = interp
-        if not self.artcc_boundaries.is_point_in_artcc(
-                synth_lat, synth_lon, self.artcc_id):
-            # Band falls entirely outside our airspace — hand off from the
-            # adjacent facility instead of skipping the aircraft.
-            return self._find_boundary_entry_spawn(nodes, anchor_lat, anchor_lon, matching_star)
-        # Sanity check: interpolated heading must point toward the anchor
-        # (destination). If the route doubles back, the leg bearing can
-        # actually point away from the dest — reject rather than produce a
-        # wrong-direction spawn.
-        anchor_bearing = calculate_bearing(synth_lat, synth_lon, anchor_lat, anchor_lon)
-        if abs((heading - anchor_bearing + 540) % 360 - 180) > 90:
-            return self._find_boundary_entry_spawn(nodes, anchor_lat, anchor_lon, matching_star)
-        # Pin the synthetic fix to the nearest upstream *named* waypoint so
-        # vNAS can render an FRD string from it.
-        upstream_name = None
-        cum = 0.0
-        for i in range(len(polyline) - 1):
-            leg = calculate_distance_nm(polyline[i][0], polyline[i][1],
-                                         polyline[i + 1][0], polyline[i + 1][1])
-            if cum + leg >= target_forward:
-                upstream_name = nodes[i][0]
-                break
-            cum += leg
-        # Great-circle distance from the synthesized point to the anchor.
-        synth_dist_to_dest = calculate_distance_nm(
-            synth_lat, synth_lon, anchor_lat, anchor_lon,
+        band_mid = 0.5 * (min_nm + max_nm)
+
+        def _pin_upstream(forward_nm: float) -> Tuple[Optional[str], Optional[float], Optional[float]]:
+            """Return ``(name, lat, lon)`` of the nearest upstream named
+            waypoint for a given forward distance along the polyline."""
+            cum = 0.0
+            for i in range(len(polyline) - 1):
+                leg = calculate_distance_nm(
+                    polyline[i][0], polyline[i][1],
+                    polyline[i + 1][0], polyline[i + 1][1],
+                )
+                if cum + leg >= forward_nm:
+                    return nodes[i][0], polyline[i][0], polyline[i][1]
+                cum += leg
+            if nodes:
+                return nodes[0][0], polyline[0][0], polyline[0][1]
+            return None, None, None
+
+        def _frd_fix(upstream_name: Optional[str], u_lat: Optional[float],
+                      u_lon: Optional[float], target_lat: float,
+                      target_lon: float) -> str:
+            """Encode a fix/radial/distance string so vNAS spawns AT the
+            computed target position rather than at the bare waypoint.
+            Format: ``<NAME><RRR><DDD>`` — radial from the fix, NM distance.
+            Falls back to the bare name only when we can't pin a fix (the
+            aircraft then really does spawn at that waypoint, which is the
+            least-wrong behavior)."""
+            if upstream_name and u_lat is not None and u_lon is not None:
+                brg = int(round(calculate_bearing(
+                    u_lat, u_lon, target_lat, target_lon,
+                ))) % 360
+                dist = max(1, int(round(calculate_distance_nm(
+                    u_lat, u_lon, target_lat, target_lon,
+                ))))
+                return f"{upstream_name}{brg:03d}{dist:03d}"
+            return upstream_name or (nodes[0][0] if nodes else '')
+
+        STEP_NM = 2.0
+        best: Optional[Tuple[float, float, float, float, float]] = None
+        best_score = float('inf')
+        if total_len > STEP_NM:
+            fwd = STEP_NM
+            while fwd < total_len:
+                pt = interpolate_along_path(polyline, fwd)
+                if not pt:
+                    fwd += STEP_NM
+                    continue
+                lat_p, lon_p, hdg = pt
+                d_to_dest = calculate_distance_nm(
+                    lat_p, lon_p, anchor_lat, anchor_lon,
+                )
+                in_band = min_nm <= d_to_dest <= max_nm
+                if not in_band:
+                    fwd += STEP_NM
+                    continue
+                reach_nm = self._nm_to_artcc_boundary(lat_p, lon_p)
+                if reach_nm > self.ARRIVAL_BAND_BOUNDARY_TOLERANCE_NM:
+                    fwd += STEP_NM
+                    continue
+                # Must still point toward the destination anchor — reject
+                # backtracking legs that would produce wrong-direction spawns.
+                anchor_bearing = calculate_bearing(
+                    lat_p, lon_p, anchor_lat, anchor_lon,
+                )
+                if abs((hdg - anchor_bearing + 540) % 360 - 180) > 90:
+                    fwd += STEP_NM
+                    continue
+                # Score: primary = proximity to band midpoint (keeps spawns
+                # clustered around the ideal distance), secondary = how far
+                # outside the boundary we are (prefer closer-in spawns when
+                # band proximity ties).
+                score = abs(d_to_dest - band_mid) + 0.05 * reach_nm
+                if score < best_score:
+                    best_score = score
+                    best = (fwd, lat_p, lon_p, hdg, d_to_dest)
+                fwd += STEP_NM
+
+        if best is not None:
+            fwd, synth_lat, synth_lon, heading, synth_dist_to_dest = best
+            upstream_name, u_lat, u_lon = _pin_upstream(fwd)
+            return _with_polyline({
+                'fix': _frd_fix(upstream_name, u_lat, u_lon, synth_lat, synth_lon),
+                'latitude': synth_lat,
+                'longitude': synth_lon,
+                'heading': int(heading),
+                'starting_conditions_type': 'FixOrFrd',
+                'on_star': False,
+                'actual_star_name': matching_star,
+                'star_waypoint_obj': None,
+                'node_index': None,
+                'distance_to_dest_nm': synth_dist_to_dest,
+            }, fwd)
+
+        # 5. No polyline position satisfies band + tolerance simultaneously.
+        # This happens when the filed route never approaches the ARTCC while
+        # in-band (e.g., routes that enter the ARTCC deep in the terminal
+        # area). Hand off at the boundary entry as a last resort — the
+        # aircraft comes in from the adjacent facility on its filed route.
+        return self._find_boundary_entry_spawn(
+            nodes, anchor_lat, anchor_lon, matching_star,
         )
-        return _with_polyline({
-            'fix': upstream_name or nodes[0][0],
-            'latitude': synth_lat,
-            'longitude': synth_lon,
-            'heading': heading,
-            'starting_conditions_type': 'FixOrFrd',
-            'on_star': False,
-            'actual_star_name': matching_star,
-            'star_waypoint_obj': None,
-            'node_index': None,
-            'distance_to_dest_nm': synth_dist_to_dest,
-        }, target_forward)
 
     def _find_star_spawn_waypoint(self, arrival_airport: str, star_name: str):
         """
@@ -2417,6 +2658,105 @@ class ArtccEnrouteScenario(BaseScenario):
 
         # Fallback
         return active_runways[0] if active_runways else None
+
+    def _next_star_waypoint(self, cifp_parser, star_name: str,
+                              spawn_fix: str,
+                              arrival_runway: Optional[str]) -> Optional[str]:
+        """Given a spawn fix on a STAR, return the next waypoint the aircraft
+        should fly to.
+
+        The STAR is partitioned into:
+          * enroute-transition segments (bring you TO the STAR) — ignored;
+            once airborne on the STAR, the aircraft never flies back through
+            these.
+          * common segment — waypoints with no ``transition_name`` or whose
+            ``transition_name`` equals the STAR name.
+          * runway-transition segments — one per ``RWxxY`` transition
+            identifier.
+
+        Traversal rules:
+          * Spawn on the common segment → next common waypoint by
+            ``sequence_number``. If the spawn is the last common waypoint,
+            jump to the first waypoint of the runway transition that matches
+            ``arrival_runway`` (supports the parallel-runway ``RWxxB`` form
+            when present, and falls back to any other runway transition when
+            no match is configured).
+          * Spawn on a runway-transition segment → next waypoint in that
+            same transition.
+        Returns ``None`` if the spawn fix isn't found anywhere in the STAR.
+        """
+        if not cifp_parser or not star_name:
+            return None
+        star_wps = getattr(cifp_parser, 'star_waypoints', {}).get(star_name, {})
+        if not star_wps:
+            return None
+
+        def _seq(wp):
+            return getattr(wp, 'sequence_number', 0) or 0
+
+        common: List[Tuple[int, str]] = []
+        per_rwy: Dict[str, List[Tuple[int, str]]] = {}
+        for wp_name, wp in star_wps.items():
+            tn = (getattr(wp, 'transition_name', '') or '').upper()
+            if not tn or tn == star_name.upper():
+                common.append((_seq(wp), wp_name))
+            elif re.match(r'^RW\d{1,2}[LCRB]?$', tn):
+                per_rwy.setdefault(tn, []).append((_seq(wp), wp_name))
+            # Other transitions (enroute entries) are ignored — once on the
+            # STAR we never fly back through them.
+        common.sort()
+        common_names = [n for _, n in common]
+        for tn in per_rwy:
+            per_rwy[tn].sort()
+
+        spawn_upper = (spawn_fix or '').upper()
+        common_upper = [n.upper() for n in common_names]
+
+        if spawn_upper in common_upper:
+            idx = common_upper.index(spawn_upper)
+            if idx + 1 < len(common_names):
+                return common_names[idx + 1]
+            # End of the common segment — fork based on the assigned runway.
+            return self._first_runway_transition_waypoint(per_rwy, arrival_runway)
+
+        for tn, wps in per_rwy.items():
+            names = [n for _, n in wps]
+            names_upper = [n.upper() for n in names]
+            if spawn_upper in names_upper:
+                idx = names_upper.index(spawn_upper)
+                if idx + 1 < len(names):
+                    return names[idx + 1]
+                return None
+
+        return None
+
+    def _first_runway_transition_waypoint(
+        self, per_rwy: Dict[str, List[Tuple[int, str]]],
+        arrival_runway: Optional[str],
+    ) -> Optional[str]:
+        """Pick the first waypoint of the runway transition matching
+        ``arrival_runway``. Tries RWxxY, then RWxxB (parallel form), then
+        RWxx (base). Falls back to the first available transition when the
+        assigned runway isn't represented."""
+        if not per_rwy:
+            return None
+        runway = (arrival_runway or '').replace('RW', '').upper()
+        candidates: List[str] = []
+        if runway:
+            candidates.append(f'RW{runway}')
+            m = re.match(r'^(\d{1,2})([LCR])$', runway)
+            if m:
+                base = m.group(1)
+                candidates.append(f'RW{base}B')
+                candidates.append(f'RW{base}')
+        for c in candidates:
+            if c in per_rwy and per_rwy[c]:
+                return per_rwy[c][0][1]
+        # Assigned runway has no transition entry — use whichever exists.
+        for wps in per_rwy.values():
+            if wps:
+                return wps[0][1]
+        return None
 
     def _star_runway_suffix(self, airport_icao: str, star_name: str,
                               arrival_runway: str,
