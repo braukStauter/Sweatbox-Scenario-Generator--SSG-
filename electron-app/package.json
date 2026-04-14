@@ -1,8 +1,8 @@
 {
-  "name": "ssg-electron",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Sweatbox Scenario Generator — Electron/TS frontend",
+  "name": "ssg",
+  "version": "2.0.2",
+  "private": false,
+  "description": "Sweatbox Scenario Generator",
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && tsc -p electron/tsconfig.json && electron .\"",
@@ -34,6 +34,6 @@
   },
   "author": {
     "name": "Creative Shrimp",
-    "email": "noreply@creativeshrimp.dev"
+    "email": "ethan.martin@vatusa.net"
   }
 }

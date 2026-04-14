@@ -27,6 +27,8 @@ extraResources:
       - "FAACIFP18"
   - from: "../config.json"
     to: "config.json"
+  - from: "../utils/artcc_boundaries.geojson"
+    to: "artcc_boundaries.geojson"
 
 win:
   target:

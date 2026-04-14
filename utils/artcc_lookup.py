@@ -111,7 +111,8 @@ def get_artcc_for_airport(airport_icao: str) -> str:
         lat, lon = coords
 
         # Load ARTCC boundaries
-        boundaries_path = Path(__file__).parent / "artcc_boundaries.geojson"
+        from utils.artcc_utils import _resolve_boundaries_path
+        boundaries_path = _resolve_boundaries_path()
         with open(boundaries_path, 'r') as f:
             boundaries_data = json.load(f)
 
