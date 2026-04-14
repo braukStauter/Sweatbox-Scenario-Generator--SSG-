@@ -221,6 +221,16 @@ declare global {
         reset(): Promise<void>;
         clearCookies(): Promise<void>;
       };
+      app: {
+        checkForUpdates(): Promise<{
+          currentVersion: string;
+          latestVersion: string | null;
+          updateAvailable: boolean;
+          releaseUrl: string;
+          error?: string;
+        }>;
+        openExternal(url: string): Promise<void>;
+      };
     };
   }
 }

@@ -224,6 +224,19 @@ class ArtccEnrouteScenario(BaseScenario):
             k.upper(): max(0, int(v or 0))
             for k, v in (per_airport_departure_counts or {}).items()
         }
+        # Persistent remaining quotas — top-up passes re-enter the generator
+        # functions, so rebuilding `remaining = dict(per_airport)` fresh each
+        # call would overshoot by re-running the full quota every pass.
+        self._arrival_remaining = (
+            dict(self.per_airport_arrival_counts)
+            if any(v > 0 for v in self.per_airport_arrival_counts.values())
+            else None
+        )
+        self._departure_remaining = (
+            dict(self.per_airport_departure_counts)
+            if any(v > 0 for v in self.per_airport_departure_counts.values())
+            else None
+        )
 
         # Spawn-band configuration (falls back to class defaults when None).
         self.arrival_spawn_band = tuple(arrival_spawn_band) if arrival_spawn_band else self.DEFAULT_ARRIVAL_BAND_NM
@@ -820,17 +833,15 @@ class ArtccEnrouteScenario(BaseScenario):
             logger.warning("No flights in Arrivals Pool")
             return 0
 
-        per_airport = getattr(self, 'per_airport_arrival_counts', {}) or {}
-        # Only honor per-airport mode when at least one airport has a
-        # non-zero quota. Otherwise fall back to the old "just hit `count`"
-        # behavior for legacy configs.
-        use_quotas = any(v > 0 for v in per_airport.values())
-        remaining = dict(per_airport) if use_quotas else None
-        target = sum(remaining.values()) if use_quotas else count
+        # Use the scenario-scoped persistent remaining dict so top-up passes
+        # only generate the quota that's actually still outstanding.
+        remaining = self._arrival_remaining
+        use_quotas = remaining is not None
+        target = min(count, sum(remaining.values())) if use_quotas else count
 
         created = 0
         attempts = 0
-        max_attempts = target * 20
+        max_attempts = max(target * 20, 20)
 
         while created < target and attempts < max_attempts and flight_pool:
             if use_quotas:
@@ -862,9 +873,9 @@ class ArtccEnrouteScenario(BaseScenario):
         if use_quotas:
             short = {a: n for a, n in remaining.items() if n > 0}
             logger.info(
-                f"Created {created} arrival aircraft (per-airport quotas: "
-                f"filled {target - sum(remaining.values())}/{target}"
-                + (f", unfilled {short}" if short else "") + ")"
+                f"Created {created} arrival aircraft this pass "
+                f"(target {target}); remaining per-airport: "
+                f"{short if short else 'all quotas filled'}"
             )
         else:
             logger.info(f"Created {created} arrival aircraft (requested {target})")
@@ -974,12 +985,12 @@ class ArtccEnrouteScenario(BaseScenario):
         # Shuffle parking spots for variety
         random.shuffle(all_parking_spots)
 
-        # Per-airport quotas override the aggregate `count` when configured.
-        per_airport = getattr(self, 'per_airport_departure_counts', {}) or {}
-        use_quotas = any(v > 0 for v in per_airport.values())
-        remaining = dict(per_airport) if use_quotas else None
+        # Persistent per-airport remaining — top-up passes must not regenerate
+        # the full quota on top of aircraft already created in earlier passes.
+        remaining = self._departure_remaining
+        use_quotas = remaining is not None
         if use_quotas:
-            count = sum(remaining.values())
+            count = min(count, sum(remaining.values()))
 
         created = 0
         for spot in all_parking_spots:
@@ -1033,9 +1044,9 @@ class ArtccEnrouteScenario(BaseScenario):
         if use_quotas:
             short = {a: n for a, n in remaining.items() if n > 0}
             logger.info(
-                f"Created {created} departure aircraft (per-airport quotas: "
-                f"{count - sum(remaining.values())}/{count}"
-                + (f", unfilled {short}" if short else "") + ")"
+                f"Created {created} departure aircraft this pass "
+                f"(target {count}); remaining per-airport: "
+                f"{short if short else 'all quotas filled'}"
             )
         else:
             logger.info(f"Created {created} departure aircraft at parking spots (requested {count})")
@@ -1260,15 +1271,20 @@ class ArtccEnrouteScenario(BaseScenario):
             self.used_callsigns.remove(callsign)  # Return callsign to pool
             return None
 
-        # Check if this spawn point is already used (thread-safe)
-        spawn_key = f"{spawn_info['waypoint']}"
-        with self.spawn_point_lock:
-            if spawn_key in self.used_spawn_points:
-                logger.warning(f"Spawn point {spawn_key} already in use, skipping {callsign}")
-                with self.callsign_lock:
-                    self.used_callsigns.remove(callsign)
-                return None
-            self.used_spawn_points.add(spawn_key)
+        # Reserve the spawn waypoint. If it's already in use by another
+        # enroute aircraft, shift this one 20 NM back along its filed route
+        # (creating an FRD spawn upstream) and let it proceed to the original
+        # waypoint as its first navigation fix.
+        reserve_input = dict(spawn_info)
+        reserve_input['fix'] = spawn_info['waypoint']
+        reserve_input['starting_conditions_type'] = 'Fix'
+        reserved = self._reserve_spawn_or_shift_back(
+            reserve_input, prefix='ENR', callsign=callsign,
+        )
+        if reserved is None:
+            with self.callsign_lock:
+                self.used_callsigns.discard(callsign)
+            return None
 
         # Get filed altitude from API, or estimate if not available
         requested_alt = flight_data.get('requestedAltitude') or flight_data.get('assignedAltitude')
@@ -1284,22 +1300,37 @@ class ArtccEnrouteScenario(BaseScenario):
             flight_data, aircraft_type, altitude, on_star=False,
         )
 
-        # Navigation path: next waypoint after spawn, followed by remainder of filed route
-        initial_route = spawn_info.get('initial_route', clean_route)
+        # Navigation path: next waypoint after spawn, followed by remainder of filed route.
+        # If this spawn was shifted back due to a collision, prepend the original
+        # waypoint so the aircraft flies to it first, then continues on the route.
+        if reserved.get('_shifted_back'):
+            original_wp = spawn_info['waypoint']
+            remainder = spawn_info.get('initial_route', '') or ''
+            initial_route = original_wp + ((' ' + remainder) if remainder else '')
+            spawn_lat = reserved['latitude']
+            spawn_lon = reserved['longitude']
+            spawn_fix = reserved['fix']
+            starting_type = 'FixOrFrd'
+        else:
+            initial_route = spawn_info.get('initial_route', clean_route)
+            spawn_lat = spawn_info['latitude']
+            spawn_lon = spawn_info['longitude']
+            spawn_fix = spawn_info['waypoint']
+            starting_type = 'Fix'
 
         # Create aircraft
         aircraft = Aircraft(
             callsign=callsign,
             aircraft_type=aircraft_type,
-            latitude=spawn_info['latitude'],
-            longitude=spawn_info['longitude'],
+            latitude=spawn_lat,
+            longitude=spawn_lon,
             altitude=altitude,
             # Heading left to vNAS — computed from the first fix in
             # navigationPath (the next waypoint on the filed route).
             heading=0,
             ground_speed=ground_speed,
-            starting_conditions_type='Fix',
-            fix=spawn_info['waypoint'],
+            starting_conditions_type=starting_type,
+            fix=spawn_fix,
             departure=departure,
             arrival=arrival,
             route=clean_route,  # Cleaned route (dots to spaces, airports/time removed)
@@ -1489,7 +1520,10 @@ class ArtccEnrouteScenario(BaseScenario):
             next_fix_name = spawn['fix']
 
         if star_name and arrival_runway:
-            runway_suffix = arrival_runway.replace('RW', '')
+            runway_suffix = self._star_runway_suffix(
+                arrival_icao, star_name, arrival_runway,
+                self.arrival_airport_runways.get(arrival_icao, []),
+            )
             return f"{next_fix_name} {star_name}.{runway_suffix}"
         if star_name:
             return f"{next_fix_name} {star_name}"
@@ -1583,7 +1617,12 @@ class ArtccEnrouteScenario(BaseScenario):
             cruise_speed=cruise_speed,
             sid=dep_proc,  # Store SID in the sid field
             flight_rules="I",
-            primary_airport=None,
+            # Ground departures spawn at parking at their own airport, which
+            # may not be the scenario's primary airport. Setting
+            # primary_airport makes vNAS treat this aircraft as originating
+            # from that airport (required when parking waypoints aren't
+            # resolvable under the scenario's primary airport).
+            primary_airport=departure_3letter,
             spawn_delay=0
         )
 
@@ -1721,6 +1760,18 @@ class ArtccEnrouteScenario(BaseScenario):
         remaining_waypoints = waypoints[selected_idx + 1:] if selected_idx + 1 < len(waypoints) else []
         initial_route = ' '.join(remaining_waypoints) if remaining_waypoints else ''
 
+        # Polyline context so callers can shift this spawn back along the
+        # filed route when the waypoint collides with another aircraft.
+        from utils.geo_utils import calculate_distance_nm as _cd
+        polyline_coords = [(lat_, lon_) for _, lat_, lon_ in route_coords]
+        polyline_names = [wp_ for wp_, _, _ in route_coords]
+        forward_nm = 0.0
+        for i in range(selected_idx):
+            forward_nm += _cd(
+                route_coords[i][1], route_coords[i][2],
+                route_coords[i + 1][1], route_coords[i + 1][2],
+            )
+
         return {
             'waypoint': wp_name,
             'heading': heading,
@@ -1728,7 +1779,12 @@ class ArtccEnrouteScenario(BaseScenario):
             'longitude': lon,
             'waypoint_index': selected_idx,
             'all_waypoints': waypoints,
-            'initial_route': initial_route
+            'initial_route': initial_route,
+            '_polyline_coords': polyline_coords,
+            '_polyline_names': polyline_names,
+            '_polyline_forward_nm': forward_nm,
+            '_anchor_lat': None,
+            '_anchor_lon': None,
         }
 
     def _add_equipment_suffix(self, aircraft_type: str, is_ga: bool) -> str:
@@ -2361,6 +2417,61 @@ class ArtccEnrouteScenario(BaseScenario):
 
         # Fallback
         return active_runways[0] if active_runways else None
+
+    def _star_runway_suffix(self, airport_icao: str, star_name: str,
+                              arrival_runway: str,
+                              active_runways: List[str]) -> str:
+        """Build the runway-side token for a vNAS ``STAR.<RWY>`` nav-path entry.
+
+        When two or more parallel active runways (same number, different L/C/R)
+        feed this STAR via an identical runway-transition waypoint sequence,
+        emit ``<num>B`` so vNAS treats the assignment as either runway. Falls
+        back to the assigned runway (without the ``RW`` prefix) when no shared
+        transition is detected.
+        """
+        cleaned = arrival_runway.replace('RW', '').upper()
+        m = re.match(r'^(\d{1,2})([LCR]?)$', cleaned)
+        if not m or not m.group(2):
+            return cleaned
+        base = m.group(1)
+
+        cifp_parser = self.cifp_parsers.get(airport_icao)
+        if not cifp_parser or not active_runways:
+            return cleaned
+        star_wps = getattr(cifp_parser, 'star_waypoints', {}).get(star_name, {})
+        if not star_wps:
+            return cleaned
+
+        # Group waypoints by runway transition (RW25L, RW25R, ...) for this STAR.
+        per_rwy: Dict[str, List[Tuple[int, str]]] = {}
+        for wp_name, wp in star_wps.items():
+            tn = (getattr(wp, 'transition_name', '') or '').upper()
+            tm = re.match(r'^RW(\d{1,2})([LCR]?)$', tn)
+            if not tm or tm.group(1) != base:
+                continue
+            rwy_full = tm.group(1) + tm.group(2)
+            seq = getattr(wp, 'sequence_number', 0) or 0
+            per_rwy.setdefault(rwy_full, []).append((seq, wp_name))
+
+        if len(per_rwy) < 2:
+            return cleaned
+
+        ordered = {
+            rwy: tuple(name for _, name in sorted(items))
+            for rwy, items in per_rwy.items()
+        }
+
+        # Restrict to parallel runways that are actually active in this scenario.
+        active_clean = {r.replace('RW', '').upper() for r in active_runways}
+        parallel_active = [rwy for rwy in ordered if rwy in active_clean]
+        if len(parallel_active) < 2:
+            return cleaned
+
+        # All parallel active runways must share the exact same transition
+        # waypoint sequence to merge them into the "<num>B" form.
+        if len({ordered[rwy] for rwy in parallel_active}) == 1:
+            return f"{base}B"
+        return cleaned
 
     def _has_lat_long_format(self, route: str) -> bool:
         """

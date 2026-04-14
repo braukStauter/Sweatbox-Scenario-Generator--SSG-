@@ -26,4 +26,15 @@ contextBridge.exposeInMainWorld('ssg', {
     reset: (): Promise<void> => ipcRenderer.invoke('vnas:reset'),
     clearCookies: (): Promise<void> => ipcRenderer.invoke('vnas:clearCookies'),
   },
+  app: {
+    checkForUpdates: (): Promise<{
+      currentVersion: string;
+      latestVersion: string | null;
+      updateAvailable: boolean;
+      releaseUrl: string;
+      error?: string;
+    }> => ipcRenderer.invoke('app:checkForUpdates'),
+    openExternal: (url: string): Promise<void> =>
+      ipcRenderer.invoke('app:openExternal', url),
+  },
 });

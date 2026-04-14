@@ -89,12 +89,19 @@ export function ScenarioConfig() {
           return 'At least one arrival or departure airport is required.';
         }
         {
-          const missing = config.arrivalAirports
+          const missingArr = config.arrivalAirports
             .filter(a => a.icao.trim())
             .filter(a => !(Number(a.count) > 0));
-          if (missing.length > 0) {
-            const list = missing.map(a => a.icao.trim().toUpperCase()).join(', ');
+          if (missingArr.length > 0) {
+            const list = missingArr.map(a => a.icao.trim().toUpperCase()).join(', ');
             return `Aircraft count is required for each arrival airport (missing: ${list}).`;
+          }
+          const missingDep = config.departureAirports
+            .filter(a => a.icao.trim())
+            .filter(a => !(Number(a.count) > 0));
+          if (missingDep.length > 0) {
+            const list = missingDep.map(a => a.icao.trim().toUpperCase()).join(', ');
+            return `Aircraft count is required for each departure airport (missing: ${list}).`;
           }
         }
         return null;

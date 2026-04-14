@@ -8,7 +8,7 @@ import type { AirportRunwaysEntry, SsgConfig } from '../../shared/types';
 const DEPARTURE_COLUMNS: ColumnDef<AirportRunwaysEntry>[] = [
   { key: 'icao', label: 'ICAO', placeholder: 'KPHX', flexBasis: '140px' },
   { key: 'runways', label: 'Runways', placeholder: '08, 7R', flexBasis: '220px' },
-  { key: 'count', label: 'Aircraft', type: 'number', placeholder: '5', flexBasis: '90px' },
+  { key: 'count', label: 'Aircraft *', type: 'number', placeholder: '5', flexBasis: '90px' },
 ];
 
 const ARRIVAL_COLUMNS: ColumnDef<AirportRunwaysEntry>[] = [
