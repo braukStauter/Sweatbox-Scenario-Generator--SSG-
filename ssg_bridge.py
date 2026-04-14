@@ -273,6 +273,11 @@ def load_parsers(airport):
 from utils.data_pipeline import to_icao  # noqa: E402,F401
 
 
+# Populated by `dispatch()` for enroute runs and read by `main()` so we
+# can include per-type generation stats in the JSON response.
+_LAST_GENERATION_STATS = None  # Optional[dict]
+
+
 def dispatch(cfg):
     airport = cfg['departureAirport']
     scenario_type = cfg['scenarioType']
@@ -466,6 +471,10 @@ def dispatch(cfg):
             cached_departures_pool=None, cached_arrivals_pool=None,
             cached_transient_pool=None,
         )
+        # Expose generation stats on the module so `main()` can include
+        # them in the bridge JSON response (enroute only).
+        global _LAST_GENERATION_STATS
+        _LAST_GENERATION_STATS = getattr(sc, 'generation_stats', None)
         return aircraft, airport
 
     # --- Airport-based -----------------------------------------------------
@@ -573,12 +582,15 @@ def main(config_path):
         str(out_dir),
     )
     logger.info(f"Generated {len(aircraft)} aircraft -> {filename}")
-    print(json.dumps({
+    response = {
         'status': 'ok',
         'filename': str(filename),
         'aircraft_count': len(aircraft),
         'logFile': str(log_path),
-    }))
+    }
+    if _LAST_GENERATION_STATS:
+        response['generation_stats'] = _LAST_GENERATION_STATS
+    print(json.dumps(response))
 
 
 if __name__ == '__main__':

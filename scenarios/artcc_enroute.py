@@ -318,62 +318,210 @@ class ArtccEnrouteScenario(BaseScenario):
                     except Exception as e:
                         logger.error(f"Error fetching {pool_name} pool: {e}")
 
-        # Generate aircraft from pools in parallel using threading
-        generation_futures = {}
+        # Compute requested totals up-front so we can report shortfalls
+        # after generation. For enroute, the per-airport quotas are
+        # authoritative when populated; otherwise we fall back to the
+        # aggregate num_arrivals / num_departures values.
+        req_arr = sum(self.per_airport_arrival_counts.values()) or num_arrivals
+        req_dep = sum(self.per_airport_departure_counts.values()) or num_departures
+        req_enr = num_enroute
+        req_ovf = num_overflight
+        requested_total = req_arr + req_dep + req_enr + req_ovf
+        counts_before: Dict[str, int] = {'total': len(self.aircraft)}
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-            if num_departures > 0 and departures_pool:
-                logger.info(f"Generating {num_departures} departure aircraft...")
-                generation_futures['departures'] = executor.submit(
-                    self._generate_departure_aircraft,
-                    num_departures, departures_pool, difficulty_config_departures,
-                    departure_airport_runways
+        # Generate aircraft from pools in parallel using threading.
+        counts: Dict[str, int] = {
+            'departures': 0, 'arrivals': 0, 'enroute': 0, 'overflight': 0,
+        }
+
+        def _run_generation(targets: Dict[str, int]) -> None:
+            """Submit the requested-per-type targets in parallel and tally
+            how many of each type were actually produced."""
+            futures: Dict[str, concurrent.futures.Future] = {}
+            with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                if targets.get('departures', 0) > 0 and departures_pool:
+                    logger.info(f"Generating {targets['departures']} departure aircraft...")
+                    futures['departures'] = executor.submit(
+                        self._generate_departure_aircraft,
+                        targets['departures'], departures_pool,
+                        difficulty_config_departures, departure_airport_runways,
+                    )
+                if targets.get('arrivals', 0) > 0 and arrivals_pool:
+                    logger.info(f"Generating {targets['arrivals']} arrival aircraft...")
+                    futures['arrivals'] = executor.submit(
+                        self._generate_arrival_aircraft,
+                        targets['arrivals'], arrivals_pool, difficulty_config_arrivals,
+                    )
+                if targets.get('enroute', 0) > 0 and transient_pool:
+                    logger.info(f"Generating {targets['enroute']} enroute aircraft...")
+                    futures['enroute'] = executor.submit(
+                        self._generate_enroute_aircraft,
+                        targets['enroute'], transient_pool, difficulty_config_enroute,
+                    )
+                if targets.get('overflight', 0) > 0 and transient_pool:
+                    logger.info(f"Generating {targets['overflight']} overflight aircraft...")
+                    futures['overflight'] = executor.submit(
+                        self._generate_overflight_aircraft,
+                        targets['overflight'], transient_pool, difficulty_config_enroute,
+                    )
+                for gen_type, future in futures.items():
+                    try:
+                        produced = int(future.result() or 0)
+                        counts[gen_type] += produced
+                        logger.debug(f"Completed {gen_type} generation: {produced}")
+                    except Exception as e:  # noqa: BLE001
+                        logger.error(f"Error generating {gen_type} aircraft: {e}")
+
+        initial_targets = {
+            'departures': num_departures,
+            'arrivals': num_arrivals,
+            'enroute': num_enroute,
+            'overflight': num_overflight,
+        }
+        _run_generation(initial_targets)
+
+        # Top-up passes: if a type came in under its requested count, run
+        # it again for the deficit. When a pass produces zero new aircraft
+        # (pool is drained), fetch additional flights from the API using
+        # paginated offsets and keep going — the DB holds millions of
+        # flights so we shouldn't ever truly run out.
+        requested = {
+            'departures': req_dep, 'arrivals': req_arr,
+            'enroute': req_enr, 'overflight': req_ovf,
+        }
+        api_offsets = {'departures': 0, 'arrivals': 0, 'transient': 0}
+        # Track how many we've pulled so the next fetch starts past the
+        # current pool. Pagination nudges: 500 departures/arrivals per refill,
+        # 1000 transient per refill.
+        REFILL_DEP = 500
+        REFILL_ARR = 500
+        REFILL_TRANSIENT = 1000
+        # Initial fetches consumed target_pool_size(num_required) from offset 0.
+        from utils.data_pipeline.flight_pool import target_pool_size
+        api_offsets['departures'] = target_pool_size(num_departures) if num_departures else 0
+        api_offsets['arrivals'] = target_pool_size(num_arrivals) if num_arrivals else 0
+        api_offsets['transient'] = target_pool_size(num_enroute) if num_enroute else 0
+
+        MAX_TOPUP_PASSES = 5
+        for pass_n in range(1, MAX_TOPUP_PASSES + 1):
+            deficit = {
+                k: max(0, requested[k] - counts[k]) for k in requested
+            }
+            total_deficit = sum(deficit.values())
+            if total_deficit <= 0:
+                break
+            logger.info(
+                f"Top-up pass {pass_n}: deficit {deficit} "
+                f"(total {total_deficit}); rerunning shortfall types"
+            )
+            before = dict(counts)
+            _run_generation(deficit)
+            produced_this_pass = sum(counts[k] - before[k] for k in counts)
+            if produced_this_pass > 0:
+                continue
+            # Zero produced — current pools are drained for the types in
+            # deficit. Refill from the API at the next pagination window
+            # and let the next top-up pass consume them.
+            logger.info(
+                f"Top-up pass {pass_n} stalled; refilling flight pools "
+                f"from API (offsets={api_offsets})"
+            )
+            refilled_any = False
+            if deficit.get('departures', 0) > 0 and departure_airports:
+                more = self._fetch_pool_departures(
+                    departure_airports,
+                    start_offset=api_offsets['departures'],
+                    target_override=REFILL_DEP,
                 )
-
-            if num_arrivals > 0 and arrivals_pool:
-                logger.info(f"Generating {num_arrivals} arrival aircraft...")
-                generation_futures['arrivals'] = executor.submit(
-                    self._generate_arrival_aircraft,
-                    num_arrivals, arrivals_pool, difficulty_config_arrivals
+                if more:
+                    # Dedupe against current pool by GUFI so we don't re-add
+                    # flights already rejected. Pool filters already applied.
+                    seen = {f.get('gufi') for f in departures_pool if f.get('gufi')}
+                    new = [f for f in more if f.get('gufi') not in seen]
+                    departures_pool.extend(new)
+                    api_offsets['departures'] += REFILL_DEP
+                    logger.info(
+                        f"Departures refill: +{len(new)} new "
+                        f"(pool now {len(departures_pool)})"
+                    )
+                    refilled_any = refilled_any or bool(new)
+            if (deficit.get('arrivals', 0) > 0) and arrival_airports:
+                more = self._fetch_pool_arrivals(
+                    arrival_airports,
+                    start_offset=api_offsets['arrivals'],
+                    target_override=REFILL_ARR,
                 )
-
-            if num_enroute > 0 and transient_pool:
-                logger.info(f"Generating {num_enroute} enroute aircraft...")
-                generation_futures['enroute'] = executor.submit(
-                    self._generate_enroute_aircraft,
-                    num_enroute, transient_pool, difficulty_config_enroute
+                if more:
+                    seen = {f.get('gufi') for f in arrivals_pool if f.get('gufi')}
+                    new = [f for f in more if f.get('gufi') not in seen]
+                    arrivals_pool.extend(new)
+                    api_offsets['arrivals'] += REFILL_ARR
+                    logger.info(
+                        f"Arrivals refill: +{len(new)} new "
+                        f"(pool now {len(arrivals_pool)})"
+                    )
+                    refilled_any = refilled_any or bool(new)
+            if deficit.get('enroute', 0) > 0 or deficit.get('overflight', 0) > 0:
+                more = self._fetch_pool_transient(
+                    arrival_airports or [],
+                    start_offset=api_offsets['transient'],
+                    target_override=REFILL_TRANSIENT,
                 )
-
-            if num_overflight > 0 and transient_pool:
-                logger.info(f"Generating {num_overflight} overflight aircraft...")
-                generation_futures['overflight'] = executor.submit(
-                    self._generate_overflight_aircraft,
-                    num_overflight, transient_pool, difficulty_config_enroute,
+                if more:
+                    seen = {f.get('gufi') for f in transient_pool if f.get('gufi')}
+                    new = [f for f in more if f.get('gufi') not in seen]
+                    transient_pool.extend(new)
+                    api_offsets['transient'] += REFILL_TRANSIENT
+                    logger.info(
+                        f"Transient refill: +{len(new)} new "
+                        f"(pool now {len(transient_pool)})"
+                    )
+                    refilled_any = refilled_any or bool(new)
+            if not refilled_any:
+                logger.warning(
+                    f"Top-up pass {pass_n}: API returned no new flights "
+                    f"at offset {api_offsets}; true end of data. Stopping."
                 )
-
-            # Wait for all generation tasks to complete
-            for gen_type, future in generation_futures.items():
-                try:
-                    future.result()
-                    logger.debug(f"Completed {gen_type} generation")
-                except Exception as e:
-                    logger.error(f"Error generating {gen_type} aircraft: {e}")
+                break
 
         # Apply spawn delays across all aircraft
         self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
 
-        logger.info(f"Generated {len(self.aircraft)} total aircraft for ARTCC {self.artcc_id}")
+        # Final verification: compare requested vs actual. Expose on the
+        # instance so the bridge can surface shortfalls in the UI.
+        actual_total = len(self.aircraft)
+        shortfall = {
+            k: max(0, requested[k] - counts[k]) for k in requested
+        }
+        self.generation_stats = {
+            'requested_total': requested_total,
+            'actual_total': actual_total,
+            'requested': dict(requested),
+            'actual': dict(counts),
+            'shortfall': shortfall,
+        }
+        if actual_total < requested_total:
+            nonzero = {k: v for k, v in shortfall.items() if v > 0}
+            logger.warning(
+                f"Generation shortfall: produced {actual_total} of "
+                f"{requested_total} requested aircraft for ARTCC "
+                f"{self.artcc_id}. Missing: {nonzero}"
+            )
+        else:
+            logger.info(
+                f"Generation met requested counts: {actual_total}/{requested_total} "
+                f"for ARTCC {self.artcc_id} (by type: {counts})"
+            )
         return self.aircraft
 
-    def _fetch_pool_departures(self, departure_airports: List[str]) -> List[Dict]:
+    def _fetch_pool_departures(self, departure_airports: List[str],
+                                 start_offset: int = 0,
+                                 target_override: Optional[int] = None) -> List[Dict]:
         """
-        Fetch Departures Pool from API (fetches each airport individually)
-
-        Args:
-            departure_airports: List of departure airport ICAOs
-
-        Returns:
-            Filtered list of departure flights
+        Fetch Departures Pool from API (fetches each airport individually).
+        ``start_offset``/``target_override`` plumb into the API paginator so
+        top-up passes can request fresh pages without refetching the initial
+        block.
         """
         from utils.data_pipeline import fetch_departures as pool_fetch_deps
 
@@ -385,9 +533,13 @@ class ArtccEnrouteScenario(BaseScenario):
             try:
                 flights, _ = pool_fetch_deps(
                     self.api_client, airport, num_required=per_airport,
+                    start_offset=start_offset, target_override=target_override,
                 )
                 all_flights.extend(flights)
-                logger.info(f"Fetched {len(flights)} departures from {airport}")
+                logger.info(
+                    f"Fetched {len(flights)} departures from {airport} "
+                    f"(start_offset={start_offset})"
+                )
             except Exception as e:  # noqa: BLE001
                 logger.error(f"Error fetching departures from {airport}: {e}")
 
@@ -398,8 +550,13 @@ class ArtccEnrouteScenario(BaseScenario):
         logger.info(f"Departures Pool: Fetched {len(all_flights)} total, filtered to {len(filtered)}")
         return filtered
 
-    def _fetch_pool_arrivals(self, arrival_airports: List[str]) -> List[Dict]:
-        """Fetch arrivals across the configured airports via FlightPool."""
+    def _fetch_pool_arrivals(self, arrival_airports: List[str],
+                               start_offset: int = 0,
+                               target_override: Optional[int] = None) -> List[Dict]:
+        """Fetch arrivals across the configured airports via FlightPool.
+        ``start_offset`` / ``target_override`` drive API pagination during
+        top-up passes so we get fresh flights rather than re-parsing the
+        same cached initial window."""
         from utils.data_pipeline import fetch_arrivals as pool_fetch_arrs
 
         all_flights = []
@@ -408,9 +565,13 @@ class ArtccEnrouteScenario(BaseScenario):
             try:
                 flights, _ = pool_fetch_arrs(
                     self.api_client, airport, num_required=per_airport,
+                    start_offset=start_offset, target_override=target_override,
                 )
                 all_flights.extend(flights)
-                logger.info(f"Fetched {len(flights)} arrivals to {airport}")
+                logger.info(
+                    f"Fetched {len(flights)} arrivals to {airport} "
+                    f"(start_offset={start_offset})"
+                )
             except Exception as e:  # noqa: BLE001
                 logger.error(f"Error fetching arrivals to {airport}: {e}")
 
@@ -421,9 +582,12 @@ class ArtccEnrouteScenario(BaseScenario):
         logger.info(f"Arrivals Pool: Fetched {len(all_flights)} total, filtered to {len(filtered)}")
         return filtered
 
-    def _fetch_pool_transient(self, arrival_airports: List[str]) -> List[Dict]:
+    def _fetch_pool_transient(self, arrival_airports: List[str],
+                                start_offset: int = 0,
+                                target_override: Optional[int] = None) -> List[Dict]:
         """
-        Fetch Transient Pool from API
+        Fetch Transient Pool from API. ``start_offset``/``target_override``
+        support API-paginated top-ups.
 
         Args:
             arrival_airports: List of arrival airports to filter out
@@ -436,6 +600,7 @@ class ArtccEnrouteScenario(BaseScenario):
             flights, _ = pool_fetch_artcc(
                 self.api_client, self.artcc_id,
                 num_required=getattr(self, '_num_enroute_total', 20),
+                start_offset=start_offset, target_override=target_override,
             )
             if not flights:
                 logger.warning(f"No transient flights fetched for ARTCC {self.artcc_id}")
@@ -615,13 +780,13 @@ class ArtccEnrouteScenario(BaseScenario):
 
 
     def _generate_enroute_aircraft(self, count: int, flight_pool: List[Dict],
-                                    difficulty_config: Dict = None):
-        """Generate enroute transient aircraft"""
+                                    difficulty_config: Dict = None) -> int:
+        """Generate enroute transient aircraft. Returns count actually created."""
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
 
         if not flight_pool:
             logger.warning("No flights in Transient Pool")
-            return
+            return 0
 
         created = 0
         attempts = 0
@@ -643,15 +808,17 @@ class ArtccEnrouteScenario(BaseScenario):
             attempts += 1
 
         logger.info(f"Created {created} enroute aircraft (requested {count})")
+        return created
 
     def _generate_arrival_aircraft(self, count: int, flight_pool: List[Dict],
-                                    difficulty_config: Dict = None):
-        """Generate arrival aircraft with per-airport quotas when configured."""
+                                    difficulty_config: Dict = None) -> int:
+        """Generate arrival aircraft with per-airport quotas when configured.
+        Returns count actually created."""
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
 
         if not flight_pool:
             logger.warning("No flights in Arrivals Pool")
-            return
+            return 0
 
         per_airport = getattr(self, 'per_airport_arrival_counts', {}) or {}
         # Only honor per-airport mode when at least one airport has a
@@ -701,11 +868,12 @@ class ArtccEnrouteScenario(BaseScenario):
             )
         else:
             logger.info(f"Created {created} arrival aircraft (requested {target})")
+        return created
 
     def _generate_departure_aircraft(self, count: int, flight_pool: List[Dict],
                                       difficulty_config: Dict = None,
-                                      departure_airport_runways: Dict[str, List[str]] = None):
-        """Generate departure aircraft at parking spots with geojson validation and SID filtering"""
+                                      departure_airport_runways: Dict[str, List[str]] = None) -> int:
+        """Generate departure aircraft at parking spots. Returns count created."""
         from pathlib import Path
 
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
@@ -742,7 +910,7 @@ class ArtccEnrouteScenario(BaseScenario):
         if not valid_airports:
             logger.error("ERROR: No valid airport GeoJSON data available for departure aircraft spawning")
             logger.error(f"Skipping {count} requested departure aircraft")
-            return
+            return 0
 
         # Collect all parking spots from valid airports. If an airport's
         # geojson has no parking spots but does contain runway geometry, fall
@@ -798,7 +966,7 @@ class ArtccEnrouteScenario(BaseScenario):
         if not all_parking_spots:
             logger.error("ERROR: No parking spots found in airport GeoJSON data")
             logger.error(f"Skipping {count} requested departure aircraft")
-            return
+            return 0
 
         if count > len(all_parking_spots):
             logger.warning(f"Requested {count} departures but only {len(all_parking_spots)} parking spots available")
@@ -872,9 +1040,10 @@ class ArtccEnrouteScenario(BaseScenario):
             )
         else:
             logger.info(f"Created {created} departure aircraft at parking spots (requested {count})")
+        return created
 
     def _generate_overflight_aircraft(self, count: int, flight_pool: List[Dict],
-                                       difficulty_config: Dict = None):
+                                       difficulty_config: Dict = None) -> int:
         """Generate overflight aircraft that enter the ARTCC from a neighbor.
 
         Shares the transient flight pool (any flight whose filed route crosses
@@ -887,7 +1056,7 @@ class ArtccEnrouteScenario(BaseScenario):
         difficulty_list, difficulty_index = self._setup_difficulty_assignment(difficulty_config)
         if not flight_pool:
             logger.warning("No flights in pool for overflights")
-            return
+            return 0
 
         created = 0
         attempts = 0
@@ -904,6 +1073,7 @@ class ArtccEnrouteScenario(BaseScenario):
             attempts += 1
 
         logger.info(f"Created {created} overflight aircraft (requested {count})")
+        return created
 
     def _find_overflight_spawn_on_route(self, route: str) -> Optional[Dict]:
         """Return a spawn state for an overflight: position offset between
@@ -1040,7 +1210,11 @@ class ArtccEnrouteScenario(BaseScenario):
             latitude=spawn_info['latitude'],
             longitude=spawn_info['longitude'],
             altitude=altitude,
-            heading=int(spawn_info['heading']),
+            # No explicit heading — vNAS derives it from navigationPath's
+            # first fix (the entry waypoint). Providing a heading caused
+            # aircraft to spawn pointing the wrong way when the magnetic /
+            # waypoint-database coordinates disagreed.
+            heading=0,
             ground_speed=ground_speed,
             # Spawn at a bare lat/lon (no fix) — the aircraft isn't yet over
             # the entry waypoint, it's outside the boundary. vNAS handles
@@ -1050,6 +1224,7 @@ class ArtccEnrouteScenario(BaseScenario):
             departure=departure,
             arrival=arrival,
             route=clean_route,
+            navigation_path=spawn_info.get('initial_route') or clean_route,
             cruise_altitude=cruise_altitude,
             cruise_speed=cruise_kias,
             mach=mach_value,
@@ -1120,13 +1295,16 @@ class ArtccEnrouteScenario(BaseScenario):
             latitude=spawn_info['latitude'],
             longitude=spawn_info['longitude'],
             altitude=altitude,
-            heading=int(spawn_info['heading']),
+            # Heading left to vNAS — computed from the first fix in
+            # navigationPath (the next waypoint on the filed route).
+            heading=0,
             ground_speed=ground_speed,
             starting_conditions_type='Fix',
             fix=spawn_info['waypoint'],
             departure=departure,
             arrival=arrival,
             route=clean_route,  # Cleaned route (dots to spaces, airports/time removed)
+            navigation_path=initial_route or clean_route,
             cruise_altitude=cruise_altitude,
             cruise_speed=cruise_kias,
             mach=mach_value,
@@ -1174,17 +1352,17 @@ class ArtccEnrouteScenario(BaseScenario):
         actual_star_name = spawn.get('actual_star_name') or arr_proc
         arr_proc = actual_star_name or arr_proc
 
-        # Dedupe on rounded (lat,lon) so two aircraft can share a generic fix
-        # so long as they aren't literally on top of each other (FRD points
-        # at the same band midpoint on the same route would collide).
-        spawn_key = f"ARR:{spawn['fix']}:{round(spawn['latitude'], 3)},{round(spawn['longitude'], 3)}"
-        with self.spawn_point_lock:
-            if spawn_key in self.used_spawn_points:
-                logger.debug(f"Spawn point {spawn_key} already in use, skipping {callsign}")
-                with self.callsign_lock:
-                    self.used_callsigns.discard(callsign)
-                return None
-            self.used_spawn_points.add(spawn_key)
+        # Collision handling: reject a named-waypoint spawn if another aircraft
+        # already occupies it, and shift this one 20 NM back along the filed
+        # route — creating an FRD spawn upstream of the collision. Retry up
+        # to a few times if the shifted point also collides.
+        spawn = self._reserve_spawn_or_shift_back(
+            spawn, prefix='ARR', callsign=callsign,
+        )
+        if spawn is None:
+            with self.callsign_lock:
+                self.used_callsigns.discard(callsign)
+            return None
 
         # Altitude priority:
         # 1. CIFP altitude constraint at the chosen STAR waypoint (the
@@ -1231,7 +1409,10 @@ class ArtccEnrouteScenario(BaseScenario):
             latitude=spawn['latitude'],
             longitude=spawn['longitude'],
             altitude=altitude,
-            heading=int(spawn['heading']),
+            # Heading intentionally left at 0 — vNAS derives initial heading
+            # from the first fix in navigationPath. Providing an explicit
+            # heading here was the root cause of wrong-direction spawns.
+            heading=0,
             ground_speed=ground_speed,
             starting_conditions_type=spawn['starting_conditions_type'],
             fix=spawn['fix'],
@@ -1253,18 +1434,61 @@ class ArtccEnrouteScenario(BaseScenario):
     def _build_arrival_navigation_path(self, arrival_icao: str, star_name: str,
                                         arrival_runway: Optional[str],
                                         spawn: Dict) -> str:
-        """Compose the vNAS navigation path for an arrival."""
+        """Compose the vNAS navigation path for an arrival.
+
+        Critical: the first token is the **next** waypoint the aircraft
+        should fly to, not its current position. vNAS derives initial
+        heading by computing the bearing from the spawn position to the
+        first token in ``navigationPath``. If we put the spawn fix here,
+        the aircraft has nothing to turn to and the displayed heading is
+        whatever the scenario's explicit ``heading`` field happens to be —
+        which has been the source of wrong-direction spawns.
+        """
         cifp_parser = self.cifp_parsers.get(arrival_icao)
         star_waypoints_list = (
             cifp_parser.get_arrival_waypoints(star_name) if (cifp_parser and star_name) else []
         )
-        next_fix_name = spawn['fix']
+        next_fix_name: Optional[str] = None
+
+        # STAR spawn: next STAR waypoint, if any.
         if spawn.get('on_star') and star_waypoints_list:
             for idx, wp_name in enumerate(star_waypoints_list):
                 if wp_name.upper() == spawn['fix'].upper():
                     if idx + 1 < len(star_waypoints_list):
                         next_fix_name = star_waypoints_list[idx + 1]
                     break
+
+        # Non-STAR or FRD spawn: walk the filed-route polyline forward past
+        # the spawn's forward-distance and pick the first *named* node that
+        # comes after it.
+        if next_fix_name is None:
+            poly_names = spawn.get('_polyline_names') or []
+            poly_coords = spawn.get('_polyline_coords') or []
+            forward_nm = spawn.get('_polyline_forward_nm')
+            if poly_names and poly_coords and forward_nm is not None:
+                from utils.geo_utils import calculate_distance_nm
+                cum = 0.0
+                for i in range(len(poly_coords) - 1):
+                    leg = calculate_distance_nm(
+                        poly_coords[i][0], poly_coords[i][1],
+                        poly_coords[i + 1][0], poly_coords[i + 1][1],
+                    )
+                    cum += leg
+                    if cum > forward_nm + 0.1 and i + 1 < len(poly_names):
+                        next_fix_name = poly_names[i + 1]
+                        break
+
+        # Boundary-entry spawn: use the entry waypoint itself as the next
+        # target (that's the point the aircraft is flying toward from
+        # outside the ARTCC).
+        if next_fix_name is None and spawn.get('boundary_entry'):
+            next_fix_name = spawn['fix']
+
+        # Last-resort fallback: use the spawn's own fix. Not ideal but
+        # preserves legacy behavior for paths we can't resolve.
+        if not next_fix_name:
+            next_fix_name = spawn['fix']
+
         if star_name and arrival_runway:
             runway_suffix = arrival_runway.replace('RW', '')
             return f"{next_fix_name} {star_name}.{runway_suffix}"
@@ -1614,6 +1838,131 @@ class ArtccEnrouteScenario(BaseScenario):
         logger.debug(f"No CIFP altitude constraints, estimating {altitude} ft for {aircraft_type}")
         return altitude
 
+    # Default shift-back distance (NM) when two aircraft would overlap on
+    # the same route waypoint. The colliding aircraft becomes an FRD spawn
+    # this far upstream along its filed route.
+    WAYPOINT_COLLISION_BACKUP_NM: float = 20.0
+
+    def _shift_spawn_back_on_polyline(
+        self,
+        polyline_coords: List[Tuple[float, float]],
+        polyline_names: List[str],
+        current_forward_nm: float,
+        anchor_lat: Optional[float],
+        anchor_lon: Optional[float],
+        matching_star: Optional[str] = None,
+        backup_nm: float = None,
+    ) -> Optional[Dict]:
+        """Step backward along a filed-route polyline by ``backup_nm`` and
+        return a spawn dict suitable for FRD rendering. Used when a primary
+        spawn collides with another aircraft's waypoint.
+
+        Returns None when we can't step that far back (polyline too short
+        before the spawn position)."""
+        from utils.geo_utils import (
+            calculate_bearing, calculate_distance_nm, interpolate_along_path,
+        )
+        if backup_nm is None:
+            backup_nm = self.WAYPOINT_COLLISION_BACKUP_NM
+        new_forward = current_forward_nm - backup_nm
+        if new_forward <= 0 or len(polyline_coords) < 2:
+            return None
+        interp = interpolate_along_path(polyline_coords, new_forward)
+        if not interp:
+            return None
+        lat, lon, heading = interp
+
+        # Pin the FRD to the nearest upstream named waypoint so vNAS can
+        # render a readable "FIX<radial><dist>" string.
+        cum = 0.0
+        upstream_name = polyline_names[0] if polyline_names else ''
+        for i in range(len(polyline_coords) - 1):
+            leg = calculate_distance_nm(
+                polyline_coords[i][0], polyline_coords[i][1],
+                polyline_coords[i + 1][0], polyline_coords[i + 1][1],
+            )
+            if cum + leg >= new_forward:
+                upstream_name = polyline_names[i] if i < len(polyline_names) else upstream_name
+                break
+            cum += leg
+
+        distance_to_dest = (
+            calculate_distance_nm(lat, lon, anchor_lat, anchor_lon)
+            if anchor_lat is not None and anchor_lon is not None else None
+        )
+        return {
+            'fix': upstream_name,
+            'latitude': lat,
+            'longitude': lon,
+            'heading': int(heading),
+            'starting_conditions_type': 'FixOrFrd',
+            'on_star': False,
+            'actual_star_name': matching_star,
+            'star_waypoint_obj': None,
+            'node_index': None,
+            'distance_to_dest_nm': distance_to_dest,
+            '_polyline_coords': polyline_coords,
+            '_polyline_names': polyline_names,
+            '_polyline_forward_nm': new_forward,
+            '_anchor_lat': anchor_lat,
+            '_anchor_lon': anchor_lon,
+            '_shifted_back': True,
+        }
+
+    def _reserve_spawn_or_shift_back(
+        self,
+        spawn: Dict,
+        prefix: str,
+        callsign: str,
+        max_shifts: int = 4,
+    ) -> Optional[Dict]:
+        """Atomically register ``spawn`` in ``self.used_spawn_points``.
+        If its waypoint is already taken, shift the aircraft 20 NM back
+        along its filed-route polyline (creating an FRD spawn) and retry.
+
+        Returns the registered spawn dict (possibly the shifted one), or
+        None if we exhausted shifts without finding a free slot."""
+        current = spawn
+        for attempt in range(max_shifts + 1):
+            key = f"{prefix}:{current['fix'].upper()}"
+            coord_key = f"{prefix}:{round(current['latitude'], 2)},{round(current['longitude'], 2)}"
+            with self.spawn_point_lock:
+                if key not in self.used_spawn_points and coord_key not in self.used_spawn_points:
+                    self.used_spawn_points.add(key)
+                    self.used_spawn_points.add(coord_key)
+                    return current
+            # Collision — try shifting back along the polyline.
+            poly = current.get('_polyline_coords')
+            names = current.get('_polyline_names')
+            fwd = current.get('_polyline_forward_nm')
+            anchor_lat = current.get('_anchor_lat')
+            anchor_lon = current.get('_anchor_lon')
+            star = current.get('actual_star_name')
+            if not (poly and names and fwd is not None):
+                logger.debug(
+                    f"{callsign}: collision at {current['fix']} but no polyline "
+                    f"context to shift back; skipping"
+                )
+                return None
+            shifted = self._shift_spawn_back_on_polyline(
+                poly, names, fwd, anchor_lat, anchor_lon, star,
+            )
+            if shifted is None:
+                logger.debug(
+                    f"{callsign}: collision at {current['fix']}, can't step "
+                    f"another {self.WAYPOINT_COLLISION_BACKUP_NM} NM back "
+                    f"(attempt {attempt + 1}/{max_shifts}); skipping"
+                )
+                return None
+            logger.debug(
+                f"{callsign}: {current['fix']} taken, shifting "
+                f"{self.WAYPOINT_COLLISION_BACKUP_NM} NM back to FRD off "
+                f"{shifted['fix']}"
+            )
+            current = shifted
+        logger.debug(f"{callsign}: exhausted collision shift-backs")
+        return None
+
     def _find_boundary_entry_spawn(self, nodes: List[Tuple],
                                      anchor_lat: float, anchor_lon: float,
                                      matching_star: Optional[str]) -> Optional[Dict]:
@@ -1721,7 +2070,8 @@ class ArtccEnrouteScenario(BaseScenario):
         logic to decide whether Mach is appropriate).
         """
         from utils.geo_utils import (
-            calculate_bearing, calculate_distance_nm, interpolate_along_path,
+            calculate_bearing, calculate_distance_nm, cumulative_distances,
+            interpolate_along_path,
         )
 
         cifp_parser = self.cifp_parsers.get(arrival_icao)
@@ -1817,6 +2167,20 @@ class ArtccEnrouteScenario(BaseScenario):
                     return hdg
             return None
 
+        polyline = [(lat, lon) for _, lat, lon, _, _ in nodes]
+        polyline_names = [n[0] for n in nodes]
+        polyline_cum = cumulative_distances(polyline)
+
+        def _with_polyline(d: Dict, forward_nm: float) -> Dict:
+            """Attach polyline context so the creator can shift back on
+            waypoint collision."""
+            d['_polyline_coords'] = polyline
+            d['_polyline_names'] = polyline_names
+            d['_polyline_forward_nm'] = forward_nm
+            d['_anchor_lat'] = anchor_lat
+            d['_anchor_lon'] = anchor_lon
+            return d
+
         if in_band_named:
             # Prefer a named node closest to the band midpoint, tiebreak to
             # the deepest (farthest-from-airport) one so aircraft start with
@@ -1828,7 +2192,7 @@ class ArtccEnrouteScenario(BaseScenario):
                 hdg = _downstream_heading(candidate_idx, wp_obj)
                 if hdg is None:
                     continue
-                return {
+                return _with_polyline({
                     'fix': name,
                     'latitude': lat,
                     'longitude': lon,
@@ -1839,17 +2203,12 @@ class ArtccEnrouteScenario(BaseScenario):
                     'star_waypoint_obj': wp_obj if is_star else None,
                     'node_index': candidate_idx,
                     'distance_to_dest_nm': dist_dest,
-                }
+                }, polyline_cum[candidate_idx])
 
         # 4. Interpolate along the polyline at the band midpoint, measured
         # from the destination. We want `target_from_dest` NM back from the
         # anchor. Convert to forward distance along the polyline.
-        polyline = [(lat, lon) for _, lat, lon, _, _ in nodes]
-        total_len = sum(
-            calculate_distance_nm(polyline[i][0], polyline[i][1],
-                                   polyline[i + 1][0], polyline[i + 1][1])
-            for i in range(len(polyline) - 1)
-        )
+        total_len = polyline_cum[-1] if polyline_cum else 0.0
         target_from_dest = 0.5 * (min_nm + max_nm)
         target_forward = total_len - target_from_dest
         if target_forward <= 0 or target_forward >= total_len:
@@ -1887,7 +2246,7 @@ class ArtccEnrouteScenario(BaseScenario):
         synth_dist_to_dest = calculate_distance_nm(
             synth_lat, synth_lon, anchor_lat, anchor_lon,
         )
-        return {
+        return _with_polyline({
             'fix': upstream_name or nodes[0][0],
             'latitude': synth_lat,
             'longitude': synth_lon,
@@ -1898,7 +2257,7 @@ class ArtccEnrouteScenario(BaseScenario):
             'star_waypoint_obj': None,
             'node_index': None,
             'distance_to_dest_nm': synth_dist_to_dest,
-        }
+        }, target_forward)
 
     def _find_star_spawn_waypoint(self, arrival_airport: str, star_name: str):
         """

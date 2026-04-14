@@ -100,6 +100,8 @@ def fetch_departures(
     num_required: int,
     allowed_sids: Optional[Iterable[str]] = None,
     wake_counts: Optional[Dict[str, int]] = None,
+    start_offset: int = 0,
+    target_override: Optional[int] = None,
 ) -> Tuple[List[dict], List[str]]:
     """Fetch departures for `airport`, server-filtered by SID and wake.
 
@@ -119,23 +121,28 @@ def fetch_departures(
     if fanout:
         logger.info(
             f"Fetching departures: departure={icao} "
-            f"depproc={depproc or '(none)'} wake fanout={fanout}"
+            f"depproc={depproc or '(none)'} wake fanout={fanout} "
+            f"start_offset={start_offset}"
         )
         for cat, cat_target in fanout.items():
             batch = api.fetch_all_flights(
                 departure=icao, depproc=depproc,
-                wakecat=cat, max_flights=cat_target,
+                wakecat=cat,
+                max_flights=target_override if target_override else cat_target,
+                start_offset=start_offset,
             )
             if batch:
                 raw.extend(batch)
     else:
-        target = target_pool_size(num_required)
+        target = target_override if target_override else target_pool_size(num_required)
         logger.info(
             f"Fetching departures: departure={icao} "
-            f"depproc={depproc or '(none)'} target={target}"
+            f"depproc={depproc or '(none)'} target={target} "
+            f"start_offset={start_offset}"
         )
         raw = api.fetch_all_flights(
             departure=icao, depproc=depproc, max_flights=target,
+            start_offset=start_offset,
         ) or []
 
     # Keep every record (an airline may run the same flight number dozens of
@@ -161,6 +168,8 @@ def fetch_arrivals(
     num_required: int,
     requested_stars: Optional[Iterable[str]] = None,
     wake_counts: Optional[Dict[str, int]] = None,
+    start_offset: int = 0,
+    target_override: Optional[int] = None,
 ) -> Tuple[List[dict], List[str]]:
     """Fetch arrivals for `airport`, server-filtered by STAR and wake.
 
@@ -179,23 +188,28 @@ def fetch_arrivals(
     if fanout:
         logger.info(
             f"Fetching arrivals: arrival={icao} "
-            f"arrproc={arrproc or '(none)'} wake fanout={fanout}"
+            f"arrproc={arrproc or '(none)'} wake fanout={fanout} "
+            f"start_offset={start_offset}"
         )
         for cat, cat_target in fanout.items():
             batch = api.fetch_all_flights(
                 arrival=icao, arrproc=arrproc,
-                wakecat=cat, max_flights=cat_target,
+                wakecat=cat,
+                max_flights=target_override if target_override else cat_target,
+                start_offset=start_offset,
             )
             if batch:
                 raw.extend(batch)
     else:
-        target = target_pool_size(num_required)
+        target = target_override if target_override else target_pool_size(num_required)
         logger.info(
             f"Fetching arrivals: arrival={icao} "
-            f"arrproc={arrproc or '(none)'} target={target}"
+            f"arrproc={arrproc or '(none)'} target={target} "
+            f"start_offset={start_offset}"
         )
         raw = api.fetch_all_flights(
             arrival=icao, arrproc=arrproc, max_flights=target,
+            start_offset=start_offset,
         ) or []
 
     # Keep every record (an airline may run the same flight number dozens of
@@ -219,13 +233,20 @@ def fetch_artcc(
     artcc_id: str,
     *,
     num_required: int,
+    start_offset: int = 0,
+    target_override: Optional[int] = None,
 ) -> Tuple[List[dict], List[str]]:
     """Fetch flights transiting a specific ARTCC (used by enroute scenarios)."""
-    target = target_pool_size(num_required)
+    target = target_override if target_override else target_pool_size(num_required)
     warnings: List[str] = []
 
-    logger.info(f"Fetching ARTCC transient flights: artcc={artcc_id} target={target}")
-    raw = api.fetch_all_artcc_flights(artcc_id=artcc_id, max_flights=target)
+    logger.info(
+        f"Fetching ARTCC transient flights: artcc={artcc_id} target={target} "
+        f"start_offset={start_offset}"
+    )
+    raw = api.fetch_all_artcc_flights(
+        artcc_id=artcc_id, max_flights=target, start_offset=start_offset,
+    )
 
     # ARTCC transient pool gets the same treatment as dep/arr: keep every
     # record but rewrite duplicate callsigns so each aircraft has a unique id.

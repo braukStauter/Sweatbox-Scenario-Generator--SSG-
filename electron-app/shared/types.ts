@@ -164,6 +164,14 @@ export interface ScenarioConfig {
   ga: GaConfig;
 }
 
+export interface GenerationStats {
+  requested_total: number;
+  actual_total: number;
+  requested: Record<string, number>;
+  actual: Record<string, number>;
+  shortfall: Record<string, number>;
+}
+
 export interface ScenarioResult {
   filename: string;
   contents: string;
@@ -172,6 +180,9 @@ export interface ScenarioResult {
    *  bridge's `aircraft_count` field. For imported scenarios it defaults to
    *  `flightsUsed.length`. */
   aircraftCount: number;
+  /** Enroute-only: per-type requested vs. actual counts. Lets the UI call
+   *  out shortfalls when the pool couldn't satisfy every requested slot. */
+  generationStats?: GenerationStats;
 }
 
 export interface VNASUploadResult {

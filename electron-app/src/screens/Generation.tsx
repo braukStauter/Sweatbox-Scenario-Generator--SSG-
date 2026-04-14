@@ -71,8 +71,35 @@ export function Generation() {
           <p style={{ color: 'var(--fg-secondary)' }}>
             {isImported
               ? <>Loaded from <code>{result.filename}</code></>
-              : <>{result.aircraftCount} flights — <code>{result.filename}</code></>}
+              : <>
+                  {result.aircraftCount}
+                  {result.generationStats && result.generationStats.requested_total !== result.aircraftCount
+                    ? ` of ${result.generationStats.requested_total}`
+                    : ''}
+                  {' '}flights — <code>{result.filename}</code>
+                </>}
           </p>
+          {result.generationStats && (() => {
+            const s = result.generationStats;
+            const shorts = Object.entries(s.shortfall || {}).filter(([, n]) => n > 0);
+            if (shorts.length === 0) return null;
+            return (
+              <p
+                style={{
+                  color: 'var(--warning, #c77)',
+                  fontSize: 12,
+                  margin: 0,
+                  padding: '6px 10px',
+                  border: '1px solid var(--warning, #c77)',
+                  borderRadius: 'var(--radius)',
+                }}
+              >
+                Shortfall: {shorts.map(([k, n]) => `${n} ${k}`).join(', ')} — the
+                flight pool didn't have enough matching filed plans to satisfy
+                the full request.
+              </p>
+            );
+          })()}
           <pre
             style={{
               background: 'var(--bg-primary)',

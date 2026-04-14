@@ -6,10 +6,18 @@ import * as os from 'node:os';
 import { app } from 'electron';
 import type { ScenarioConfig, ScenarioResult } from '../../shared/types';
 
+interface GenerationStats {
+  requested_total: number;
+  actual_total: number;
+  requested: Record<string, number>;
+  actual: Record<string, number>;
+  shortfall: Record<string, number>;
+}
 interface BridgeOk {
   status: 'ok';
   filename: string;
   aircraft_count: number;
+  generation_stats?: GenerationStats;
 }
 interface BridgeErr {
   status: 'error';
@@ -86,6 +94,7 @@ export async function generateScenario(config: ScenarioConfig): Promise<Scenario
       contents,
       flightsUsed: [],
       aircraftCount: result.aircraft_count ?? 0,
+      generationStats: result.generation_stats,
     };
   } finally {
     fs.unlink(tmpFile).catch(() => {});
