@@ -130,6 +130,17 @@ export function ScenarioConfig() {
           return 'At least one FRD point is required in FRD mode.';
         }
         return null;
+      case 'advanced':
+      case 'custom_commands': {
+        const cb = config.customBoundary;
+        if (cb?.enabled) {
+          const count = cb.waypoints.filter(w => w.trim()).length;
+          if (count < 4) {
+            return `Custom boundary requires at least 4 waypoints (have ${count}).`;
+          }
+        }
+        return null;
+      }
       default:
         return null;
     }

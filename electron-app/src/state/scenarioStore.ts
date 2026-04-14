@@ -55,6 +55,7 @@ function initialConfig(): ScenarioConfig {
       departures: { count: 0, mode: 'VFR' },
       arrivals: { count: 0, mode: 'VFR' },
     },
+    customBoundary: { enabled: false, waypoints: [] },
   };
 }
 

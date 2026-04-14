@@ -270,9 +270,12 @@ class BaseScenario(ABC):
                      Example: 30 min session → random spawns between 0 and 1800s
         """
         if spawn_delay_mode == SpawnDelayMode.NONE:
+            # Feature disabled — clear any prior value so vNAS sees the
+            # field omitted (``spawnDelay`` is nullable; emitting 0 makes
+            # vNAS think a zero-second delay was explicitly requested).
             for aircraft in aircraft_list:
-                aircraft.spawn_delay = 0
-            logger.info(f"Applied NONE spawn delays: all {len(aircraft_list)} aircraft spawn at 0s")
+                aircraft.spawn_delay = None
+            logger.info(f"Cleared spawn delays: {len(aircraft_list)} aircraft (feature disabled)")
 
         elif spawn_delay_mode == SpawnDelayMode.INCREMENTAL:
             min_delay_minutes, max_delay_minutes = self._parse_delay_value(delay_value)

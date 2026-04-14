@@ -442,6 +442,16 @@ def dispatch(cfg):
         arr_band = _parse_band(cfg.get('arrivalSpawn'), (80.0, 140.0))
         ovf_band = _parse_band(cfg.get('overflightSpawn'), (10.0, 25.0))
 
+        # Optional custom scenario boundary. When enabled and ≥4 waypoints
+        # are supplied, the scenario replaces the ARTCC polygon with a
+        # user-defined polygon built from these waypoints. The UI validates
+        # the 4-waypoint minimum; the scenario also guards against it.
+        cb = cfg.get('customBoundary') or {}
+        custom_boundary_waypoints = (
+            [w for w in (cb.get('waypoints') or []) if isinstance(w, str) and w.strip()]
+            if cb.get('enabled') else None
+        )
+
         # When the per-airport counts are populated, they authoritatively
         # define the enroute arrivals/departures total. Renderer already
         # does this math; this makes direct-bridge invocations robust too.
@@ -470,6 +480,7 @@ def dispatch(cfg):
             total_session_minutes=total_minutes,
             cached_departures_pool=None, cached_arrivals_pool=None,
             cached_transient_pool=None,
+            custom_boundary_waypoints=custom_boundary_waypoints,
         )
         # Expose generation stats on the module so `main()` can include
         # them in the bridge JSON response (enroute only).

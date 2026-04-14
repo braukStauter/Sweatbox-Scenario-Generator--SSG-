@@ -162,6 +162,15 @@ export interface ScenarioConfig {
   wakeBias: WakeBias;
 
   ga: GaConfig;
+
+  /** Enroute-only: optional user-defined polygon replacing the ARTCC
+   *  boundary for all in/out/near-boundary checks (named after the vertices
+   *  the user enters — waypoint identifiers resolved at generation time).
+   *  Requires at least 4 waypoints when enabled. */
+  customBoundary?: {
+    enabled: boolean;
+    waypoints: string[];
+  };
 }
 
 export interface GenerationStats {
