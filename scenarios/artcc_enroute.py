@@ -889,23 +889,22 @@ class ArtccEnrouteScenario(BaseScenario):
             if dep_airport:
                 departure_airports.add(dep_airport)
 
-        # Validate geojson files exist for all departure airports
-        airport_data_dir = Path('airport_data')
+        # Resolve each departure airport's geojson through the lazy map,
+        # which already uses `resource_path()` to find `airport_data/*` in
+        # both dev mode and packaged builds. The previous hand-rolled
+        # `Path('airport_data')` check was CWD-relative and failed silently
+        # under the PyInstaller-packaged electron app.
         valid_airports = {}
-
         for airport_icao in departure_airports:
-            # Extract 3-letter code (e.g., KPHX -> PHX)
-            airport_3letter = airport_icao[1:] if airport_icao.startswith('K') else airport_icao[-3:]
-            geojson_path = airport_data_dir / f"{airport_3letter}.geojson"
-
-            if not geojson_path.exists():
-                logger.warning(f"WARNING: No geojson file found for {airport_icao} at {geojson_path}, aircraft from this airport will be skipped")
+            parser = self.geojson_parsers.get(airport_icao)
+            if parser:
+                valid_airports[airport_icao] = parser
+                logger.debug(f"Loaded geojson for {airport_icao}")
             else:
-                # Check if we have a parser for this airport
-                parser = self.geojson_parsers.get(airport_icao)
-                if parser:
-                    valid_airports[airport_icao] = parser
-                    logger.debug(f"Validated geojson for {airport_icao}")
+                logger.warning(
+                    f"WARNING: No geojson available for {airport_icao}; "
+                    f"departures from this airport will be skipped"
+                )
 
         if not valid_airports:
             logger.error("ERROR: No valid airport GeoJSON data available for departure aircraft spawning")
@@ -1675,7 +1674,7 @@ class ArtccEnrouteScenario(BaseScenario):
             # a few miles of spawn is useless as a training target.
             min_remaining = getattr(self, 'enroute_min_remaining_nm',
                                      self.MIN_REMAINING_IN_ARTCC_NM)
-            latlon_coords = [(lat_, lon_) for _, _, lat_, lon_ in route_coords]
+            latlon_coords = [(lat_, lon_) for _, lat_, lon_ in route_coords]
             deep_candidates = []
             for cand in candidates:
                 idx_ = cand[0]
