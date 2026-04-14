@@ -397,6 +397,46 @@ def dispatch(cfg):
         arr_counts = _extract_counts(arr_items)
         dep_counts = _extract_counts(dep_items)
 
+        def _extract_bands(items):
+            """{ICAO: (min_nm, max_nm)} from per-airport spawnMinNm/spawnMaxNm."""
+            if not isinstance(items, list):
+                return {}
+            out = {}
+            for i in items:
+                if not isinstance(i, dict):
+                    continue
+                icao = (i.get('icao') or i.get('airport') or '').strip().upper()
+                if not icao:
+                    continue
+                lo = i.get('spawnMinNm')
+                hi = i.get('spawnMaxNm')
+                try:
+                    lo_f = float(lo) if lo not in (None, '') else None
+                    hi_f = float(hi) if hi not in (None, '') else None
+                except (TypeError, ValueError):
+                    continue
+                if lo_f is None or hi_f is None or hi_f < lo_f:
+                    continue
+                out[icao] = (lo_f, hi_f)
+            return out
+
+        per_airport_arr_bands = _extract_bands(arr_items)
+
+        def _parse_band(val, default):
+            if isinstance(val, dict):
+                lo = val.get('minDistanceNm') or val.get('min')
+                hi = val.get('maxDistanceNm') or val.get('max')
+                try:
+                    lo_f = float(lo); hi_f = float(hi)
+                    if hi_f >= lo_f:
+                        return (lo_f, hi_f)
+                except (TypeError, ValueError):
+                    pass
+            return default
+
+        arr_band = _parse_band(cfg.get('arrivalSpawn'), (80.0, 140.0))
+        ovf_band = _parse_band(cfg.get('overflightSpawn'), (10.0, 25.0))
+
         # When the per-airport counts are populated, they authoritatively
         # define the enroute arrivals/departures total. Renderer already
         # does this math; this makes direct-bridge invocations robust too.
@@ -415,6 +455,9 @@ def dispatch(cfg):
             arrival_airport_runways=arr_rwys, departure_airport_runways=dep_rwys,
             per_airport_arrival_counts=arr_counts,
             per_airport_departure_counts=dep_counts,
+            arrival_spawn_band=arr_band,
+            overflight_spawn_band=ovf_band,
+            per_airport_arrival_bands=per_airport_arr_bands,
             difficulty_config_enroute=enr_diff,
             difficulty_config_arrivals=arr_diff,
             difficulty_config_departures=dep_diff,

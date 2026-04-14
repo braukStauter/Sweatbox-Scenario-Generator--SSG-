@@ -5,10 +5,16 @@ import { RowListInput, type ColumnDef } from '../components/RowListInput';
 import { parseAirportGroupString } from '../../shared/airportGroups';
 import type { AirportRunwaysEntry, SsgConfig } from '../../shared/types';
 
-const COLUMNS: ColumnDef<AirportRunwaysEntry>[] = [
+const DEPARTURE_COLUMNS: ColumnDef<AirportRunwaysEntry>[] = [
   { key: 'icao', label: 'ICAO', placeholder: 'KPHX', flexBasis: '140px' },
   { key: 'runways', label: 'Runways', placeholder: '08, 7R', flexBasis: '220px' },
   { key: 'count', label: 'Aircraft', type: 'number', placeholder: '5', flexBasis: '90px' },
+];
+
+const ARRIVAL_COLUMNS: ColumnDef<AirportRunwaysEntry>[] = [
+  { key: 'icao', label: 'ICAO', placeholder: 'KPHX', flexBasis: '140px' },
+  { key: 'runways', label: 'Runways', placeholder: '08, 7R', flexBasis: '220px' },
+  { key: 'count', label: 'Aircraft *', type: 'number', placeholder: '5', flexBasis: '90px' },
 ];
 
 /**
@@ -102,7 +108,7 @@ export function EnrouteAirportsSection() {
         emptyHint="No arrival airports configured."
         value={config.arrivalAirports}
         onChange={v => update({ arrivalAirports: v })}
-        columns={COLUMNS}
+        columns={ARRIVAL_COLUMNS}
         newRow={(): AirportRunwaysEntry => ({ icao: '', runways: '', count: '' })}
       />
       <RowListInput
@@ -112,12 +118,13 @@ export function EnrouteAirportsSection() {
         emptyHint="No departure airports configured."
         value={config.departureAirports}
         onChange={v => update({ departureAirports: v })}
-        columns={COLUMNS}
+        columns={DEPARTURE_COLUMNS}
         newRow={(): AirportRunwaysEntry => ({ icao: '', runways: '', count: '' })}
       />
       <p style={{ fontSize: 11, color: 'var(--fg-disabled)', margin: 0 }}>
         Aircraft counts here replace the global Arrivals/Departures totals on
         the Aircraft & Traffic page when generating an enroute scenario.
+        <br />* required for arrival airports.
       </p>
     </Section>
   );

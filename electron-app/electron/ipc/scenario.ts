@@ -85,6 +85,7 @@ export async function generateScenario(config: ScenarioConfig): Promise<Scenario
       filename: path.basename(result.filename),
       contents,
       flightsUsed: [],
+      aircraftCount: result.aircraft_count ?? 0,
     };
   } finally {
     fs.unlink(tmpFile).catch(() => {});

@@ -71,7 +71,7 @@ export function Generation() {
           <p style={{ color: 'var(--fg-secondary)' }}>
             {isImported
               ? <>Loaded from <code>{result.filename}</code></>
-              : <>{result.flightsUsed.length} flights — <code>{result.filename}</code></>}
+              : <>{result.aircraftCount} flights — <code>{result.filename}</code></>}
           </p>
           <pre
             style={{

@@ -74,6 +74,16 @@ export interface AirportRunwaysEntry {
    *  departure/arrival count. Defaults to 0 (airport present but contributes
    *  no aircraft) — use `''` for "not yet set" via the ThemedInput. */
   count?: number | '';
+  /** Enroute arrivals only: override the scenario-wide spawn distance band
+   *  for this airport (NM from destination). Leave both blank to use the
+   *  scenario-wide `arrivalSpawn`. */
+  spawnMinNm?: number | '';
+  spawnMaxNm?: number | '';
+}
+
+export interface SpawnDistanceBand {
+  minDistanceNm: number;
+  maxDistanceNm: number;
 }
 
 export type PresetGroupType =
@@ -139,6 +149,13 @@ export interface ScenarioConfig {
   departureAirports: AirportRunwaysEntry[];
   enrouteDifficulty: DifficultyCounts;
 
+  /** Enroute-only: distance (NM) from destination at which arrivals spawn.
+   *  Per-airport overrides live on `AirportRunwaysEntry.spawnMinNm/Max`. */
+  arrivalSpawn: SpawnDistanceBand;
+  /** Enroute-only: distance (NM) outside the ARTCC boundary where overflight
+   *  aircraft spawn. Random per aircraft between min and max. */
+  overflightSpawn: SpawnDistanceBand;
+
   presetCommands: PresetCommandRule[];
 
   wakeBiasEnabled: boolean;
@@ -151,6 +168,10 @@ export interface ScenarioResult {
   filename: string;
   contents: string;
   flightsUsed: Flight[];
+  /** Count of aircraft in the generated scenario. Sourced from the Python
+   *  bridge's `aircraft_count` field. For imported scenarios it defaults to
+   *  `flightsUsed.length`. */
+  aircraftCount: number;
 }
 
 export interface VNASUploadResult {

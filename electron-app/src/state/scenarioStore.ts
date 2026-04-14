@@ -45,6 +45,8 @@ function initialConfig(): ScenarioConfig {
     arrivalAirports: [],
     departureAirports: [],
     enrouteDifficulty: { enabled: false, easy: 0, medium: 0, hard: 0 },
+    arrivalSpawn: { minDistanceNm: 80, maxDistanceNm: 140 },
+    overflightSpawn: { minDistanceNm: 10, maxDistanceNm: 25 },
     presetCommands: [],
     wakeBiasEnabled: false,
     wakeBias: defaultBias(),

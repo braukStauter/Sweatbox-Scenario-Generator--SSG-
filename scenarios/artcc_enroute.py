@@ -92,6 +92,15 @@ class _LazyGeoJSONMap(dict):
 class ArtccEnrouteScenario(BaseScenario):
     """Scenario for ARTCC enroute operations"""
 
+    # Minimum remaining route distance (NM) a transient-enroute aircraft must
+    # have inside the ARTCC from its spawn waypoint. Prevents spawning aircraft
+    # 10 NM from the edge that immediately hand off and leave.
+    MIN_REMAINING_IN_ARTCC_NM: float = 50.0
+    # Default band (NM) outside ARTCC boundary where overflights spawn.
+    DEFAULT_OVERFLIGHT_BAND_NM: Tuple[float, float] = (10.0, 25.0)
+    # Default band (NM) from destination airport for arrival spawns.
+    DEFAULT_ARRIVAL_BAND_NM: Tuple[float, float] = (80.0, 140.0)
+
     def __init__(self, artcc_id: str, api_client, config: Dict = None,
                  geojson_parsers: Dict = None, cifp_parsers: Dict = None):
         """
@@ -156,6 +165,10 @@ class ArtccEnrouteScenario(BaseScenario):
                  departure_airport_runways: Optional[Dict[str, List[str]]] = None,
                  per_airport_arrival_counts: Optional[Dict[str, int]] = None,
                  per_airport_departure_counts: Optional[Dict[str, int]] = None,
+                 arrival_spawn_band: Optional[Tuple[float, float]] = None,
+                 overflight_spawn_band: Optional[Tuple[float, float]] = None,
+                 per_airport_arrival_bands: Optional[Dict[str, Tuple[float, float]]] = None,
+                 enroute_min_remaining_nm: Optional[float] = None,
                  difficulty_config_enroute: Dict = None,
                  difficulty_config_arrivals: Dict = None,
                  difficulty_config_departures: Dict = None,
@@ -211,6 +224,20 @@ class ArtccEnrouteScenario(BaseScenario):
             k.upper(): max(0, int(v or 0))
             for k, v in (per_airport_departure_counts or {}).items()
         }
+
+        # Spawn-band configuration (falls back to class defaults when None).
+        self.arrival_spawn_band = tuple(arrival_spawn_band) if arrival_spawn_band else self.DEFAULT_ARRIVAL_BAND_NM
+        self.overflight_spawn_band = tuple(overflight_spawn_band) if overflight_spawn_band else self.DEFAULT_OVERFLIGHT_BAND_NM
+        self.per_airport_arrival_bands = {
+            k.upper(): (float(v[0]), float(v[1]))
+            for k, v in (per_airport_arrival_bands or {}).items()
+            if isinstance(v, (list, tuple)) and len(v) == 2
+        }
+        self.enroute_min_remaining_nm = (
+            float(enroute_min_remaining_nm)
+            if enroute_min_remaining_nm is not None
+            else self.MIN_REMAINING_IN_ARTCC_NM
+        )
 
         logger.info(f"Generating ARTCC {self.artcc_id} scenario: {num_enroute} enroute, {num_arrivals} arrivals, {num_departures} departures")
         # Total targets exposed for flight_pool buffer math inside
@@ -717,7 +744,12 @@ class ArtccEnrouteScenario(BaseScenario):
             logger.error(f"Skipping {count} requested departure aircraft")
             return
 
-        # Collect all parking spots from valid airports
+        # Collect all parking spots from valid airports. If an airport's
+        # geojson has no parking spots but does contain runway geometry, fall
+        # back to spawning at the runway threshold (the active runways for
+        # this airport, if configured).
+        from models.airport import ParkingSpot
+
         all_parking_spots = []
         airport_parking_map = {}
 
@@ -725,9 +757,43 @@ class ArtccEnrouteScenario(BaseScenario):
             parking_spots = geojson_parser.get_parking_spots()
             logger.info(f"Found {len(parking_spots)} parking spots at {airport_icao}")
 
-            for spot in parking_spots:
-                all_parking_spots.append(spot)
-                airport_parking_map[spot.name] = airport_icao
+            if parking_spots:
+                for spot in parking_spots:
+                    all_parking_spots.append(spot)
+                    airport_parking_map[spot.name] = airport_icao
+                continue
+
+            # Runway-threshold fallback.
+            active_for_airport = (departure_airport_runways or {}).get(airport_icao) or []
+            runways = geojson_parser.get_runways() or []
+            synthesized = 0
+            for runway in runways:
+                try:
+                    ends = runway.get_runway_ends()
+                except Exception:  # noqa: BLE001
+                    continue
+                for end in ends:
+                    clean_end = end.replace('RW', '').strip().upper()
+                    if active_for_airport and clean_end not in [r.upper() for r in active_for_airport]:
+                        continue
+                    try:
+                        lat, lon = runway.get_threshold_position(end)
+                        heading = int(runway.get_runway_heading(end))
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug(f"Skipping runway end {end} at {airport_icao}: {exc}")
+                        continue
+                    fake_spot = ParkingSpot(
+                        name=f"RW{clean_end}@{airport_icao}",
+                        latitude=lat, longitude=lon, heading=heading,
+                    )
+                    all_parking_spots.append(fake_spot)
+                    airport_parking_map[fake_spot.name] = airport_icao
+                    synthesized += 1
+            if synthesized:
+                logger.info(
+                    f"No parking data at {airport_icao}; synthesized {synthesized} "
+                    f"runway-threshold spawn points"
+                )
 
         if not all_parking_spots:
             logger.error("ERROR: No parking spots found in airport GeoJSON data")
@@ -840,9 +906,9 @@ class ArtccEnrouteScenario(BaseScenario):
         logger.info(f"Created {created} overflight aircraft (requested {count})")
 
     def _find_overflight_spawn_on_route(self, route: str) -> Optional[Dict]:
-        """Return a spawn state for an overflight: position offset ~15 NM
-        outside the ARTCC boundary on the reverse bearing from the first
-        waypoint that's inside the ARTCC.
+        """Return a spawn state for an overflight: position offset between
+        ``overflight_spawn_band`` NM outside the ARTCC boundary on the reverse
+        bearing from the first waypoint that's inside the ARTCC.
 
         Returns dict matching `_find_spawn_waypoint_on_route`'s contract:
         `{waypoint, latitude, longitude, heading, initial_route}`.
@@ -882,11 +948,30 @@ class ArtccEnrouteScenario(BaseScenario):
         else:
             return None
 
-        # Place the aircraft 15 NM BEHIND the entry waypoint on the reverse
-        # bearing, still pointed AT the entry (matches what the adjacent
-        # facility would see on their scope just before handoff).
+        # Sanity check: the inbound heading should actually point toward the
+        # flight's downstream waypoints. If the filed route has at least one
+        # more in-ARTCC waypoint, the bearing from entry to that waypoint
+        # should be within 90° of the inbound_heading — otherwise we've
+        # resolved waypoints out of order and would spawn the aircraft
+        # pointing the wrong way.
+        if entry_idx + 1 < len(route_coords):
+            _, dn_lat, dn_lon = route_coords[entry_idx + 1]
+            downstream_bearing = calculate_bearing(entry_lat, entry_lon, dn_lat, dn_lon)
+            if abs((inbound_heading - downstream_bearing + 540) % 360 - 180) > 90:
+                logger.debug(
+                    f"Overflight entry heading {inbound_heading} conflicts with "
+                    f"downstream bearing {downstream_bearing}; rejecting to avoid "
+                    f"opposite-direction spawn"
+                )
+                return None
+
+        # Place the aircraft in a configurable band BEHIND the entry waypoint
+        # on the reverse bearing, still pointed AT the entry (matches what
+        # the adjacent facility would see on their scope just before handoff).
+        min_nm, max_nm = getattr(self, 'overflight_spawn_band', (10.0, 25.0))
+        offset_nm = random.uniform(min_nm, max_nm) if max_nm > min_nm else min_nm
         reverse_bearing = (inbound_heading + 180) % 360
-        spawn_lat, spawn_lon = calculate_destination(entry_lat, entry_lon, reverse_bearing, 15)
+        spawn_lat, spawn_lon = calculate_destination(entry_lat, entry_lon, reverse_bearing, offset_nm)
 
         # Initial navigation: target the entry waypoint, then the rest of
         # the route. Start the initial_route at the entry waypoint.
@@ -945,15 +1030,9 @@ class ArtccEnrouteScenario(BaseScenario):
             altitude = self._estimate_cruise_altitude(departure, arrival, aircraft_type)
         cruise_altitude = str(altitude)
 
-        filed_speed = flight_data.get('requestedAirspeed')
-        if filed_speed:
-            try:
-                ground_speed = int(float(filed_speed))
-            except (ValueError, TypeError):
-                ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
-        else:
-            ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
-        cruise_speed = ground_speed
+        cruise_kias, ground_speed, mach_value = self._derive_airborne_speed(
+            flight_data, aircraft_type, altitude, on_star=False,
+        )
 
         aircraft = Aircraft(
             callsign=callsign,
@@ -972,7 +1051,8 @@ class ArtccEnrouteScenario(BaseScenario):
             arrival=arrival,
             route=clean_route,
             cruise_altitude=cruise_altitude,
-            cruise_speed=cruise_speed,
+            cruise_speed=cruise_kias,
+            mach=mach_value,
             flight_rules="I",
             primary_airport=None,
             spawn_delay=0,
@@ -1026,16 +1106,9 @@ class ArtccEnrouteScenario(BaseScenario):
             logger.debug(f"{callsign}: Estimated altitude {altitude} ft (API data not available)")
         cruise_altitude = str(altitude)
 
-        # Filed speed, with aircraft-type fallback when the API omits it.
-        filed_speed = flight_data.get('requestedAirspeed')
-        if filed_speed:
-            try:
-                ground_speed = int(float(filed_speed))
-            except (ValueError, TypeError):
-                ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
-        else:
-            ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
-        cruise_speed = ground_speed
+        cruise_kias, ground_speed, mach_value = self._derive_airborne_speed(
+            flight_data, aircraft_type, altitude, on_star=False,
+        )
 
         # Navigation path: next waypoint after spawn, followed by remainder of filed route
         initial_route = spawn_info.get('initial_route', clean_route)
@@ -1055,7 +1128,8 @@ class ArtccEnrouteScenario(BaseScenario):
             arrival=arrival,
             route=clean_route,  # Cleaned route (dots to spaces, airports/time removed)
             cruise_altitude=cruise_altitude,
-            cruise_speed=cruise_speed,
+            cruise_speed=cruise_kias,
+            mach=mach_value,
             flight_rules="I",
             primary_airport=None,
             spawn_delay=0
@@ -1064,8 +1138,10 @@ class ArtccEnrouteScenario(BaseScenario):
         return aircraft
 
     def _create_arrival_aircraft(self, flight_data: Dict) -> Optional[Aircraft]:
-        """Create arrival aircraft spawned at STAR waypoint within ARTCC using CIFP data"""
-        # Extract flight data
+        """Create arrival aircraft spawned inside ARTCC at a distance-from-
+        destination band. Prefers real waypoints on the filed route or STAR;
+        synthesizes an FRD-style point along the route leg if the band falls
+        between named waypoints."""
         callsign = flight_data.get('aircraftIdentification', '')
         aircraft_type = flight_data.get('aircraftType', 'B738')
         filed_route = flight_data.get('route', '')
@@ -1073,7 +1149,6 @@ class ArtccEnrouteScenario(BaseScenario):
         arrival = flight_data.get('arrivalAirport', 'KPHX')
         arr_proc = flight_data.get('arrivalProcedure', '')
 
-        # Check callsign uniqueness (thread-safe)
         with self.callsign_lock:
             if callsign in self.used_callsigns:
                 return None
@@ -1081,145 +1156,146 @@ class ArtccEnrouteScenario(BaseScenario):
 
         aircraft_type = self._add_equipment_suffix(aircraft_type, False)
 
-        # Get STAR spawn waypoint from CIFP (first STAR waypoint within ARTCC)
-        spawn_waypoint_name, spawn_waypoint_obj, actual_star_name = self._find_star_spawn_waypoint(arrival, arr_proc)
+        # Per-airport band overrides the scenario-wide default.
+        scenario_band = getattr(self, 'arrival_spawn_band',
+                                self.DEFAULT_ARRIVAL_BAND_NM)
+        per_airport_bands = getattr(self, 'per_airport_arrival_bands', {}) or {}
+        min_nm, max_nm = per_airport_bands.get(arrival.upper(), scenario_band)
 
-        if not spawn_waypoint_name or not spawn_waypoint_obj or not actual_star_name:
-            logger.debug(f"Could not find STAR waypoint within ARTCC for arrival {callsign}")
+        spawn = self._find_arrival_spawn_on_route(filed_route, arrival, arr_proc,
+                                                   min_nm, max_nm)
+        if not spawn:
+            logger.debug(f"No arrival spawn in [{min_nm},{max_nm}] NM from {arrival} for {callsign}")
             with self.callsign_lock:
-                self.used_callsigns.remove(callsign)
+                self.used_callsigns.discard(callsign)
             return None
 
-        # Use actual STAR name from CIFP (not API's potentially incorrect version)
-        arr_proc = actual_star_name
+        # Use the CIFP-resolved STAR name for downstream procedure strings.
+        actual_star_name = spawn.get('actual_star_name') or arr_proc
+        arr_proc = actual_star_name or arr_proc
 
-        # Check if this spawn point is already used (thread-safe)
-        spawn_key = f"{spawn_waypoint_name}"
+        # Dedupe on rounded (lat,lon) so two aircraft can share a generic fix
+        # so long as they aren't literally on top of each other (FRD points
+        # at the same band midpoint on the same route would collide).
+        spawn_key = f"ARR:{spawn['fix']}:{round(spawn['latitude'], 3)},{round(spawn['longitude'], 3)}"
         with self.spawn_point_lock:
             if spawn_key in self.used_spawn_points:
-                logger.warning(f"Spawn point {spawn_key} already in use, skipping {callsign}")
+                logger.debug(f"Spawn point {spawn_key} already in use, skipping {callsign}")
                 with self.callsign_lock:
-                    self.used_callsigns.remove(callsign)
+                    self.used_callsigns.discard(callsign)
                 return None
             self.used_spawn_points.add(spawn_key)
 
-        # Get altitude from CIFP constraints (with fallback to estimation)
-        altitude = self._get_altitude_from_cifp(spawn_waypoint_obj, arr_proc, departure, arrival, aircraft_type)
+        # Altitude priority:
+        # 1. CIFP altitude constraint at the chosen STAR waypoint (the
+        #    published crossing altitude — always authoritative when present).
+        # 2. Rule-of-3s profile from spawn distance-to-destination, capped at
+        #    the type's typical cruise. This covers both FRD spawns on the
+        #    filed route and un-constrained STAR waypoints, and keeps aircraft
+        #    at sensible descending altitudes as they approach the field.
+        star_wp_obj = spawn.get('star_waypoint_obj')
+        dist_to_dest = spawn.get('distance_to_dest_nm')
+        if star_wp_obj is not None and (star_wp_obj.max_altitude or star_wp_obj.min_altitude):
+            altitude = self._get_altitude_from_cifp(star_wp_obj, arr_proc, departure, arrival, aircraft_type)
+        elif dist_to_dest is not None:
+            altitude = self._rule_of_3s_altitude(dist_to_dest, aircraft_type)
+        else:
+            altitude = self._estimate_cruise_altitude(departure, arrival, aircraft_type)
         cruise_altitude = str(altitude)
 
-        filed_speed = flight_data.get('requestedAirspeed')
-        if filed_speed:
-            try:
-                ground_speed = int(float(filed_speed))
-            except (ValueError, TypeError):
-                ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
-        else:
-            ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
-        cruise_speed = ground_speed
-
-        # Calculate heading from CIFP inbound course
-        if spawn_waypoint_obj.inbound_course:
-            heading = int(spawn_waypoint_obj.inbound_course)
-        else:
-            # Fallback: calculate heading from position to next waypoint
-            cifp_parser = self.cifp_parsers.get(arrival)
-            # Use list-based lookup instead of sequence numbers
-            star_waypoints_list = cifp_parser.get_arrival_waypoints(arr_proc) if cifp_parser else []
-
-            # Find spawn waypoint index in list
-            spawn_idx = -1
-            for idx, wp_name in enumerate(star_waypoints_list):
-                if wp_name.upper() == spawn_waypoint_name.upper():
-                    spawn_idx = idx
-                    break
-
-            # Get next waypoint from list (if exists)
-            next_wp = None
-            if spawn_idx >= 0 and spawn_idx + 1 < len(star_waypoints_list):
-                next_wp_name = star_waypoints_list[spawn_idx + 1]
-                next_wp = cifp_parser.get_transition_waypoint(next_wp_name, arr_proc) if cifp_parser else None
-
-            if next_wp and next_wp.latitude and next_wp.longitude:
-                heading = int(self.route_parser.calculate_bearing(
-                    spawn_waypoint_obj.latitude, spawn_waypoint_obj.longitude,
-                    next_wp.latitude, next_wp.longitude
-                ))
-            else:
-                heading = 0  # Fallback
+        on_star = bool(spawn.get('on_star'))
+        cruise_kias, ground_speed, mach_value = self._derive_airborne_speed(
+            flight_data, aircraft_type, altitude, on_star=on_star,
+        )
 
         # Extract 3-letter airport code from ICAO (e.g., KPHX -> PHX)
         arrival_3letter = arrival[1:] if arrival.startswith('K') else arrival[-3:]
 
-        # Get arrival runway based on STAR (if available)
+        # Runway assignment unchanged.
         arrival_runway = None
         if arr_proc and arrival in self.arrival_airport_runways:
             active_runways = self.arrival_airport_runways[arrival]
             arrival_runway = self._get_runway_for_star(arrival, arr_proc, active_runways)
-            logger.debug(f"Assigned runway {arrival_runway} for {callsign} with STAR {arr_proc} to {arrival}")
 
-        # Get next waypoint in STAR for navigation path
-        # Use list-based lookup instead of sequence numbers (more reliable)
-        cifp_parser = self.cifp_parsers.get(arrival)
-        star_waypoints_list = cifp_parser.get_arrival_waypoints(arr_proc) if cifp_parser else []
+        # Navigation path: next waypoint (if spawn was on STAR, the next STAR
+        # waypoint; otherwise the STAR itself) + procedure + runway suffix.
+        navigation_path = self._build_arrival_navigation_path(
+            arrival, arr_proc, arrival_runway, spawn,
+        )
 
-        # Find spawn waypoint index in list
-        spawn_idx = -1
-        for idx, wp_name in enumerate(star_waypoints_list):
-            if wp_name.upper() == spawn_waypoint_name.upper():
-                spawn_idx = idx
-                break
-
-        # Get next waypoint from list (if exists)
-        next_fix_name = None
-        if spawn_idx >= 0 and spawn_idx + 1 < len(star_waypoints_list):
-            next_fix_name = star_waypoints_list[spawn_idx + 1]
-            logger.debug(f"Found next waypoint after {spawn_waypoint_name}: {next_fix_name} (index {spawn_idx + 1} in STAR {arr_proc})")
-        else:
-            # Fallback to spawn waypoint if no next waypoint (last waypoint in STAR)
-            next_fix_name = spawn_waypoint_name
-            logger.debug(f"No next waypoint found after {spawn_waypoint_name}, using spawn waypoint as fallback")
-
-        if arr_proc and arrival_runway:
-            # Clean runway format (remove 'RW' prefix if present)
-            runway_suffix = arrival_runway.replace('RW', '')
-            navigation_path = f"{next_fix_name} {arr_proc}.{runway_suffix}"
-            logger.debug(f"Navigation path for {callsign}: {navigation_path} (spawn at {spawn_waypoint_name}, navigate to {next_fix_name})")
-        elif arr_proc:
-            # STAR without specific runway
-            navigation_path = f"{next_fix_name} {arr_proc}"
-            logger.debug(f"Navigation path for {callsign}: {navigation_path}")
-        else:
-            # No STAR, just next waypoint and arrival airport
-            navigation_path = f"{next_fix_name} {arrival}"
-            logger.debug(f"Navigation path for {callsign}: {navigation_path}")
-
-        # Clean route for vNAS (convert dots to spaces, remove airports/time)
         clean_route = clean_route_string(filed_route)
 
         aircraft = Aircraft(
             callsign=callsign,
             aircraft_type=aircraft_type,
-            latitude=spawn_waypoint_obj.latitude,
-            longitude=spawn_waypoint_obj.longitude,
+            latitude=spawn['latitude'],
+            longitude=spawn['longitude'],
             altitude=altitude,
-            heading=heading,
+            heading=int(spawn['heading']),
             ground_speed=ground_speed,
-            starting_conditions_type='Fix',
-            fix=spawn_waypoint_name,
+            starting_conditions_type=spawn['starting_conditions_type'],
+            fix=spawn['fix'],
             departure=departure,
             arrival=arrival,
-            route=clean_route,  # Cleaned route (dots to spaces, airports/time removed)
+            route=clean_route,
             cruise_altitude=cruise_altitude,
-            cruise_speed=cruise_speed,
+            cruise_speed=cruise_kias,
+            mach=mach_value,
             navigation_path=navigation_path,
-            arrival_runway=arrival_runway,  # Assign runway based on STAR
-            star=arr_proc,  # Store the STAR/arrival procedure
+            arrival_runway=arrival_runway,
+            star=arr_proc,
             flight_rules="I",
-            primary_airport=arrival_3letter,  # Set arrival airport for vNAS
-            spawn_delay=0
+            primary_airport=arrival_3letter,
+            spawn_delay=0,
         )
-
         return aircraft
+
+    def _build_arrival_navigation_path(self, arrival_icao: str, star_name: str,
+                                        arrival_runway: Optional[str],
+                                        spawn: Dict) -> str:
+        """Compose the vNAS navigation path for an arrival."""
+        cifp_parser = self.cifp_parsers.get(arrival_icao)
+        star_waypoints_list = (
+            cifp_parser.get_arrival_waypoints(star_name) if (cifp_parser and star_name) else []
+        )
+        next_fix_name = spawn['fix']
+        if spawn.get('on_star') and star_waypoints_list:
+            for idx, wp_name in enumerate(star_waypoints_list):
+                if wp_name.upper() == spawn['fix'].upper():
+                    if idx + 1 < len(star_waypoints_list):
+                        next_fix_name = star_waypoints_list[idx + 1]
+                    break
+        if star_name and arrival_runway:
+            runway_suffix = arrival_runway.replace('RW', '')
+            return f"{next_fix_name} {star_name}.{runway_suffix}"
+        if star_name:
+            return f"{next_fix_name} {star_name}"
+        return f"{next_fix_name} {arrival_icao}"
+
+    def _derive_airborne_speed(self, flight_data: Dict, aircraft_type: str,
+                                altitude_ft: int, on_star: bool):
+        """Return ``(cruise_kias, ground_speed, mach_or_none)`` for an airborne
+        aircraft. Filed KIAS comes from the API when available, else from the
+        type lookup. Above FL200 and not on a STAR we set cruise Mach and
+        derive ground speed from it; otherwise ground speed is estimated from
+        KIAS + altitude."""
+        from utils.speed_estimator import (
+            cruise_mach, ground_speed_from_mach, ground_speed_from_kias,
+            indicated_cruise_kias,
+        )
+        filed_speed = flight_data.get('requestedAirspeed')
+        try:
+            cruise_kias = int(float(filed_speed)) if filed_speed else indicated_cruise_kias(aircraft_type)
+        except (TypeError, ValueError):
+            cruise_kias = indicated_cruise_kias(aircraft_type)
+
+        use_mach = (altitude_ft >= 20000) and not on_star
+        if use_mach:
+            mach_value = cruise_mach(aircraft_type)
+            ground_speed = ground_speed_from_mach(mach_value, altitude_ft)
+            return cruise_kias, ground_speed, round(mach_value, 2)
+        ground_speed = ground_speed_from_kias(cruise_kias, altitude_ft)
+        return cruise_kias, ground_speed, None
 
     def _create_departure_aircraft(self, flight_data: Dict, parking_spot, airport_icao: str) -> Optional[Aircraft]:
         """Create departure aircraft at parking spot"""
@@ -1364,12 +1440,53 @@ class ArtccEnrouteScenario(BaseScenario):
             selected_idx, wp_name, lat, lon = waypoints_in_artcc[0]
             logger.debug(f"Selected first waypoint within ARTCC: {wp_name} at index {selected_idx}")
         else:
+            from utils.geo_utils import route_remaining_inside_artcc
             shuffled = list(waypoints_in_artcc)
             random.shuffle(shuffled)
             used = getattr(self, 'used_spawn_points', set())
             unused = [w for w in shuffled if w[1] not in used]
             candidates = unused if unused else shuffled
-            selected_idx, wp_name, lat, lon = candidates[0]
+            # Filter to candidates that have enough remaining route inside the
+            # ARTCC — a transient aircraft that crosses our boundary within
+            # a few miles of spawn is useless as a training target.
+            min_remaining = getattr(self, 'enroute_min_remaining_nm',
+                                     self.MIN_REMAINING_IN_ARTCC_NM)
+            latlon_coords = [(lat_, lon_) for _, _, lat_, lon_ in route_coords]
+            deep_candidates = []
+            for cand in candidates:
+                idx_ = cand[0]
+                remaining_nm = route_remaining_inside_artcc(
+                    latlon_coords, idx_, self.artcc_id,
+                    self.artcc_boundaries,
+                )
+                if remaining_nm >= min_remaining:
+                    deep_candidates.append(cand)
+            if not deep_candidates:
+                logger.debug(
+                    f"No transient spawn candidates with >={min_remaining} NM "
+                    f"remaining inside ARTCC {self.artcc_id}; skipping this flight"
+                )
+                return None
+            # Pick the first candidate whose next-waypoint bearing points
+            # roughly toward the end of the filed route. This catches
+            # waypoint-db mismatches that would otherwise spawn the aircraft
+            # pointing backwards along its filed route.
+            from utils.geo_utils import calculate_bearing as _cb
+            last_lat, last_lon = route_coords[-1][1], route_coords[-1][2]
+            selected = None
+            for cand in deep_candidates:
+                idx_, name_, lat_, lon_ = cand
+                if idx_ + 1 >= len(route_coords):
+                    continue
+                nx_lat, nx_lon = route_coords[idx_ + 1][1], route_coords[idx_ + 1][2]
+                nx_bearing = _cb(lat_, lon_, nx_lat, nx_lon)
+                dest_bearing = _cb(lat_, lon_, last_lat, last_lon)
+                if abs((nx_bearing - dest_bearing + 540) % 360 - 180) <= 90:
+                    selected = cand
+                    break
+            if selected is None:
+                selected = deep_candidates[0]
+            selected_idx, wp_name, lat, lon = selected
 
         # Calculate heading to next waypoint
         heading = 0
@@ -1451,6 +1568,23 @@ class ArtccEnrouteScenario(BaseScenario):
         logger.debug(f"Unknown aircraft type {aircraft_type}, defaulting to FL350")
         return 35000
 
+    def _rule_of_3s_altitude(self, distance_to_dest_nm: float,
+                              aircraft_type: str, field_elevation_ft: int = 1000) -> int:
+        """Standard 3-to-1 descent profile: 3 NM per 1,000 ft of descent.
+
+        Returns a sensible pre-descent altitude for an arrival spawned
+        ``distance_to_dest_nm`` away from the field. Clamps to the type's
+        typical cruise so a 600 NM spawn doesn't end up at FL180 (you'd still
+        be at cruise that far out).
+        """
+        nm = max(0.0, float(distance_to_dest_nm))
+        # descent_ft ≈ NM * 1000 / 3. Round to the nearest 1,000 so the strip
+        # shows a whole flight level. Add a small field-elevation cushion so
+        # the aircraft doesn't spawn below the destination's pattern altitude.
+        raw_ft = int(round((nm * 1000.0 / 3.0) / 1000.0)) * 1000 + field_elevation_ft
+        cruise_cap = self._estimate_cruise_altitude('', '', aircraft_type)
+        return max(3000, min(raw_ft, cruise_cap))
+
     def _get_altitude_from_cifp(self, waypoint, star_name: str, departure: str, arrival: str, aircraft_type: str) -> int:
         """
         Get altitude from CIFP waypoint data with fallback to API/estimation
@@ -1479,6 +1613,292 @@ class ArtccEnrouteScenario(BaseScenario):
         altitude = self._estimate_cruise_altitude(departure, arrival, aircraft_type)
         logger.debug(f"No CIFP altitude constraints, estimating {altitude} ft for {aircraft_type}")
         return altitude
+
+    def _find_boundary_entry_spawn(self, nodes: List[Tuple],
+                                     anchor_lat: float, anchor_lon: float,
+                                     matching_star: Optional[str]) -> Optional[Dict]:
+        """Safety fallback for arrivals whose requested band falls entirely
+        outside our ARTCC: spawn the aircraft just outside the boundary on
+        the reverse bearing from where the filed route first enters our
+        airspace, pointed inbound at that entry waypoint — same handoff
+        geometry as an overflight.
+
+        Keeps the arrival on its filed route and procedure rather than
+        dropping it; the controller sees it check in from the adjacent
+        facility instead of teleporting to a named fix inside the sector.
+        """
+        from utils.geo_utils import (
+            calculate_bearing, calculate_destination, calculate_distance_nm,
+        )
+
+        # Find the first node inside the ARTCC — that's the route's entry.
+        entry_idx = None
+        for i, (_, lat, lon, _, _) in enumerate(nodes):
+            if self.artcc_boundaries.is_point_in_artcc(lat, lon, self.artcc_id):
+                entry_idx = i
+                break
+        if entry_idx is None:
+            # Route never enters our airspace — nothing we can do.
+            return None
+
+        entry_name, entry_lat, entry_lon, entry_is_star, entry_wp_obj = nodes[entry_idx]
+
+        # Establish the inbound bearing the same way overflights do.
+        if entry_idx > 0:
+            _, up_lat, up_lon, _, _ = nodes[entry_idx - 1]
+            inbound_heading = calculate_bearing(up_lat, up_lon, entry_lat, entry_lon)
+        elif entry_idx + 1 < len(nodes):
+            _, nx_lat, nx_lon, _, _ = nodes[entry_idx + 1]
+            inbound_heading = calculate_bearing(entry_lat, entry_lon, nx_lat, nx_lon)
+        else:
+            return None
+
+        # Offset outside the boundary. Reuse the overflight band so the UI
+        # knob controls both handoff geometries; clamp the min to a small
+        # positive value so we always end up outside the polygon.
+        min_nm, max_nm = getattr(self, 'overflight_spawn_band',
+                                  self.DEFAULT_OVERFLIGHT_BAND_NM)
+        offset_nm = random.uniform(min_nm, max_nm) if max_nm > min_nm else min_nm
+        reverse_bearing = (inbound_heading + 180) % 360
+        spawn_lat, spawn_lon = calculate_destination(
+            entry_lat, entry_lon, reverse_bearing, offset_nm,
+        )
+        # Verify we actually ended up outside — for odd-shaped ARTCCs the
+        # reverse-bearing offset can still land inside a lobe of the polygon.
+        tries = 0
+        while (self.artcc_boundaries.is_point_in_artcc(spawn_lat, spawn_lon, self.artcc_id)
+                and tries < 4):
+            offset_nm += 10
+            spawn_lat, spawn_lon = calculate_destination(
+                entry_lat, entry_lon, reverse_bearing, offset_nm,
+            )
+            tries += 1
+
+        distance_to_dest = calculate_distance_nm(
+            spawn_lat, spawn_lon, anchor_lat, anchor_lon,
+        )
+
+        return {
+            'fix': entry_name,
+            'latitude': spawn_lat,
+            'longitude': spawn_lon,
+            'heading': int(inbound_heading),
+            'starting_conditions_type': 'FixOrFrd',
+            # Boundary-entry spawns are always pre-STAR from our sector's
+            # point of view even if the entry waypoint happens to be on the
+            # STAR, so Mach dispatch still applies until the aircraft reaches
+            # STAR territory.
+            'on_star': False,
+            'actual_star_name': matching_star,
+            'star_waypoint_obj': None,
+            'node_index': entry_idx,
+            'distance_to_dest_nm': distance_to_dest,
+            'boundary_entry': True,
+        }
+
+    def _find_arrival_spawn_on_route(self, filed_route: str, arrival_icao: str,
+                                      star_name: str,
+                                      min_nm: float, max_nm: float) -> Optional[Dict]:
+        """Pick an arrival spawn point whose straight-line distance from the
+        arrival airport falls in [min_nm, max_nm].
+
+        Strategy:
+        1. Build a forward polyline: cleaned filed-route waypoints + CIFP STAR
+           waypoints (de-duplicated at the seam).
+        2. Tag each node with distance-to-destination using the airport's
+           reported center and the existing haversine helper.
+        3. Prefer a *named* in-ARTCC node whose dist-to-dest is in the band.
+        4. If none match, interpolate a synthetic FRD-style point along the
+           leg that crosses the band (prefer the midpoint of the band that
+           still falls inside the ARTCC).
+        5. If nothing in the band is inside the ARTCC, return None — caller
+           will try a different flight.
+
+        Returns a dict with keys the arrival creator already expects:
+        ``{fix, latitude, longitude, heading, starting_conditions_type,
+           actual_star_name, star_waypoint_obj, on_star}``. ``on_star`` flags
+        whether the chosen spawn falls on a STAR waypoint (used by the speed
+        logic to decide whether Mach is appropriate).
+        """
+        from utils.geo_utils import (
+            calculate_bearing, calculate_distance_nm, interpolate_along_path,
+        )
+
+        cifp_parser = self.cifp_parsers.get(arrival_icao)
+        if not cifp_parser:
+            return None
+
+        # 1a. Clean filed route → named waypoints with coords.
+        clean = clean_route_string(filed_route)
+        filed_names = self.route_parser.parse_route_string(clean)
+        filed_coords = self.route_parser.get_route_waypoint_coordinates(filed_names)
+
+        # 1b. Resolve the STAR name via the same base-match the old code used.
+        available_stars = cifp_parser.get_available_stars()
+        star_base = re.sub(r'\d+$', '', (star_name or '').upper())
+        matching_star = None
+        for s in available_stars:
+            if re.sub(r'\d+$', '', s.upper()) == star_base:
+                matching_star = s
+                break
+        star_nodes: List[Tuple[str, float, float, object]] = []
+        if matching_star:
+            for wp_name in cifp_parser.get_arrival_waypoints(matching_star) or []:
+                wp_obj = cifp_parser.get_transition_waypoint(wp_name, matching_star)
+                if wp_obj and wp_obj.latitude and wp_obj.longitude:
+                    star_nodes.append((wp_name, wp_obj.latitude, wp_obj.longitude, wp_obj))
+
+        # 1c. Build the full forward polyline. Seam-dedupe: if the last filed
+        # waypoint equals the first STAR waypoint, drop the duplicate.
+        # Each node: (name, lat, lon, is_star, wp_obj_or_None).
+        nodes: List[Tuple[str, float, float, bool, object]] = []
+        for name, lat, lon in filed_coords:
+            nodes.append((name, lat, lon, False, None))
+        if star_nodes:
+            start_idx = 0
+            if nodes and nodes[-1][0].upper() == star_nodes[0][0].upper():
+                # Replace the seam node with the STAR-tagged version so we
+                # don't double-count it.
+                nodes[-1] = (star_nodes[0][0], star_nodes[0][1], star_nodes[0][2], True, star_nodes[0][3])
+                start_idx = 1
+            for wp_name, lat, lon, wp_obj in star_nodes[start_idx:]:
+                nodes.append((wp_name, lat, lon, True, wp_obj))
+
+        if len(nodes) < 2:
+            return None
+
+        # 2. Distance to destination for each node. Use the last STAR waypoint
+        # as the dest anchor if we have one; otherwise fall back to the last
+        # route node. (Arrival airport ICAO → lat/lon lookup isn't always
+        # reliable for the waypoint database.)
+        anchor_lat, anchor_lon = nodes[-1][1], nodes[-1][2]
+        dist_to_dest = [
+            calculate_distance_nm(lat, lon, anchor_lat, anchor_lon)
+            for _, lat, lon, _, _ in nodes
+        ]
+
+        # 3. Named-node path in band, inside ARTCC.
+        in_band_named: List[Tuple[int, float]] = [
+            (i, dist_to_dest[i])
+            for i in range(len(nodes))
+            if min_nm <= dist_to_dest[i] <= max_nm
+            and self.artcc_boundaries.is_point_in_artcc(
+                nodes[i][1], nodes[i][2], self.artcc_id
+            )
+        ]
+
+        def _downstream_heading(idx: int, fallback_obj=None) -> Optional[int]:
+            """Bearing from node[idx] to the next distinct-position node that's
+            closer to the destination anchor. Returns None when no valid
+            downstream node exists — the caller must then reject this
+            candidate rather than spawning with a guessed heading."""
+            for j in range(idx + 1, len(nodes)):
+                lat_a, lon_a = nodes[idx][1], nodes[idx][2]
+                lat_b, lon_b = nodes[j][1], nodes[j][2]
+                # Skip duplicate / zero-length legs.
+                if abs(lat_a - lat_b) < 1e-6 and abs(lon_a - lon_b) < 1e-6:
+                    continue
+                # Downstream means the next node is closer to destination
+                # than current. Rejecting same-or-farther nodes filters out
+                # malformed or reversed route segments (the "opposite
+                # direction on the arrival" bug reported by users).
+                if dist_to_dest[j] >= dist_to_dest[idx] - 0.5:
+                    continue
+                return int(calculate_bearing(lat_a, lon_a, lat_b, lon_b))
+            # Last-resort: use CIFP inbound course only if it points roughly
+            # toward the destination anchor.
+            if fallback_obj is not None and getattr(fallback_obj, 'inbound_course', None):
+                hdg = int(fallback_obj.inbound_course) % 360
+                anchor_bearing = int(calculate_bearing(
+                    nodes[idx][1], nodes[idx][2], anchor_lat, anchor_lon
+                ))
+                diff = abs((hdg - anchor_bearing + 540) % 360 - 180)
+                if diff <= 90:
+                    return hdg
+            return None
+
+        if in_band_named:
+            # Prefer a named node closest to the band midpoint, tiebreak to
+            # the deepest (farthest-from-airport) one so aircraft start with
+            # more time in the sector when multiple waypoints cluster.
+            midpoint = 0.5 * (min_nm + max_nm)
+            in_band_named.sort(key=lambda t: (abs(t[1] - midpoint), -t[1]))
+            for candidate_idx, dist_dest in in_band_named:
+                name, lat, lon, is_star, wp_obj = nodes[candidate_idx]
+                hdg = _downstream_heading(candidate_idx, wp_obj)
+                if hdg is None:
+                    continue
+                return {
+                    'fix': name,
+                    'latitude': lat,
+                    'longitude': lon,
+                    'heading': hdg,
+                    'starting_conditions_type': 'Fix',
+                    'on_star': is_star,
+                    'actual_star_name': matching_star,
+                    'star_waypoint_obj': wp_obj if is_star else None,
+                    'node_index': candidate_idx,
+                    'distance_to_dest_nm': dist_dest,
+                }
+
+        # 4. Interpolate along the polyline at the band midpoint, measured
+        # from the destination. We want `target_from_dest` NM back from the
+        # anchor. Convert to forward distance along the polyline.
+        polyline = [(lat, lon) for _, lat, lon, _, _ in nodes]
+        total_len = sum(
+            calculate_distance_nm(polyline[i][0], polyline[i][1],
+                                   polyline[i + 1][0], polyline[i + 1][1])
+            for i in range(len(polyline) - 1)
+        )
+        target_from_dest = 0.5 * (min_nm + max_nm)
+        target_forward = total_len - target_from_dest
+        if target_forward <= 0 or target_forward >= total_len:
+            # Band is longer than the whole filed route (or inverted) — hand
+            # off at the ARTCC boundary instead of silently dropping.
+            return self._find_boundary_entry_spawn(nodes, anchor_lat, anchor_lon, matching_star)
+        interp = interpolate_along_path(polyline, target_forward)
+        if not interp:
+            return self._find_boundary_entry_spawn(nodes, anchor_lat, anchor_lon, matching_star)
+        synth_lat, synth_lon, heading = interp
+        if not self.artcc_boundaries.is_point_in_artcc(
+                synth_lat, synth_lon, self.artcc_id):
+            # Band falls entirely outside our airspace — hand off from the
+            # adjacent facility instead of skipping the aircraft.
+            return self._find_boundary_entry_spawn(nodes, anchor_lat, anchor_lon, matching_star)
+        # Sanity check: interpolated heading must point toward the anchor
+        # (destination). If the route doubles back, the leg bearing can
+        # actually point away from the dest — reject rather than produce a
+        # wrong-direction spawn.
+        anchor_bearing = calculate_bearing(synth_lat, synth_lon, anchor_lat, anchor_lon)
+        if abs((heading - anchor_bearing + 540) % 360 - 180) > 90:
+            return self._find_boundary_entry_spawn(nodes, anchor_lat, anchor_lon, matching_star)
+        # Pin the synthetic fix to the nearest upstream *named* waypoint so
+        # vNAS can render an FRD string from it.
+        upstream_name = None
+        cum = 0.0
+        for i in range(len(polyline) - 1):
+            leg = calculate_distance_nm(polyline[i][0], polyline[i][1],
+                                         polyline[i + 1][0], polyline[i + 1][1])
+            if cum + leg >= target_forward:
+                upstream_name = nodes[i][0]
+                break
+            cum += leg
+        # Great-circle distance from the synthesized point to the anchor.
+        synth_dist_to_dest = calculate_distance_nm(
+            synth_lat, synth_lon, anchor_lat, anchor_lon,
+        )
+        return {
+            'fix': upstream_name or nodes[0][0],
+            'latitude': synth_lat,
+            'longitude': synth_lon,
+            'heading': heading,
+            'starting_conditions_type': 'FixOrFrd',
+            'on_star': False,
+            'actual_star_name': matching_star,
+            'star_waypoint_obj': None,
+            'node_index': None,
+            'distance_to_dest_nm': synth_dist_to_dest,
+        }
 
     def _find_star_spawn_waypoint(self, arrival_airport: str, star_name: str):
         """
