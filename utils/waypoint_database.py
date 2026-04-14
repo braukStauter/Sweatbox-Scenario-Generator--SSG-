@@ -4,10 +4,38 @@ Used for enroute scenario positioning and route parsing
 """
 import logging
 import os
+import sys
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 from models.airport import Waypoint
 
 logger = logging.getLogger(__name__)
+
+
+def _default_cifp_path() -> str:
+    """Resolve the bundled FAACIFP18 path regardless of cwd.
+
+    Mirrors ssg_bridge.resource_path lookup order:
+      1. User-editable <install>/resources/airport_data/ (next to frozen exe).
+      2. PyInstaller _MEIPASS/airport_data/ (baked-in fallback).
+      3. Repo-root airport_data/ in dev.
+      4. Legacy cifp_data/ as last resort.
+    """
+    candidates = []
+    if getattr(sys, 'frozen', False):
+        exe_dir = Path(sys.executable).resolve().parent
+        # <install>/resources/bridge/ssg_bridge.exe -> <install>/resources/
+        candidates.append(exe_dir.parent / 'airport_data' / 'FAACIFP18')
+        mei = getattr(sys, '_MEIPASS', None)
+        if mei:
+            candidates.append(Path(mei) / 'airport_data' / 'FAACIFP18')
+    repo_root = Path(__file__).resolve().parent.parent
+    candidates.append(repo_root / 'airport_data' / 'FAACIFP18')
+    candidates.append(repo_root / 'cifp_data' / 'FAACIFP18')
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return str(candidates[-1])
 
 
 class WaypointDatabase:
@@ -23,12 +51,8 @@ class WaypointDatabase:
         self.waypoints: Dict[str, Waypoint] = {}
         self._loaded = False
 
-        # Default CIFP path - check both possible locations
         if cifp_path is None:
-            if os.path.exists(os.path.join('airport_data', 'FAACIFP18')):
-                cifp_path = os.path.join('airport_data', 'FAACIFP18')
-            else:
-                cifp_path = os.path.join('cifp_data', 'FAACIFP18')
+            cifp_path = _default_cifp_path()
 
         self.cifp_path = cifp_path
 

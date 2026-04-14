@@ -4,11 +4,31 @@ Provides functions for working with ARTCC geographic boundaries
 """
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Optional, List, Tuple, Dict
 from utils.artcc_lookup import point_in_polygon
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_boundaries_path() -> Path:
+    """Locate artcc_boundaries.geojson across install, frozen, and dev layouts.
+
+    Lookup order:
+      1. <install>/resources/artcc_boundaries.geojson  (user-editable)
+      2. _MEIPASS/utils/artcc_boundaries.geojson       (PyInstaller baked-in)
+      3. <repo>/utils/artcc_boundaries.geojson         (dev)
+    """
+    candidates = []
+    if getattr(sys, 'frozen', False):
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates.append(exe_dir.parent / 'artcc_boundaries.geojson')
+    candidates.append(Path(__file__).resolve().parent / 'artcc_boundaries.geojson')
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[-1]
 
 
 class ARTCCBoundaries:
@@ -28,7 +48,7 @@ class ARTCCBoundaries:
     def _load_boundaries(self):
         """Load ARTCC boundaries from GeoJSON file"""
         try:
-            boundaries_path = Path(__file__).parent / "artcc_boundaries.geojson"
+            boundaries_path = _resolve_boundaries_path()
             with open(boundaries_path, 'r') as f:
                 self.boundaries_data = json.load(f)
 

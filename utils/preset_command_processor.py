@@ -142,25 +142,37 @@ def _expand_gate_range(range_str: str) -> List[str]:
     Returns:
         List of expanded gate names
     """
-    # Match pattern like "B1-B11" or "A10-A15"
-    match = re.match(r'^([A-Z]+)(\d+)-([A-Z]+)(\d+)$', range_str)
-
+    # Supported forms: "B1-B11", "10-19", "22A-22C", "11A-19Z", "A1A-A3C".
+    match = re.match(r'^([A-Za-z]*)(\d+)([A-Za-z]*)-([A-Za-z]*)(\d+)([A-Za-z]*)$', range_str)
     if not match:
         return []
 
-    prefix1, start_num, prefix2, end_num = match.groups()
+    p1, n1, s1, p2, n2, s2 = match.groups()
+    p1, s1, p2, s2 = p1.upper(), s1.upper(), p2.upper(), s2.upper()
 
-    # Prefixes must match
-    if prefix1 != prefix2:
+    if p1 != p2:
+        return []
+    if len(s1) > 1 or len(s2) > 1:
+        return []
+    if bool(s1) != bool(s2):
         return []
 
-    start = int(start_num)
-    end = int(end_num)
+    start = int(n1)
+    end = int(n2)
+    if start > end:
+        return []
 
-    # Generate gate names
-    gates = []
-    for i in range(start, end + 1):
-        gates.append(f"{prefix1}{i}")
+    gates: List[str] = []
+    if not s1:
+        gates = [f"{p1}{n}" for n in range(start, end + 1)]
+    else:
+        for n in range(start, end + 1):
+            letter_from = s1 if n == start else 'A'
+            letter_to = s2 if n == end else 'Z'
+            if ord(letter_from) > ord(letter_to):
+                continue
+            for lc in range(ord(letter_from), ord(letter_to) + 1):
+                gates.append(f"{p1}{n}{chr(lc)}")
 
     return gates
 

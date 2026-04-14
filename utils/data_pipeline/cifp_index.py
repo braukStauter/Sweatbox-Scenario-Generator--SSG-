@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Optional
@@ -31,10 +32,26 @@ from utils.data_pipeline.runway import runway_matches
 
 logger = logging.getLogger(__name__)
 
-# Repo-relative default for the CIFP file; callers can override via argument.
-DEFAULT_CIFP_PATH = str(
-    Path(__file__).resolve().parents[2] / 'airport_data' / 'FAACIFP18'
-)
+
+def _default_cifp_path() -> str:
+    """Locate FAACIFP18 across install, frozen, and dev layouts.
+
+    Mirrors ssg_bridge.resource_path lookup order so AIRAC updates dropped
+    into <install>/resources/airport_data/ take precedence over the
+    PyInstaller-baked copy, even when callers don't pass an explicit path.
+    """
+    candidates = []
+    if getattr(sys, 'frozen', False):
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates.append(exe_dir.parent / 'airport_data' / 'FAACIFP18')
+    candidates.append(Path(__file__).resolve().parents[2] / 'airport_data' / 'FAACIFP18')
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return str(candidates[-1])
+
+
+DEFAULT_CIFP_PATH = _default_cifp_path()
 
 
 class CIFPIndex:

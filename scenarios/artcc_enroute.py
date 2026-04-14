@@ -955,11 +955,6 @@ class ArtccEnrouteScenario(BaseScenario):
             ground_speed = self.api_client._calculate_cruise_speed(aircraft_type)
         cruise_speed = ground_speed
 
-        primary_airport_3letter = None
-        if self.arrival_airport_runways:
-            first_airport = list(self.arrival_airport_runways.keys())[0]
-            primary_airport_3letter = first_airport[1:] if first_airport.startswith('K') else first_airport[-3:]
-
         aircraft = Aircraft(
             callsign=callsign,
             aircraft_type=aircraft_type,
@@ -979,7 +974,7 @@ class ArtccEnrouteScenario(BaseScenario):
             cruise_altitude=cruise_altitude,
             cruise_speed=cruise_speed,
             flight_rules="I",
-            primary_airport=primary_airport_3letter,
+            primary_airport=None,
             spawn_delay=0,
         )
         return aircraft
@@ -1045,13 +1040,6 @@ class ArtccEnrouteScenario(BaseScenario):
         # Navigation path: next waypoint after spawn, followed by remainder of filed route
         initial_route = spawn_info.get('initial_route', clean_route)
 
-        # For transient aircraft, set primary_airport to the ARTCC's primary airport
-        # Use the first arrival airport from the configuration
-        primary_airport_3letter = None
-        if self.arrival_airport_runways:
-            first_airport = list(self.arrival_airport_runways.keys())[0]
-            primary_airport_3letter = first_airport[1:] if first_airport.startswith('K') else first_airport[-3:]
-
         # Create aircraft
         aircraft = Aircraft(
             callsign=callsign,
@@ -1069,7 +1057,7 @@ class ArtccEnrouteScenario(BaseScenario):
             cruise_altitude=cruise_altitude,
             cruise_speed=cruise_speed,
             flight_rules="I",
-            primary_airport=primary_airport_3letter,  # Set ARTCC's primary airport for vNAS
+            primary_airport=None,
             spawn_delay=0
         )
 
@@ -1296,7 +1284,7 @@ class ArtccEnrouteScenario(BaseScenario):
             cruise_speed=cruise_speed,
             sid=dep_proc,  # Store SID in the sid field
             flight_rules="I",
-            primary_airport=departure_3letter,  # Set departure airport for vNAS
+            primary_airport=None,
             spawn_delay=0
         )
 

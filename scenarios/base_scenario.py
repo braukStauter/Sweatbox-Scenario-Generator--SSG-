@@ -370,9 +370,23 @@ class BaseScenario(ABC):
         if config_path.exists():
             try:
                 with open(config_path, 'r') as f:
-                    config = json.load(f)
-                    logger.info(f"Loaded configuration from {config_path}")
-                    return config
+                    text = f.read()
+                # Detect duplicate top-level keys (e.g. three `parking_airlines`
+                # blocks) — standard json silently keeps the last, which hides
+                # misconfigured airport overrides. Warn loudly so users notice.
+                def _warn_dupes(pairs):
+                    seen = set()
+                    for k, _ in pairs:
+                        if k in seen:
+                            logger.warning(
+                                f"config.json has duplicate key '{k}' — later value "
+                                f"overwrites earlier. Merge them into a single object."
+                            )
+                        seen.add(k)
+                    return dict(pairs)
+                config = json.loads(text, object_pairs_hook=_warn_dupes)
+                logger.info(f"Loaded configuration from {config_path}")
+                return config
             except Exception as e:
                 logger.warning(f"Error loading config file: {e}. Using default configuration.")
                 return {}
@@ -414,42 +428,54 @@ class BaseScenario(ABC):
 
     def _expand_gate_range(self, range_str: str) -> List[str]:
         """
-        Expand a gate range string into individual gate names
+        Expand a gate range string into individual gate names.
 
-        Examples:
-            "B1-B11" -> ["B1", "B2", "B3", ..., "B11"]
-            "A10-A15" -> ["A10", "A11", "A12", "A13", "A14", "A15"]
-            "C1-C3" -> ["C1", "C2", "C3"]
-
-        Args:
-            range_str: Range string in format "PREFIX#-PREFIX#"
-
-        Returns:
-            List of expanded gate names
+        Supported forms (PREFIX letters optional, NUMBER required, SUFFIX letters optional):
+            "B1-B11"    -> B1..B11                       (letter prefix + num)
+            "10-19"     -> 10..19                        (pure numeric)
+            "22A-22C"   -> 22A, 22B, 22C                 (single num, letter sweep)
+            "11A-19Z"   -> 11A..11Z, 12A..12Z, ..., 19Z  (num+letter 2-D sweep)
+            "A1A-A3C"   -> A1A..A1Z, A2A..A2Z, A3A..A3C  (letter prefix + 2-D sweep)
         """
         import re
 
-        match = re.match(r'^([A-Z]+)(\d+)-([A-Z]+)(\d+)$', range_str)
-
+        match = re.match(r'^([A-Za-z]*)(\d+)([A-Za-z]*)-([A-Za-z]*)(\d+)([A-Za-z]*)$', range_str)
         if not match:
             return []
 
-        prefix1, start_num, prefix2, end_num = match.groups()
+        p1, n1, s1, p2, n2, s2 = match.groups()
+        p1, s1, p2, s2 = p1.upper(), s1.upper(), p2.upper(), s2.upper()
 
-        if prefix1 != prefix2:
-            logger.warning(f"Gate range prefixes don't match: {prefix1} vs {prefix2} in '{range_str}'")
+        if p1 != p2:
+            logger.warning(f"Gate range prefixes don't match: '{p1}' vs '{p2}' in '{range_str}'")
+            return []
+        # Multi-letter suffixes (e.g. 'AA'-'BB') aren't supported.
+        if len(s1) > 1 or len(s2) > 1:
+            logger.warning(f"Gate range letter suffixes must be single letters in '{range_str}'")
+            return []
+        if bool(s1) != bool(s2):
+            logger.warning(f"Gate range letter suffix must be present on both ends in '{range_str}'")
             return []
 
-        start = int(start_num)
-        end = int(end_num)
-
+        start = int(n1)
+        end = int(n2)
         if start > end:
             logger.warning(f"Gate range start > end: {start} > {end} in '{range_str}'")
             return []
 
-        gates = [f"{prefix1}{num}" for num in range(start, end + 1)]
-        logger.debug(f"Expanded gate range '{range_str}' to {len(gates)} gates: {gates[:3]}...")
+        gates: List[str] = []
+        if not s1:
+            gates = [f"{p1}{n}" for n in range(start, end + 1)]
+        else:
+            for n in range(start, end + 1):
+                letter_from = s1 if n == start else 'A'
+                letter_to = s2 if n == end else 'Z'
+                if ord(letter_from) > ord(letter_to):
+                    continue
+                for lc in range(ord(letter_from), ord(letter_to) + 1):
+                    gates.append(f"{p1}{n}{chr(lc)}")
 
+        logger.debug(f"Expanded gate range '{range_str}' to {len(gates)} gates: {gates[:3]}...")
         return gates
 
     def _get_airline_for_parking(self, parking_name: str):

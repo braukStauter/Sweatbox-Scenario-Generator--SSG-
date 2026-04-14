@@ -9,11 +9,16 @@ writes the vNAS scenario JSON, and prints one JSON status line to stdout:
 
     {"status": "ok", "filename": "...", "aircraft_count": N}
     {"status": "error", "message": "...", "trace": "..."}
+
+A full run log is also written to `<app>/logs/ssg_<YYYYMMDD_HHMMSS>.log` and
+tee'd to stderr so the Electron main process can surface errors verbatim.
 """
 import json
+import logging
 import os
 import sys
 import traceback
+from datetime import datetime
 from pathlib import Path
 
 
@@ -44,6 +49,75 @@ def _user_resources_root():
     exe_dir = Path(sys.executable).resolve().parent
     # <install>/resources/bridge/ → <install>/resources/
     return exe_dir.parent
+
+
+def _log_directory() -> Path:
+    """Return (and create) the directory that holds per-run log files.
+
+    - Packaged: `<install>/logs/` — a sibling of the `resources/` folder that
+      holds `bridge/ssg_bridge.exe`. This is the end-user-visible location,
+      next to the app's top-level `.exe`, matching the user's request of
+      "whatever directory the exe is run from / logs /".
+    - Dev: `<repo>/logs/` — matches the legacy PyQt `main_gui.py` behavior.
+    """
+    if getattr(sys, 'frozen', False):
+        # sys.executable = <install>/resources/bridge/ssg_bridge.exe
+        base = Path(sys.executable).resolve().parent.parent.parent
+    else:
+        base = Path(__file__).resolve().parent
+    log_dir = base / 'logs'
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Fall back to a user-writable temp location if the install dir is
+        # read-only (e.g. machine-wide NSIS install without admin rights).
+        import tempfile
+        log_dir = Path(tempfile.gettempdir()) / 'ssg-logs'
+        log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
+_LOG_CONFIGURED = False
+
+
+def _configure_logging() -> Path:
+    """Install a file handler + stderr handler on the root logger.
+
+    Returns the full path of the file the run will log to. Idempotent —
+    calling it twice won't duplicate handlers.
+    """
+    global _LOG_CONFIGURED
+    log_dir = _log_directory()
+    log_path = log_dir / f"ssg_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    if _LOG_CONFIGURED:
+        return log_path
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    # Drop any pre-existing handlers so repeat invocations in the same
+    # process (tests) don't stack.
+    for h in list(root.handlers):
+        root.removeHandler(h)
+
+    fmt = logging.Formatter(
+        '%(asctime)s %(levelname)s %(name)s: %(message)s',
+        datefmt='%H:%M:%S',
+    )
+
+    file_h = logging.FileHandler(log_path, mode='w', encoding='utf-8')
+    file_h.setLevel(logging.INFO)
+    file_h.setFormatter(fmt)
+
+    # stderr so the Electron IPC captures the same lines via proc.stderr;
+    # stdout stays reserved for the single JSON status line.
+    stream_h = logging.StreamHandler(sys.stderr)
+    stream_h.setLevel(logging.INFO)
+    stream_h.setFormatter(fmt)
+
+    root.addHandler(file_h)
+    root.addHandler(stream_h)
+    _LOG_CONFIGURED = True
+    return log_path
 
 
 def resource_path(*parts):
@@ -425,6 +499,11 @@ def dispatch(cfg):
 
 
 def main(config_path):
+    log_path = _configure_logging()
+    logger = logging.getLogger('ssg_bridge')
+    logger.info(f"SSG bridge start; log file: {log_path}")
+    logger.info(f"Config: {config_path}")
+
     cfg = json.loads(Path(config_path).read_text('utf-8'))
     aircraft, artcc_id = dispatch(cfg)
 
@@ -450,22 +529,29 @@ def main(config_path):
         cfg['scenarioType'],
         str(out_dir),
     )
+    logger.info(f"Generated {len(aircraft)} aircraft -> {filename}")
     print(json.dumps({
         'status': 'ok',
         'filename': str(filename),
         'aircraft_count': len(aircraft),
+        'logFile': str(log_path),
     }))
 
 
 if __name__ == '__main__':
+    log_path_for_error = None
     try:
+        # Initialize logging as early as possible so startup errors get captured.
+        log_path_for_error = _configure_logging()
         if len(sys.argv) < 2:
             raise SystemExit('usage: ssg_bridge <config.json>')
         main(sys.argv[1])
     except Exception as exc:  # noqa: BLE001
+        logging.getLogger('ssg_bridge').exception("Unhandled bridge error")
         print(json.dumps({
             'status': 'error',
             'message': str(exc),
             'trace': traceback.format_exc(),
+            'logFile': str(log_path_for_error) if log_path_for_error else None,
         }))
         sys.exit(1)
