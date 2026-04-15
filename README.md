@@ -1,4 +1,4 @@
-[![Version Image](https://img.shields.io/badge/Stable_Version-2.0.3-Green)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases) [![Build Image](https://img.shields.io/badge/Build-137-blue)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases)
+[![Version Image](https://img.shields.io/badge/Stable_Version-2.1.1-Green)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases) [![Build Image](https://img.shields.io/badge/Build-137-blue)](https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases)
 
 # vNAS Sweatbox Scenario Generator
 
@@ -119,7 +119,7 @@ For enroute scenarios, you can define named groups of airports with their active
 {
   "artcc_airport_groups": {
     "ZAB": {
-      "Primary Airports (East)": "KPHX:08,7R,KTUS:12,KABQ:08,03,KAMA:04,KELP:04,8R",
+      "Primary Airports (East)": "KPHX:08,7R[EAGUL,HYDRR],KTUS:12,KABQ:08,03,KAMA:04,KELP:04,8R",
       "Primary Airports (West)": "KPHX:26,25L,KTUS:30,KABQ:26,21,KAMA:22,KELP:22,26L"
     },
     "ZLA": {
@@ -130,11 +130,12 @@ For enroute scenarios, you can define named groups of airports with their active
 }
 ```
 
-**Format:** `"Group Name": "ICAO:runway,runway,ICAO:runway,runway"`
+**Format:** `"Group Name": "ICAO:runway,runway[arrival,arrival],ICAO:runway,runway"`
 
 **Features:**
 - Group names appear as dropdown options when configuring enroute scenarios
 - Runways specify ACTIVE runways for CIFP SID/STAR parsing and routing
+- Arrival specification, if desired. 
 - Multiple airports can be included in each group
 - Each airport can have multiple active runways listed
 >[!WARNING]
