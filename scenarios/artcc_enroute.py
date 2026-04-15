@@ -168,6 +168,8 @@ class ArtccEnrouteScenario(BaseScenario):
                  arrival_spawn_band: Optional[Tuple[float, float]] = None,
                  overflight_spawn_band: Optional[Tuple[float, float]] = None,
                  per_airport_arrival_bands: Optional[Dict[str, Tuple[float, float]]] = None,
+                 per_airport_arrival_procedures: Optional[Dict[str, List[str]]] = None,
+                 config_warnings: Optional[List[str]] = None,
                  enroute_min_remaining_nm: Optional[float] = None,
                  difficulty_config_enroute: Dict = None,
                  difficulty_config_arrivals: Dict = None,
@@ -256,6 +258,19 @@ class ArtccEnrouteScenario(BaseScenario):
             for k, v in (per_airport_arrival_bands or {}).items()
             if isinstance(v, (list, tuple)) and len(v) == 2
         }
+        # STAR prefix filter per arrival airport (e.g. {'KPHX': ['EAGUL']}
+        # only pulls arrivals filed with a STAR whose base name is EAGUL).
+        # Empty / missing entry = accept any STAR at that airport.
+        self.arrival_airport_procedures = {
+            k.upper(): [str(s).upper() for s in v]
+            for k, v in (per_airport_arrival_procedures or {}).items()
+            if v
+        }
+        # Collect warnings/notes for the conclusion screen. `config_warnings`
+        # already holds validation messages from the bridge (e.g. rejected
+        # STAR tokens containing digits); keep them so the UI sees them.
+        self.generation_warnings: List[str] = list(config_warnings or [])
+        self.generation_notes: List[str] = []
         self.enroute_min_remaining_nm = (
             float(enroute_min_remaining_nm)
             if enroute_min_remaining_nm is not None
@@ -269,6 +284,13 @@ class ArtccEnrouteScenario(BaseScenario):
         self._num_departures_total = num_departures
         self._num_arrivals_total = num_arrivals
         self._num_enroute_total = num_enroute
+
+        # Cross-check runway vs STAR prefix selections — emit advisory
+        # warnings for any airport whose active runways don't overlap any
+        # of the requested STAR's published runway transitions. Generation
+        # still proceeds; runway assignment falls back to the STAR's first
+        # published runway via `_get_runway_for_star`.
+        self._validate_arrival_runway_procedures()
 
         departures_pool = []
         arrivals_pool = []
@@ -510,6 +532,14 @@ class ArtccEnrouteScenario(BaseScenario):
         # Apply spawn delays across all aircraft
         self.apply_spawn_delays(self.aircraft, spawn_delay_mode, delay_value, total_session_minutes)
 
+        # Distance-based spawn spacing. When no spawn delay is configured we
+        # need ≥ 20 NM physical separation between aircraft sharing a route;
+        # with a spawn delay the temporal offset can close the gap so long as
+        # the effective separation (distance + Δt × avg groundspeed) is
+        # ≥ 10 NM. Aircraft may be shifted past their arrival-band max — we
+        # record a note to the conclusion screen when that happens.
+        self._resolve_spawn_proximity(spawn_delay_mode)
+
         # Resolve enroute/overflight altitude conflicts: no two in-flight
         # aircraft may spawn within 10 NM of each other at the same cruise
         # altitude. Violators get their altitude dropped in 2000 ft steps.
@@ -527,6 +557,8 @@ class ArtccEnrouteScenario(BaseScenario):
             'requested': dict(requested),
             'actual': dict(counts),
             'shortfall': shortfall,
+            'warnings': list(self.generation_warnings),
+            'notes': list(self.generation_notes),
         }
         if actual_total < requested_total:
             nonzero = {k: v for k, v in shortfall.items() if v > 0}
@@ -589,16 +621,38 @@ class ArtccEnrouteScenario(BaseScenario):
 
         all_flights = []
         per_airport = max(5, getattr(self, '_num_arrivals_total', 20) // max(1, len(arrival_airports)))
+        proc_map = getattr(self, 'arrival_airport_procedures', {}) or {}
         for airport in arrival_airports:
+            # Optional STAR prefix filter. The API side-matches on prefix
+            # (EAGUL -> EAGUL6, EAGUL7, …), but we double-check after
+            # fetch too so any historical stragglers are dropped.
+            star_prefixes = proc_map.get(airport.upper()) or None
             try:
                 flights, _ = pool_fetch_arrs(
                     self.api_client, airport, num_required=per_airport,
+                    requested_stars=star_prefixes,
                     start_offset=start_offset, target_override=target_override,
                 )
+                if star_prefixes:
+                    prefix_set = {p.upper() for p in star_prefixes}
+                    before = len(flights)
+                    flights = [
+                        f for f in flights
+                        if re.sub(r'\d+$', '',
+                                  (f.get('arrivalProcedure') or '').upper())
+                        in prefix_set
+                    ]
+                    if before != len(flights):
+                        logger.info(
+                            f"{airport}: post-filter dropped "
+                            f"{before - len(flights)} arrivals not matching "
+                            f"STARs {sorted(prefix_set)}"
+                        )
                 all_flights.extend(flights)
                 logger.info(
                     f"Fetched {len(flights)} arrivals to {airport} "
-                    f"(start_offset={start_offset})"
+                    f"(start_offset={start_offset}, "
+                    f"stars={star_prefixes or 'any'})"
                 )
             except Exception as e:  # noqa: BLE001
                 logger.error(f"Error fetching arrivals to {airport}: {e}")
@@ -1481,6 +1535,20 @@ class ArtccEnrouteScenario(BaseScenario):
             primary_airport=arrival_3letter,
             spawn_delay=None,
         )
+        # Stash polyline context so `_resolve_spawn_proximity` can shift
+        # this aircraft further back along its filed route if another
+        # aircraft spawns too close (physical or time-adjusted).
+        aircraft._spawn_ctx = {
+            'polyline_coords': spawn.get('_polyline_coords'),
+            'polyline_names': spawn.get('_polyline_names'),
+            'forward_nm': spawn.get('_polyline_forward_nm'),
+            'anchor_lat': spawn.get('_anchor_lat'),
+            'anchor_lon': spawn.get('_anchor_lon'),
+            'actual_star_name': spawn.get('actual_star_name'),
+            'arrival_airport': arrival,
+            'min_nm': min_nm,
+            'max_nm': max_nm,
+        }
         return aircraft
 
     def _build_arrival_navigation_path(self, arrival_icao: str, star_name: str,
@@ -2163,6 +2231,194 @@ class ArtccEnrouteScenario(BaseScenario):
             f"Custom boundary active — polygon from {len(resolved)} waypoints: "
             f"{[n.strip().upper() for n in waypoint_names if n]}"
         )
+
+    def _validate_arrival_runway_procedures(self) -> None:
+        """For each arrival airport with BOTH active runways AND a STAR
+        prefix filter configured, verify at least one published runway
+        transition on a matching STAR lines up with an active runway.
+        When no overlap exists we don't block generation — ``_get_runway_for_star``
+        already falls back to the STAR's first published runway — but we
+        record an advisory so the user sees it on the conclusion screen.
+        """
+        proc_map = getattr(self, 'arrival_airport_procedures', {}) or {}
+        if not proc_map:
+            return
+
+        for airport, prefixes in proc_map.items():
+            active = [r.upper() for r in
+                      (self.arrival_airport_runways.get(airport) or [])]
+            if not active:
+                # Empty runway list = any runway allowed; skip the check.
+                continue
+            parser = self.cifp_parsers.get(airport)
+            if not parser:
+                self.generation_warnings.append(
+                    f"{airport}: no CIFP data loaded — cannot verify runway "
+                    f"vs STAR compatibility for {prefixes}."
+                )
+                continue
+
+            star_names_by_prefix = {}
+            all_stars = list(getattr(parser, 'star_waypoints', {}).keys())
+            for prefix in prefixes:
+                matches = [s for s in all_stars
+                           if re.sub(r'\d+$', '', s.upper()) == prefix.upper()]
+                star_names_by_prefix[prefix] = matches
+                if not matches:
+                    self.generation_warnings.append(
+                        f"{airport}: STAR prefix '{prefix}' matched no "
+                        f"published STAR in CIFP."
+                    )
+
+            # For each (airport, prefix) check whether ANY matching STAR has
+            # a runway transition that overlaps ANY of the active runways.
+            for prefix, stars in star_names_by_prefix.items():
+                if not stars:
+                    continue
+                published = set()
+                for star_name in stars:
+                    for rwy in parser.get_runways_for_arrival(star_name) or []:
+                        published.add(str(rwy).upper().replace('RW', ''))
+                if not published:
+                    # STAR publishes no runway-specific transitions (common/ALL
+                    # segment only) — any active runway is a valid fallback.
+                    continue
+                active_clean = {r.replace('RW', '') for r in active}
+                if not (published & active_clean):
+                    self.generation_warnings.append(
+                        f"{airport}: STAR '{prefix}' publishes runways "
+                        f"{sorted(published)} but active runways are "
+                        f"{sorted(active_clean)} — no overlap. Arrivals "
+                        f"will use the STAR's first published runway."
+                    )
+
+    def _resolve_spawn_proximity(self, spawn_delay_mode) -> None:
+        """Enforce distance-based spawn spacing on arrivals sharing a filed
+        route. Called after ``apply_spawn_delays`` so every aircraft's
+        ``spawn_delay`` (seconds) reflects its final staggering.
+
+        Required effective separation between any two arrivals on the same
+        route is:
+
+          * ``REQUIRED_NO_DELAY_NM`` (20) when no spawn delay is configured
+            — effective separation is purely physical.
+          * ``REQUIRED_WITH_DELAY_NM`` (10) otherwise — the time offset
+            between spawns closes the gap at the pair's average groundspeed.
+
+        When two aircraft are too close the later-spawning one is shifted
+        back along its polyline (reusing ``_shift_spawn_back_on_polyline``).
+        If shifting pushes it past the airport's arrival-band max, that's
+        allowed — we just surface a note.
+        """
+        from models.spawn_delay_mode import SpawnDelayMode
+        from utils.geo_utils import calculate_distance_nm
+
+        REQUIRED_NO_DELAY_NM = 20.0
+        REQUIRED_WITH_DELAY_NM = 10.0
+        STEP_NM = 5.0
+        MAX_STEPS = 20
+
+        no_delay = (spawn_delay_mode == SpawnDelayMode.NONE)
+        required = REQUIRED_NO_DELAY_NM if no_delay else REQUIRED_WITH_DELAY_NM
+
+        # Group by (arrival airport, filed route signature). Same-airport
+        # aircraft filed on different routes through the ARTCC rarely share
+        # spawn points, so the simple keying is fine.
+        groups: Dict[Tuple[str, str], List] = {}
+        for ac in self.aircraft:
+            ctx = getattr(ac, '_spawn_ctx', None)
+            if not ctx or not ctx.get('polyline_coords'):
+                continue
+            key = (ctx.get('arrival_airport', ''),
+                   (ac.route or '').strip().upper())
+            groups.setdefault(key, []).append(ac)
+
+        for key, aircraft_list in groups.items():
+            if len(aircraft_list) < 2:
+                continue
+            # Sort by spawn time (seconds). `spawn_delay` may be None when
+            # no-delay mode is active; treat as 0.
+            aircraft_list.sort(key=lambda a: (a.spawn_delay or 0))
+
+            placed = []  # aircraft we've already resolved against
+            for ac in aircraft_list:
+                shifted = 0
+                while shifted < MAX_STEPS:
+                    violation = None
+                    for other in placed:
+                        d_nm = calculate_distance_nm(
+                            ac.latitude, ac.longitude,
+                            other.latitude, other.longitude,
+                        )
+                        if no_delay:
+                            effective = d_nm
+                        else:
+                            dt_s = abs((ac.spawn_delay or 0) - (other.spawn_delay or 0))
+                            avg_gs = 0.5 * (ac.ground_speed + other.ground_speed)
+                            effective = d_nm + (dt_s * avg_gs / 3600.0)
+                        if effective < required:
+                            violation = (other, d_nm, effective)
+                            break
+                    if violation is None:
+                        placed.append(ac)
+                        break
+
+                    # Try to shift this aircraft back along its polyline.
+                    ctx = ac._spawn_ctx
+                    new_fwd = (ctx.get('forward_nm') or 0) - STEP_NM
+                    if new_fwd <= 0:
+                        self.generation_notes.append(
+                            f"{ac.callsign}: could not maintain {required:.0f} NM "
+                            f"separation on route into {ctx.get('arrival_airport')} "
+                            f"— polyline exhausted; leaving spawn in place."
+                        )
+                        placed.append(ac)
+                        break
+                    new_spawn = self._shift_spawn_back_on_polyline(
+                        ctx['polyline_coords'], ctx['polyline_names'],
+                        ctx['forward_nm'],
+                        ctx.get('anchor_lat'), ctx.get('anchor_lon'),
+                        ctx.get('actual_star_name'),
+                        backup_nm=STEP_NM,
+                    )
+                    if new_spawn is None:
+                        self.generation_notes.append(
+                            f"{ac.callsign}: could not maintain {required:.0f} NM "
+                            f"separation on route into {ctx.get('arrival_airport')} "
+                            f"— leaving spawn in place."
+                        )
+                        placed.append(ac)
+                        break
+
+                    # Commit the shift onto the aircraft and its context.
+                    ac.latitude = new_spawn['latitude']
+                    ac.longitude = new_spawn['longitude']
+                    ac.fix = new_spawn['fix']
+                    ac.starting_conditions_type = new_spawn['starting_conditions_type']
+                    ctx['forward_nm'] = new_spawn['_polyline_forward_nm']
+                    shifted += 1
+
+                    # If we've passed the arrival band max, note it once.
+                    dist_to_dest = new_spawn.get('distance_to_dest_nm')
+                    max_nm = ctx.get('max_nm')
+                    if (dist_to_dest is not None and max_nm is not None
+                            and dist_to_dest > max_nm
+                            and not ctx.get('_band_note_logged')):
+                        self.generation_notes.append(
+                            f"{ac.callsign}: spawn extended to "
+                            f"{dist_to_dest:.0f} NM from "
+                            f"{ctx.get('arrival_airport')} (beyond "
+                            f"{max_nm:.0f} NM band) to maintain "
+                            f"{required:.0f} NM separation."
+                        )
+                        ctx['_band_note_logged'] = True
+                else:
+                    # max shifts exhausted
+                    self.generation_notes.append(
+                        f"{ac.callsign}: exhausted spawn shift attempts; "
+                        f"remaining separation may be below {required:.0f} NM."
+                    )
+                    placed.append(ac)
 
     def _resolve_enroute_altitude_conflicts(self) -> None:
         """Separate any two airborne aircraft spawning within

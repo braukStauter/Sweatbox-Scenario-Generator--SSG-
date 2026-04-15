@@ -16,6 +16,7 @@ tee'd to stderr so the Electron main process can surface errors verbatim.
 import json
 import logging
 import os
+import re
 import sys
 import traceback
 from datetime import datetime
@@ -184,6 +185,42 @@ def parse_runway_map(value):
         code, runways = chunk.split(':', 1)
         out[code.strip().upper()] = parse_list(runways, upper=True)
     return out
+
+
+def parse_arrival_procedure_map(value):
+    """Pull per-airport STAR-prefix filters off the enroute arrival-airports
+    row shape. Returns `({'KPHX': ['EAGUL', 'HYDRR']}, ['warning', ...])`.
+
+    Invalid tokens (containing digits, or not alphabetic) are dropped with a
+    warning string so the conclusion screen can surface them. Input is the
+    same `arrivalAirports` list the UI already sends; each row may carry an
+    `arrivals` field (either a list or a CSV string).
+    """
+    out = {}
+    warnings = []
+    if not value or not isinstance(value, list):
+        return out, warnings
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        icao = (item.get('icao') or item.get('airport') or '').strip().upper()
+        if not icao:
+            continue
+        raw = item.get('arrivals')
+        tokens = parse_list(raw, upper=True)
+        valid = []
+        for tok in tokens:
+            if re.match(r'^[A-Z]+$', tok):
+                valid.append(tok)
+            else:
+                warnings.append(
+                    f"{icao}: ignored invalid STAR prefix '{tok}' — use the "
+                    f"5-letter base name without the trailing runway number "
+                    f"(e.g. EAGUL, not EAGUL6)."
+                )
+        if valid:
+            out[icao] = valid
+    return out, warnings
 
 
 def parse_waypoint_star_pairs(value):
@@ -427,6 +464,11 @@ def dispatch(cfg):
 
         per_airport_arr_bands = _extract_bands(arr_items)
 
+        # STAR prefix filter on the arrival flight pool (e.g., only EAGUL
+        # arrivals to KPHX). Invalid tokens are dropped with warnings that
+        # get surfaced on the conclusion screen alongside shortfall.
+        per_airport_arr_procs, arr_proc_warnings = parse_arrival_procedure_map(arr_items)
+
         def _parse_band(val, default):
             if isinstance(val, dict):
                 lo = val.get('minDistanceNm') or val.get('min')
@@ -473,6 +515,8 @@ def dispatch(cfg):
             arrival_spawn_band=arr_band,
             overflight_spawn_band=ovf_band,
             per_airport_arrival_bands=per_airport_arr_bands,
+            per_airport_arrival_procedures=per_airport_arr_procs,
+            config_warnings=arr_proc_warnings,
             difficulty_config_enroute=enr_diff,
             difficulty_config_arrivals=arr_diff,
             difficulty_config_departures=dep_diff,

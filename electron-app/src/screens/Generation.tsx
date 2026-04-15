@@ -149,6 +149,42 @@ export function Generation() {
               </p>
             );
           })()}
+          {result.generationStats?.warnings && result.generationStats.warnings.length > 0 && (
+            <div
+              style={{
+                color: 'var(--warning, #c77)',
+                fontSize: 12,
+                padding: '6px 10px',
+                border: '1px solid var(--warning, #c77)',
+                borderRadius: 'var(--radius)',
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Warnings</div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {result.generationStats.warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {result.generationStats?.notes && result.generationStats.notes.length > 0 && (
+            <div
+              style={{
+                color: 'var(--fg-secondary)',
+                fontSize: 12,
+                padding: '6px 10px',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)',
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Heads up</div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {result.generationStats.notes.map((n, i) => (
+                  <li key={i}>{n}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <pre
             style={{
               background: 'var(--bg-primary)',

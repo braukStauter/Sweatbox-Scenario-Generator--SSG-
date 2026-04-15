@@ -79,6 +79,10 @@ export interface AirportRunwaysEntry {
    *  scenario-wide `arrivalSpawn`. */
   spawnMinNm?: number | '';
   spawnMaxNm?: number | '';
+  /** Enroute arrivals only: comma-separated 5-letter STAR prefixes (no
+   *  trailing runway digit) to filter the flight pool. Empty = all STARs.
+   *  Example: "EAGUL, HYDRR" matches EAGUL6, HYDRR3, etc. */
+  arrivals?: string;
 }
 
 export interface SpawnDistanceBand {
@@ -179,6 +183,12 @@ export interface GenerationStats {
   requested: Record<string, number>;
   actual: Record<string, number>;
   shortfall: Record<string, number>;
+  /** Non-blocking configuration / generation warnings surfaced on the
+   *  conclusion screen (runway/STAR mismatches, invalid STAR tokens,
+   *  spawns that extended past the arrival band to maintain separation). */
+  warnings?: string[];
+  /** Purely informational notes surfaced on the conclusion screen. */
+  notes?: string[];
 }
 
 export interface ScenarioResult {
