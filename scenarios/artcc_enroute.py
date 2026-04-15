@@ -1668,6 +1668,22 @@ class ArtccEnrouteScenario(BaseScenario):
                 continue
             cleaned_prefix.append(name)
 
+        # vNAS rejects a nav path whose only token is ``<STAR>.<rwy>`` —
+        # there must be at least one fly-to fix before the STAR. If cleanup
+        # stripped everything (e.g. the filed route's last pre-STAR fix is
+        # the same as the spawn fix, as in ``... ELP ZONNA2`` spawned at
+        # ELP), synthesize one from the STAR graph: the next waypoint on
+        # the STAR after the spawn fix (walks enroute → common → runway
+        # transitions), falling back to the first common-segment fix.
+        if not cleaned_prefix and has_star and cifp_parser is not None:
+            nxt = self._next_star_waypoint(
+                cifp_parser, star_name, spawn.get('fix', ''), arrival_runway,
+            )
+            if not nxt:
+                nxt = self._first_common_star_waypoint(cifp_parser, star_name)
+            if nxt and nxt.upper() != spawn_upper:
+                cleaned_prefix.append(nxt)
+
         tokens = cleaned_prefix + [tail]
         tokens = [t for t in tokens if t]
         if not tokens:
@@ -2086,39 +2102,79 @@ class ArtccEnrouteScenario(BaseScenario):
             return None
         lat, lon, heading = interp
 
-        # Pin the FRD to the nearest upstream named waypoint. vNAS uses the
-        # ``fix`` field as the raw starting-position reference — a bare
-        # waypoint name spawns the aircraft AT that waypoint, ignoring the
-        # lat/lon we computed. Encode the proper FixRadialDistance string
-        # (``<NAME><RRR><DDD>``) so vNAS actually places the aircraft at the
+        # Pin the FRD to a nearby named waypoint. vNAS uses the ``fix``
+        # field as the raw starting-position reference — a bare waypoint
+        # name spawns the aircraft AT that waypoint, ignoring the lat/lon
+        # we computed. Encode the FixRadialDistance string
+        # (``<NAME><RRR><DDD>``) so vNAS places the aircraft at the
         # shifted-back position.
+        #
+        # The ARINC FRD format limits the distance to three digits (max
+        # 999 NM). When the upstream waypoint at the start of the current
+        # leg is farther than that (very long legs between enroute fixes),
+        # fall back to whichever named polyline waypoint is closest to the
+        # shifted position and still within 999 NM. That keeps the FRD
+        # encodable; the aircraft's actual position is determined by the
+        # encoded bearing+distance regardless of which anchor we pick.
+        FRD_DIST_LIMIT = 999
+
+        anchor_idx = 0
         cum = 0.0
-        upstream_name = polyline_names[0] if polyline_names else ''
-        upstream_lat = polyline_coords[0][0] if polyline_coords else None
-        upstream_lon = polyline_coords[0][1] if polyline_coords else None
         for i in range(len(polyline_coords) - 1):
             leg = calculate_distance_nm(
                 polyline_coords[i][0], polyline_coords[i][1],
                 polyline_coords[i + 1][0], polyline_coords[i + 1][1],
             )
             if cum + leg >= new_forward:
-                if i < len(polyline_names):
-                    upstream_name = polyline_names[i]
-                upstream_lat = polyline_coords[i][0]
-                upstream_lon = polyline_coords[i][1]
+                anchor_idx = i
                 break
             cum += leg
 
-        if upstream_name and upstream_lat is not None and upstream_lon is not None:
+        def _anchor_ok(idx: int) -> bool:
+            nm = polyline_names[idx] if idx < len(polyline_names) else ''
+            if not nm:
+                return False
+            d = calculate_distance_nm(
+                polyline_coords[idx][0], polyline_coords[idx][1], lat, lon,
+            )
+            return d <= FRD_DIST_LIMIT
+
+        chosen_idx = anchor_idx if _anchor_ok(anchor_idx) else None
+        if chosen_idx is None:
+            # Scan the whole polyline for the closest named waypoint still
+            # under the 3-digit distance cap, preferring earlier (upstream)
+            # anchors when ties occur so the FRD reads naturally.
+            best: Optional[Tuple[float, int]] = None
+            for i, name in enumerate(polyline_names):
+                if not name:
+                    continue
+                d = calculate_distance_nm(
+                    polyline_coords[i][0], polyline_coords[i][1], lat, lon,
+                )
+                if d > FRD_DIST_LIMIT:
+                    continue
+                if best is None or d < best[0]:
+                    best = (d, i)
+            if best is not None:
+                chosen_idx = best[1]
+
+        if chosen_idx is not None:
+            upstream_name = polyline_names[chosen_idx]
+            upstream_lat = polyline_coords[chosen_idx][0]
+            upstream_lon = polyline_coords[chosen_idx][1]
             brg = int(round(calculate_bearing(
                 upstream_lat, upstream_lon, lat, lon,
             ))) % 360
-            dist = max(1, int(round(calculate_distance_nm(
+            dist = max(1, min(FRD_DIST_LIMIT, int(round(calculate_distance_nm(
                 upstream_lat, upstream_lon, lat, lon,
-            ))))
+            )))))
             fix_str = f"{upstream_name}{brg:03d}{dist:03d}"
         else:
-            fix_str = upstream_name
+            # Pathological case: every polyline waypoint is >999 NM from the
+            # interp position. Shouldn't happen in practice; fall back to the
+            # bare upstream name (vNAS will place the aircraft AT that fix).
+            fallback = polyline_names[anchor_idx] if anchor_idx < len(polyline_names) else ''
+            fix_str = fallback
 
         distance_to_dest = (
             calculate_distance_nm(lat, lon, anchor_lat, anchor_lon)
