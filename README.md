@@ -119,23 +119,19 @@ For enroute scenarios, you can define named groups of airports with their active
 {
   "artcc_airport_groups": {
     "ZAB": {
-      "Primary Airports (East)": "KPHX:08,7R[EAGUL,HYDRR],KTUS:12,KABQ:08,03,KAMA:04,KELP:04,8R",
-      "Primary Airports (West)": "KPHX:26,25L,KTUS:30,KABQ:26,21,KAMA:22,KELP:22,26L"
-    },
-    "ZLA": {
-      "Major Airports": "KLAX:24R,25L,KSAN:27,KLAS:26L,KONT:26L",
-      "Regional Airports": "KBUR:08,KSNA:20R,KSMF:16L"
+      "Primary Airports (East)": "KPHX:08,7R:EAGUL,HYDRR,KTUS:12:,KABQ:08,03:,KAMA:04:,KELP:04,8R:",
+      "Primary Airports (West)": "KPHX:26,25L:,KTUS:30:,KABQ:26,21:,KAMA:22:,KELP:22,26L:"
     }
   }
 }
 ```
 
-**Format:** `"Group Name": "ICAO:runway,runway[arrival,arrival],ICAO:runway,runway"`
+**Format:** `"Group Name": "ICAO:runway,runway:arrival,arrival,ICAO:runway,runway:"`
 
 **Features:**
 - Group names appear as dropdown options when configuring enroute scenarios
 - Runways specify ACTIVE runways for CIFP SID/STAR parsing and routing
-- Arrival specification, if desired. 
+- Arrival specification, if desired. (Must include blank `:` even if no arrivals specified)
 - Multiple airports can be included in each group
 - Each airport can have multiple active runways listed
 >[!WARNING]
