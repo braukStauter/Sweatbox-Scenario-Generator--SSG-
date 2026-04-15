@@ -3283,43 +3283,46 @@ class ArtccEnrouteScenario(BaseScenario):
         m = re.match(r'^(\d{1,2})([LCR]?)$', cleaned)
         if not m or not m.group(2):
             return cleaned
-        base = m.group(1)
+        # Normalize to the two-digit form CIFP uses (``7`` -> ``07``) so
+        # lookups against transition names match. ``cleaned`` keeps the
+        # user-entered form as the fallback return value.
+        base = m.group(1).zfill(2)
 
         cifp_parser = self.cifp_parsers.get(airport_icao)
         if not cifp_parser or not active_runways:
             return cleaned
-        star_wps = getattr(cifp_parser, 'star_waypoints', {}).get(star_name, {})
-        if not star_wps:
-            return cleaned
 
-        # Group waypoints by runway transition (RW25L, RW25R, ...) for this STAR.
-        per_rwy: Dict[str, List[Tuple[int, str]]] = {}
-        for wp_name, wp in star_wps.items():
-            tn = (getattr(wp, 'transition_name', '') or '').upper()
-            tm = re.match(r'^RW(\d{1,2})([LCR]?)$', tn)
-            if not tm or tm.group(1) != base:
-                continue
-            rwy_full = tm.group(1) + tm.group(2)
-            seq = getattr(wp, 'sequence_number', 0) or 0
-            per_rwy.setdefault(rwy_full, []).append((seq, wp_name))
+        # ARINC-424 "both parallels" transition: when the STAR publishes a
+        # single ``RW<base>B`` and no side-specific transition for this base,
+        # the user's specific runway (e.g. ``07R``) must be routed as
+        # ``STAR.<base>B`` because that's the only transition vNAS can
+        # resolve. Consult star_transitions, which captures every transition
+        # identifier seen — star_waypoints loses duplicates because its key
+        # is the waypoint name.
+        transitions = getattr(cifp_parser, 'star_transitions', {}).get(star_name, set()) or set()
+        has_both = any(re.match(rf'^RW{base}B$', t.upper()) for t in transitions)
+        has_side = any(re.match(rf'^RW{base}[LCR]$', t.upper()) for t in transitions)
+        if has_both and not has_side:
+            return f"{base}B"
 
-        if len(per_rwy) < 2:
-            return cleaned
-
-        ordered = {
-            rwy: tuple(name for _, name in sorted(items))
-            for rwy, items in per_rwy.items()
+        # Multi-parallel merge: when both ``RW<base>L`` and ``RW<base>R`` are
+        # published AND both of those runways are active in the scenario,
+        # emit ``<base>B`` so vNAS treats either runway assignment as a
+        # match. Uses star_transitions (rather than walking star_waypoints,
+        # where shared waypoint names overwrite each other's transition).
+        side_transitions = {
+            t.upper()[2:] for t in transitions
+            if re.match(rf'^RW{base}[LCR]$', t.upper())
         }
-
-        # Restrict to parallel runways that are actually active in this scenario.
         active_clean = {r.replace('RW', '').upper() for r in active_runways}
-        parallel_active = [rwy for rwy in ordered if rwy in active_clean]
-        if len(parallel_active) < 2:
-            return cleaned
 
-        # All parallel active runways must share the exact same transition
-        # waypoint sequence to merge them into the "<num>B" form.
-        if len({ordered[rwy] for rwy in parallel_active}) == 1:
+        def _two_digit(r: str) -> str:
+            m2 = re.match(r'^(\d{1,2})([LCR]?)$', r)
+            return (m2.group(1).zfill(2) + m2.group(2)) if m2 else r
+
+        active_two = {_two_digit(r) for r in active_clean}
+        parallel_active = side_transitions & active_two
+        if len(parallel_active) >= 2:
             return f"{base}B"
         return cleaned
 

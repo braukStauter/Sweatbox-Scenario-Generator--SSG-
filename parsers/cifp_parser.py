@@ -63,6 +63,14 @@ class CIFPParser:
         self.airport_icao = airport_icao
         self.waypoints: Dict[str, Waypoint] = {}
         self.arrivals: Dict[str, List[str]] = {}
+        # Every transition identifier seen per STAR/SID. `star_waypoints` is
+        # keyed by waypoint name, so waypoints shared across runway
+        # transitions (e.g. HOMRR on EAGUL6 RW07B, RW08, RW25L, ...) get
+        # overwritten; only the last-parsed transition_name survives on the
+        # stored Waypoint object. These sets capture the full set so runway
+        # mapping doesn't miss transitions.
+        self.star_transitions: Dict[str, set] = {}
+        self.sid_transitions: Dict[str, set] = {}
         self.arrival_runways: Dict[str, List[str]] = {}  # Maps STAR name to runways it feeds
         # Store waypoint data per STAR to preserve procedure-specific constraints
         self.star_waypoints: Dict[str, Dict[str, Waypoint]] = {}  # {STAR_name: {waypoint_name: Waypoint}}
@@ -451,6 +459,13 @@ class CIFPParser:
                 self.star_waypoints[arrival_name] = {}
             self.star_waypoints[arrival_name][waypoint_name] = waypoint
 
+            # Also record the transition name independently — waypoints
+            # shared across transitions (e.g. HOMRR on multiple EAGUL6 runway
+            # transitions) overwrite each other in star_waypoints, losing
+            # all but the last transition_name.
+            if arrival_name and transition_name:
+                self.star_transitions.setdefault(arrival_name, set()).add(transition_name)
+
             # Also store in global waypoints dict (may get overwritten, but kept for backward compatibility)
             if waypoint_name not in self.waypoints:
                 self.waypoints[waypoint_name] = waypoint
@@ -590,6 +605,12 @@ class CIFPParser:
                 self.sid_waypoints[departure_name] = {}
             self.sid_waypoints[departure_name][waypoint_name] = waypoint
 
+            # Accumulate every transition name seen on this SID — waypoints
+            # shared across runway transitions would otherwise overwrite
+            # each other's transition_name in sid_waypoints.
+            if departure_name and transition_name:
+                self.sid_transitions.setdefault(departure_name, set()).add(transition_name)
+
             # Also store in global waypoints dict (may get overwritten, but kept for backward compatibility)
             if waypoint_name not in self.waypoints:
                 self.waypoints[waypoint_name] = waypoint
@@ -711,29 +732,38 @@ class CIFPParser:
         """Map each STAR to the runways it can feed based on runway-specific transitions"""
         import re
 
+        # ARINC-424 uses `B` as a "both parallels" wildcard — e.g., RW07B
+        # covers both 07L and 07R. Expand it here so downstream runway
+        # matching (which only understands L/C/R) sees every runway the
+        # transition actually serves.
+        def _expand(rw: str):
+            if rw.endswith('B'):
+                base = rw[:-1]
+                return [f"{base}L", f"{base}R"]
+            return [rw]
+
         # Extract runways from STAR waypoint data
         # STARs often have runway-specific transitions like "BRRTO16RW03", "BRRTO16RW08", etc.
         for arrival_name, waypoint_names in self.arrivals.items():
             runways_for_this_star = set()
 
-            # Check if any waypoints in star_waypoints have runway-specific suffixes
-            if arrival_name in self.star_waypoints:
-                for waypoint_name, waypoint in self.star_waypoints[arrival_name].items():
-                    # Check transition_name field for runway patterns (e.g., "RW03", "RW08")
-                    if waypoint.transition_name:
-                        rwy_match = re.search(r'RW(\d{2}[LCR]?)', waypoint.transition_name)
-                        if rwy_match:
-                            runway = rwy_match.group(1)
-                            runways_for_this_star.add(runway)
+            # Check every transition identifier recorded for this STAR.
+            # star_transitions captures names that would otherwise be lost
+            # when shared waypoints overwrite each other in star_waypoints.
+            for trans_name in self.star_transitions.get(arrival_name, set()):
+                rwy_match = re.search(r'RW(\d{2}[LCRB]?)', trans_name)
+                if rwy_match:
+                    for runway in _expand(rwy_match.group(1)):
+                        runways_for_this_star.add(runway)
 
             # Also check the arrivals dictionary keys themselves for runway patterns
             # Some CIFP data encodes runways in the arrival name (e.g., "BRRTO16RW03")
             for key in self.arrivals.keys():
                 if key.startswith(arrival_name):
-                    rwy_match = re.search(r'RW(\d{2}[LCR]?)', key)
+                    rwy_match = re.search(r'RW(\d{2}[LCRB]?)', key)
                     if rwy_match:
-                        runway = rwy_match.group(1)
-                        runways_for_this_star.add(runway)
+                        for runway in _expand(rwy_match.group(1)):
+                            runways_for_this_star.add(runway)
 
             if runways_for_this_star:
                 self.arrival_runways[arrival_name] = sorted(list(runways_for_this_star))
@@ -757,29 +787,34 @@ class CIFPParser:
         """Map each SID to the runways it uses based on runway-specific transitions"""
         import re
 
+        # ARINC-424 `B` = serves both parallels (e.g., RW07B -> 07L + 07R).
+        # Downstream runway matching only understands L/C/R, so expand here.
+        def _expand(rw: str):
+            if rw.endswith('B'):
+                base = rw[:-1]
+                return [f"{base}L", f"{base}R"]
+            return [rw]
+
         # Extract runways from SID waypoint data
         # SIDs often have runway-specific transitions like "RW08", "RW26", etc.
         for departure_name, waypoint_names in self.departures.items():
             runways_for_this_sid = set()
 
-            # Check if any waypoints in sid_waypoints have runway-specific suffixes
-            if departure_name in self.sid_waypoints:
-                for waypoint_name, waypoint in self.sid_waypoints[departure_name].items():
-                    # Check transition_name field for runway patterns (e.g., "RW03", "RW08")
-                    if waypoint.transition_name:
-                        rwy_match = re.search(r'RW(\d{2}[LCR]?)', waypoint.transition_name)
-                        if rwy_match:
-                            runway = rwy_match.group(1)
-                            runways_for_this_sid.add(runway)
+            # Check every transition identifier recorded for this SID.
+            for trans_name in self.sid_transitions.get(departure_name, set()):
+                rwy_match = re.search(r'RW(\d{2}[LCRB]?)', trans_name)
+                if rwy_match:
+                    for runway in _expand(rwy_match.group(1)):
+                        runways_for_this_sid.add(runway)
 
             # Also check the departures dictionary keys themselves for runway patterns
             # Some CIFP data encodes runways in the departure name (e.g., "CTZEN3RW08")
             for key in self.departures.keys():
                 if key.startswith(departure_name):
-                    rwy_match = re.search(r'RW(\d{2}[LCR]?)', key)
+                    rwy_match = re.search(r'RW(\d{2}[LCRB]?)', key)
                     if rwy_match:
-                        runway = rwy_match.group(1)
-                        runways_for_this_sid.add(runway)
+                        for runway in _expand(rwy_match.group(1)):
+                            runways_for_this_sid.add(runway)
 
             if runways_for_this_sid:
                 self.departure_runways[departure_name] = sorted(list(runways_for_this_sid))
