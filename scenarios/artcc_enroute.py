@@ -2406,9 +2406,18 @@ class ArtccEnrouteScenario(BaseScenario):
         REQUIRED_WITH_DELAY_NM = 10.0
         STEP_NM = 5.0
         MAX_STEPS = 60  # up to ~300 NM of polyline available for shifting
+        # When applying the 20 NM in-trail rule would push an arrival more
+        # than this far outside the ARTCC boundary, abandon spatial shifts
+        # for that aircraft and fall back to a 3-minute (per-aircraft
+        # cumulative) spawn delay instead.
+        BOUNDARY_TOLERANCE_NM = 50.0
+        BOUNDARY_DELAY_S = 180  # 3 minutes
 
         no_delay = (spawn_delay_mode == SpawnDelayMode.NONE)
         required = REQUIRED_NO_DELAY_NM if no_delay else REQUIRED_WITH_DELAY_NM
+        # Callsigns that got the 3-minute delay in place of spatial spacing.
+        # Surfaced as a note on the conclusion screen at the end of this pass.
+        delay_swapped: List[str] = []
 
         def _rebuild_downstream_fixes(ctx: Dict, forward_nm: float) -> List[str]:
             """Recompute the filed-route tokens past the shifted spawn,
@@ -2516,6 +2525,29 @@ class ArtccEnrouteScenario(BaseScenario):
                         placed.append(ac)
                         break
 
+                    # Boundary guard (no-delay mode only): if this shift
+                    # would put the aircraft more than BOUNDARY_TOLERANCE_NM
+                    # outside the ARTCC boundary, abandon the spatial shift
+                    # strategy for this aircraft. Apply a cumulative 3-min
+                    # spawn delay relative to the latest-spawning already-
+                    # placed aircraft in this arrival group, and keep the
+                    # aircraft at its current (pre-shift) spawn position.
+                    if no_delay:
+                        nm_outside = self._nm_to_artcc_boundary(
+                            new_spawn['latitude'], new_spawn['longitude'],
+                        )
+                        if nm_outside > BOUNDARY_TOLERANCE_NM:
+                            prior_max = max(
+                                (p.spawn_delay or 0) for p in placed
+                            ) if placed else 0
+                            ac.spawn_delay = max(
+                                ac.spawn_delay or 0,
+                                prior_max + BOUNDARY_DELAY_S,
+                            )
+                            delay_swapped.append(ac.callsign)
+                            placed.append(ac)
+                            break
+
                     # Commit the shift onto the aircraft and its context.
                     ac.latitude = new_spawn['latitude']
                     ac.longitude = new_spawn['longitude']
@@ -2550,6 +2582,19 @@ class ArtccEnrouteScenario(BaseScenario):
                         f"remaining separation may be below {required:.0f} NM."
                     )
                     placed.append(ac)
+
+        # Surface the 3-minute delay substitutions so the user sees which
+        # arrivals couldn't be spaced spatially within the boundary
+        # tolerance. Each affected aircraft spawns at least 3 minutes after
+        # the prior one in its arrival group.
+        if delay_swapped:
+            self.generation_notes.append(
+                f"20 NM in-trail separation would have placed "
+                f"{len(delay_swapped)} arrival(s) more than "
+                f"{BOUNDARY_TOLERANCE_NM:.0f} NM outside the boundary — "
+                f"applied cumulative 3-minute spawn delays instead. "
+                f"Affected: {', '.join(delay_swapped)}."
+            )
 
     def _resolve_enroute_altitude_conflicts(self) -> None:
         """Separate any two airborne aircraft spawning within
