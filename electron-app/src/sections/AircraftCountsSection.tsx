@@ -29,8 +29,12 @@ export function AircraftCountsSection() {
   const arrValue = arrLocked ? sumDiff(config.arrivalDifficulty) : config.numArrivals;
   const enrValue = enrLocked ? sumDiff(config.enrouteDifficulty) : config.numEnroute;
 
+  const transientTitle = isEnroute
+    ? 'Transient Aircraft Counts and Specifications'
+    : 'Aircraft Counts';
+
   return (
-    <Section title="Aircraft Counts">
+    <Section title={transientTitle}>
       <div className="row" style={{ gap: 16, flexWrap: 'wrap' }}>
         {showDepartures && (
           <label className="stack" style={{ gap: 4 }}>
@@ -96,6 +100,13 @@ export function AircraftCountsSection() {
           </label>
         )}
       </div>
+
+      {showEnroute && (
+        <p style={{ fontSize: 11, color: 'var(--fg-disabled)', margin: 0 }}>
+          These inputs do not specify arrival or departure aircraft — those
+          are set per-airport in the Airports &amp; Routes section.
+        </p>
+      )}
 
       {showEnroute && (
         <div className="row" style={{ gap: 24, flexWrap: 'wrap', marginTop: 12 }}>

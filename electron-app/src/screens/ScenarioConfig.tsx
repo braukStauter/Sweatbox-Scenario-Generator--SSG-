@@ -45,33 +45,19 @@ export function ScenarioConfig() {
   const isEnroute = config.scenarioType === 'enroute';
   const sumAirportCounts = (list: { count?: number | '' }[]) =>
     list.reduce((t, a) => t + (Number(a.count) || 0), 0);
-  // Enroute gets its dep/arr totals from per-airport rows; everything else
-  // uses the global numDepartures/numArrivals (possibly overridden by difficulty).
-  const effectiveDep = isEnroute
-    ? sumAirportCounts(config.departureAirports)
-    : config.departureDifficulty.enabled
-      ? sumDiff(config.departureDifficulty)
-      : config.numDepartures;
+  // Enroute gets its arrival total from per-airport rows; everything else
+  // uses the global numArrivals (possibly overridden by difficulty). Used by
+  // the arrivals_approach validator below to decide whether STAR config is
+  // required.
   const effectiveArr = isEnroute
     ? sumAirportCounts(config.arrivalAirports)
     : config.arrivalDifficulty.enabled
       ? sumDiff(config.arrivalDifficulty)
       : config.numArrivals;
-  const effectiveEnr = config.enrouteDifficulty.enabled
-    ? sumDiff(config.enrouteDifficulty)
-    : config.numEnroute;
 
   function validateCategory(id: string): string | null {
     switch (id) {
       case 'aircraft_traffic':
-        if (
-          effectiveDep <= 0 &&
-          effectiveArr <= 0 &&
-          effectiveEnr <= 0 &&
-          (config.numOverflight || 0) <= 0
-        ) {
-          return 'At least one aircraft count must be greater than zero.';
-        }
         if (config.wakeBiasEnabled && !isBiasValid(config.wakeBias)) {
           return 'Wake category bias must sum to exactly 100%.';
         }
