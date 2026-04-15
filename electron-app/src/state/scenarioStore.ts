@@ -45,6 +45,8 @@ function initialConfig(): ScenarioConfig {
     arrivalAirports: [],
     departureAirports: [],
     enrouteDifficulty: { enabled: false, easy: 0, medium: 0, hard: 0 },
+    arrivalSpawn: { minDistanceNm: 200, maxDistanceNm: 300 },
+    overflightSpawn: { minDistanceNm: 10, maxDistanceNm: 25 },
     presetCommands: [],
     wakeBiasEnabled: false,
     wakeBias: defaultBias(),
@@ -53,6 +55,7 @@ function initialConfig(): ScenarioConfig {
       departures: { count: 0, mode: 'VFR' },
       arrivals: { count: 0, mode: 'VFR' },
     },
+    customBoundary: { enabled: false, waypoints: [] },
   };
 }
 

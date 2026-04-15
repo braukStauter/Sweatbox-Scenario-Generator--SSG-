@@ -1,10 +1,68 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import { generateScenario } from './ipc/scenario';
 import { listAirports } from './ipc/airports';
 import { uploadScenario, resetVnasSession, clearVnasCookies } from './ipc/vnas';
 import type { ScenarioConfig } from '../shared/types';
+
+const RELEASES_API =
+  'https://api.github.com/repos/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases/latest';
+const RELEASES_HTML =
+  'https://github.com/braukStauter/Sweatbox-Scenario-Generator--SSG-/releases/latest';
+
+function compareSemver(a: string, b: string): number {
+  const parts = (s: string) =>
+    s.trim().replace(/^v/i, '').split(/[.-]/).map(p => parseInt(p, 10) || 0);
+  const aa = parts(a);
+  const bb = parts(b);
+  const n = Math.max(aa.length, bb.length);
+  for (let i = 0; i < n; i++) {
+    const av = aa[i] ?? 0;
+    const bv = bb[i] ?? 0;
+    if (av > bv) return 1;
+    if (av < bv) return -1;
+  }
+  return 0;
+}
+
+async function checkForUpdates(): Promise<{
+  currentVersion: string;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  releaseUrl: string;
+  error?: string;
+}> {
+  const currentVersion = app.getVersion();
+  try {
+    const res = await fetch(RELEASES_API, {
+      headers: { Accept: 'application/vnd.github+json' },
+    });
+    if (!res.ok) {
+      return {
+        currentVersion,
+        latestVersion: null,
+        updateAvailable: false,
+        releaseUrl: RELEASES_HTML,
+        error: `GitHub responded ${res.status}`,
+      };
+    }
+    const data = (await res.json()) as { tag_name?: string; html_url?: string };
+    const latestVersion = (data.tag_name || '').replace(/^v/i, '') || null;
+    const releaseUrl = data.html_url || RELEASES_HTML;
+    const updateAvailable =
+      !!latestVersion && compareSemver(latestVersion, currentVersion) > 0;
+    return { currentVersion, latestVersion, updateAvailable, releaseUrl };
+  } catch (err) {
+    return {
+      currentVersion,
+      latestVersion: null,
+      updateAvailable: false,
+      releaseUrl: RELEASES_HTML,
+      error: String(err),
+    };
+  }
+}
 
 const isDev = !app.isPackaged;
 
@@ -50,7 +108,13 @@ process.on('uncaughtException', err => console.error('[main] uncaughtException',
 process.on('unhandledRejection', err => console.error('[main] unhandledRejection', err));
 
 function registerIpc() {
-  ipcMain.handle('scenario:generate', (_e, config: ScenarioConfig) => generateScenario(config));
+  ipcMain.handle('scenario:generate', (e, config: ScenarioConfig) =>
+    generateScenario(config, progress => {
+      if (!e.sender.isDestroyed()) {
+        e.sender.send('scenario:progress', progress);
+      }
+    }),
+  );
   ipcMain.handle('airports:list', () => listAirports());
   ipcMain.handle('fs:saveScenario', async (_e, filename: string, contents: string) => {
     const res = await dialog.showSaveDialog({ defaultPath: filename });
@@ -93,6 +157,8 @@ function registerIpc() {
   ipcMain.handle('vnas:upload', (_e, contents: string) => uploadScenario(contents));
   ipcMain.handle('vnas:reset', () => resetVnasSession());
   ipcMain.handle('vnas:clearCookies', () => clearVnasCookies());
+  ipcMain.handle('app:checkForUpdates', () => checkForUpdates());
+  ipcMain.handle('app:openExternal', (_e, url: string) => shell.openExternal(url));
 }
 
 app.whenReady().then(() => {

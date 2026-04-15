@@ -29,8 +29,12 @@ export function AircraftCountsSection() {
   const arrValue = arrLocked ? sumDiff(config.arrivalDifficulty) : config.numArrivals;
   const enrValue = enrLocked ? sumDiff(config.enrouteDifficulty) : config.numEnroute;
 
+  const transientTitle = isEnroute
+    ? 'Transient Aircraft Counts and Specifications'
+    : 'Aircraft Counts';
+
   return (
-    <Section title="Aircraft Counts">
+    <Section title={transientTitle}>
       <div className="row" style={{ gap: 16, flexWrap: 'wrap' }}>
         {showDepartures && (
           <label className="stack" style={{ gap: 4 }}>
@@ -96,6 +100,97 @@ export function AircraftCountsSection() {
           </label>
         )}
       </div>
+
+      {showEnroute && (
+        <p style={{ fontSize: 11, color: 'var(--fg-disabled)', margin: 0 }}>
+          These inputs do not specify arrival or departure aircraft — those
+          are set per-airport in the Airports &amp; Routes section.
+        </p>
+      )}
+
+      {showEnroute && (
+        <div className="row" style={{ gap: 24, flexWrap: 'wrap', marginTop: 12 }}>
+          <div className="stack" style={{ gap: 4 }}>
+            <span style={{ fontSize: 12, color: 'var(--fg-secondary)' }}>
+              Arrival spawn distance from destination (NM)
+            </span>
+            <div className="row" style={{ gap: 8 }}>
+              <ThemedInput
+                type="number"
+                min={0}
+                value={config.arrivalSpawn.minDistanceNm}
+                onChange={e =>
+                  update({
+                    arrivalSpawn: {
+                      ...config.arrivalSpawn,
+                      minDistanceNm: Math.max(0, Number(e.target.value) || 0),
+                    },
+                  })
+                }
+                style={{ width: 80 }}
+              />
+              <span style={{ alignSelf: 'center', color: 'var(--fg-secondary)' }}>to</span>
+              <ThemedInput
+                type="number"
+                min={0}
+                value={config.arrivalSpawn.maxDistanceNm}
+                onChange={e =>
+                  update({
+                    arrivalSpawn: {
+                      ...config.arrivalSpawn,
+                      maxDistanceNm: Math.max(0, Number(e.target.value) || 0),
+                    },
+                  })
+                }
+                style={{ width: 80 }}
+              />
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--fg-disabled)' }}>
+              Aircraft spawn within this range of their destination airport.
+              Per-airport override available in Airports & Routes.
+            </span>
+          </div>
+          <div className="stack" style={{ gap: 4 }}>
+            <span style={{ fontSize: 12, color: 'var(--fg-secondary)' }}>
+              Overflight spawn distance outside boundary (NM)
+            </span>
+            <div className="row" style={{ gap: 8 }}>
+              <ThemedInput
+                type="number"
+                min={0}
+                value={config.overflightSpawn.minDistanceNm}
+                onChange={e =>
+                  update({
+                    overflightSpawn: {
+                      ...config.overflightSpawn,
+                      minDistanceNm: Math.max(0, Number(e.target.value) || 0),
+                    },
+                  })
+                }
+                style={{ width: 80 }}
+              />
+              <span style={{ alignSelf: 'center', color: 'var(--fg-secondary)' }}>to</span>
+              <ThemedInput
+                type="number"
+                min={0}
+                value={config.overflightSpawn.maxDistanceNm}
+                onChange={e =>
+                  update({
+                    overflightSpawn: {
+                      ...config.overflightSpawn,
+                      maxDistanceNm: Math.max(0, Number(e.target.value) || 0),
+                    },
+                  })
+                }
+                style={{ width: 80 }}
+              />
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--fg-disabled)' }}>
+              Random per aircraft. All distances are outside the ARTCC.
+            </span>
+          </div>
+        </div>
+      )}
 
       {showDepartures && (
         <DifficultyBlock

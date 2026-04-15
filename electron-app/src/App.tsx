@@ -5,6 +5,7 @@ import { ScenarioTypeSelection } from './screens/ScenarioTypeSelection';
 import { ScenarioConfig } from './screens/ScenarioConfig';
 import { Generation } from './screens/Generation';
 import { SplashScreen } from './screens/SplashScreen';
+import { UpdateNotice } from './components/UpdateNotice';
 
 export function App() {
   const screen = useScenarioStore(s => s.screen);
@@ -14,6 +15,7 @@ export function App() {
 
   return (
     <div style={{ minHeight: '100vh', padding: '16px 24px 24px' }}>
+      <UpdateNotice />
       {screen === 'airport' && <AirportSelection />}
       {screen === 'type' && <ScenarioTypeSelection />}
       {screen === 'config' && <ScenarioConfig />}

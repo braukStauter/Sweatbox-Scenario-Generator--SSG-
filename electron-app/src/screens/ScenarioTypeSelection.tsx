@@ -34,6 +34,8 @@ export function ScenarioTypeSelection() {
       filename: picked.filename,
       contents: picked.contents,
       flightsUsed: [],
+      aircraftCount: 0,
+      generationStats: undefined,
     });
     setScreen('generation');
   };

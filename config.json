@@ -33,11 +33,11 @@
   "common_ga_aircraft": [
     "C172", "C182", "BE36", "C208", "PA32", "SR22", "C210", "P28A", "BE58"
   ],
-  "_comment_artcc_airport_groups": "Named groups of airports for enroute scenario arrival/departure selections. Format: ICAO:runway,runway,runway,ICAO:runway,runway. Runways specify ACTIVE runways for CIFP SID/STAR parsing and routing. The group name serves as the dropdown label. You should have a geojson file in /airport_data/ for each airport you intend to use.",
+  "_comment_artcc_airport_groups": "Named groups of airports for enroute scenario arrival/departure selections. Extended format: 'ICAO:runways:STARs; ICAO:runways:STARs' — airports are semicolon-separated, and each airport has up to three colon-fields: the ICAO, a comma-separated runway list, and an optional comma-separated list of 5-letter STAR prefixes (no trailing runway digit; used as a flight-pool filter on arrival airports). Leave the STAR field empty (trailing ':' or ':;') for 'any STAR'. Legacy flat-comma format ('KPHX:08,7R,KTUS:12') is still accepted but can only populate runways. You should have a geojson file in /airport_data/ for each airport you intend to use.",
   "artcc_airport_groups": {
     "ZAB": {
-      "Primary Airports (East)": "KPHX:08,7R,KTUS:12,KABQ:08,03,KAMA:04,KELP:04,8R",
-      "Primary Airports (West)": "KPHX:26,25L,KTUS:30,KABQ:26,21,KAMA:22,KELP:22,26L"
+      "Primary Airports (East)": "KPHX:08,7R:; KTUS:12:; KABQ:08,03:; KAMA:04:; KELP:04,8R:",
+      "Primary Airports (West)": "KPHX:26,25L:; KTUS:30:; KABQ:26,21:; KAMA:22:; KELP:22,26L:"
     }
   }
 }

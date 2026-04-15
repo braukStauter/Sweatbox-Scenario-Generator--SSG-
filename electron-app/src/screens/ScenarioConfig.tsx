@@ -45,33 +45,19 @@ export function ScenarioConfig() {
   const isEnroute = config.scenarioType === 'enroute';
   const sumAirportCounts = (list: { count?: number | '' }[]) =>
     list.reduce((t, a) => t + (Number(a.count) || 0), 0);
-  // Enroute gets its dep/arr totals from per-airport rows; everything else
-  // uses the global numDepartures/numArrivals (possibly overridden by difficulty).
-  const effectiveDep = isEnroute
-    ? sumAirportCounts(config.departureAirports)
-    : config.departureDifficulty.enabled
-      ? sumDiff(config.departureDifficulty)
-      : config.numDepartures;
+  // Enroute gets its arrival total from per-airport rows; everything else
+  // uses the global numArrivals (possibly overridden by difficulty). Used by
+  // the arrivals_approach validator below to decide whether STAR config is
+  // required.
   const effectiveArr = isEnroute
     ? sumAirportCounts(config.arrivalAirports)
     : config.arrivalDifficulty.enabled
       ? sumDiff(config.arrivalDifficulty)
       : config.numArrivals;
-  const effectiveEnr = config.enrouteDifficulty.enabled
-    ? sumDiff(config.enrouteDifficulty)
-    : config.numEnroute;
 
   function validateCategory(id: string): string | null {
     switch (id) {
       case 'aircraft_traffic':
-        if (
-          effectiveDep <= 0 &&
-          effectiveArr <= 0 &&
-          effectiveEnr <= 0 &&
-          (config.numOverflight || 0) <= 0
-        ) {
-          return 'At least one aircraft count must be greater than zero.';
-        }
         if (config.wakeBiasEnabled && !isBiasValid(config.wakeBias)) {
           return 'Wake category bias must sum to exactly 100%.';
         }
@@ -87,6 +73,22 @@ export function ScenarioConfig() {
           config.departureAirports.filter(a => a.icao.trim()).length === 0
         ) {
           return 'At least one arrival or departure airport is required.';
+        }
+        {
+          const missingArr = config.arrivalAirports
+            .filter(a => a.icao.trim())
+            .filter(a => !(Number(a.count) > 0));
+          if (missingArr.length > 0) {
+            const list = missingArr.map(a => a.icao.trim().toUpperCase()).join(', ');
+            return `Aircraft count is required for each arrival airport (missing: ${list}).`;
+          }
+          const missingDep = config.departureAirports
+            .filter(a => a.icao.trim())
+            .filter(a => !(Number(a.count) > 0));
+          if (missingDep.length > 0) {
+            const list = missingDep.map(a => a.icao.trim().toUpperCase()).join(', ');
+            return `Aircraft count is required for each departure airport (missing: ${list}).`;
+          }
         }
         return null;
       case 'timing_spawning':
@@ -114,6 +116,17 @@ export function ScenarioConfig() {
           return 'At least one FRD point is required in FRD mode.';
         }
         return null;
+      case 'advanced':
+      case 'custom_commands': {
+        const cb = config.customBoundary;
+        if (cb?.enabled) {
+          const count = cb.waypoints.filter(w => w.trim()).length;
+          if (count < 4) {
+            return `Custom boundary requires at least 4 waypoints (have ${count}).`;
+          }
+        }
+        return null;
+      }
       default:
         return null;
     }

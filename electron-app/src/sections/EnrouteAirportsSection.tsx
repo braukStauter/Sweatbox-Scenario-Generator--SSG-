@@ -5,10 +5,17 @@ import { RowListInput, type ColumnDef } from '../components/RowListInput';
 import { parseAirportGroupString } from '../../shared/airportGroups';
 import type { AirportRunwaysEntry, SsgConfig } from '../../shared/types';
 
-const COLUMNS: ColumnDef<AirportRunwaysEntry>[] = [
+const DEPARTURE_COLUMNS: ColumnDef<AirportRunwaysEntry>[] = [
   { key: 'icao', label: 'ICAO', placeholder: 'KPHX', flexBasis: '140px' },
   { key: 'runways', label: 'Runways', placeholder: '08, 7R', flexBasis: '220px' },
-  { key: 'count', label: 'Aircraft', type: 'number', placeholder: '5', flexBasis: '90px' },
+  { key: 'count', label: 'Aircraft *', type: 'number', placeholder: '5', flexBasis: '90px' },
+];
+
+const ARRIVAL_COLUMNS: ColumnDef<AirportRunwaysEntry>[] = [
+  { key: 'icao', label: 'ICAO', placeholder: 'KPHX', flexBasis: '140px' },
+  { key: 'runways', label: 'Runways', placeholder: '08, 7R', flexBasis: '180px' },
+  { key: 'arrivals', label: 'Arrivals (STARs)', placeholder: 'EAGUL, HYDRR', flexBasis: '200px' },
+  { key: 'count', label: 'Aircraft *', type: 'number', placeholder: '5', flexBasis: '90px' },
 ];
 
 /**
@@ -102,8 +109,8 @@ export function EnrouteAirportsSection() {
         emptyHint="No arrival airports configured."
         value={config.arrivalAirports}
         onChange={v => update({ arrivalAirports: v })}
-        columns={COLUMNS}
-        newRow={(): AirportRunwaysEntry => ({ icao: '', runways: '', count: '' })}
+        columns={ARRIVAL_COLUMNS}
+        newRow={(): AirportRunwaysEntry => ({ icao: '', runways: '', arrivals: '', count: '' })}
       />
       <RowListInput
         mode="object"
@@ -112,12 +119,19 @@ export function EnrouteAirportsSection() {
         emptyHint="No departure airports configured."
         value={config.departureAirports}
         onChange={v => update({ departureAirports: v })}
-        columns={COLUMNS}
+        columns={DEPARTURE_COLUMNS}
         newRow={(): AirportRunwaysEntry => ({ icao: '', runways: '', count: '' })}
       />
       <p style={{ fontSize: 11, color: 'var(--fg-disabled)', margin: 0 }}>
         Aircraft counts here replace the global Arrivals/Departures totals on
         the Aircraft & Traffic page when generating an enroute scenario.
+        <br />
+        Arrivals (STARs): 5-letter STAR prefix only — no trailing runway
+        number (e.g. <code>EAGUL</code>, not <code>EAGUL6</code>). Leave
+        blank to allow any STAR into that airport. When both runways and
+        arrivals are set, they must be compatible — an advisory is shown
+        on the conclusion screen otherwise.
+        <br />* required for arrival airports.
       </p>
     </Section>
   );

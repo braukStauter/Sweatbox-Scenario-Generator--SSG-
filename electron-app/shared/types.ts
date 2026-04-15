@@ -74,6 +74,20 @@ export interface AirportRunwaysEntry {
    *  departure/arrival count. Defaults to 0 (airport present but contributes
    *  no aircraft) — use `''` for "not yet set" via the ThemedInput. */
   count?: number | '';
+  /** Enroute arrivals only: override the scenario-wide spawn distance band
+   *  for this airport (NM from destination). Leave both blank to use the
+   *  scenario-wide `arrivalSpawn`. */
+  spawnMinNm?: number | '';
+  spawnMaxNm?: number | '';
+  /** Enroute arrivals only: comma-separated 5-letter STAR prefixes (no
+   *  trailing runway digit) to filter the flight pool. Empty = all STARs.
+   *  Example: "EAGUL, HYDRR" matches EAGUL6, HYDRR3, etc. */
+  arrivals?: string;
+}
+
+export interface SpawnDistanceBand {
+  minDistanceNm: number;
+  maxDistanceNm: number;
 }
 
 export type PresetGroupType =
@@ -139,18 +153,55 @@ export interface ScenarioConfig {
   departureAirports: AirportRunwaysEntry[];
   enrouteDifficulty: DifficultyCounts;
 
+  /** Enroute-only: distance (NM) from destination at which arrivals spawn.
+   *  Per-airport overrides live on `AirportRunwaysEntry.spawnMinNm/Max`. */
+  arrivalSpawn: SpawnDistanceBand;
+  /** Enroute-only: distance (NM) outside the ARTCC boundary where overflight
+   *  aircraft spawn. Random per aircraft between min and max. */
+  overflightSpawn: SpawnDistanceBand;
+
   presetCommands: PresetCommandRule[];
 
   wakeBiasEnabled: boolean;
   wakeBias: WakeBias;
 
   ga: GaConfig;
+
+  /** Enroute-only: optional user-defined polygon replacing the ARTCC
+   *  boundary for all in/out/near-boundary checks (named after the vertices
+   *  the user enters — waypoint identifiers resolved at generation time).
+   *  Requires at least 4 waypoints when enabled. */
+  customBoundary?: {
+    enabled: boolean;
+    waypoints: string[];
+  };
+}
+
+export interface GenerationStats {
+  requested_total: number;
+  actual_total: number;
+  requested: Record<string, number>;
+  actual: Record<string, number>;
+  shortfall: Record<string, number>;
+  /** Non-blocking configuration / generation warnings surfaced on the
+   *  conclusion screen (runway/STAR mismatches, invalid STAR tokens,
+   *  spawns that extended past the arrival band to maintain separation). */
+  warnings?: string[];
+  /** Purely informational notes surfaced on the conclusion screen. */
+  notes?: string[];
 }
 
 export interface ScenarioResult {
   filename: string;
   contents: string;
   flightsUsed: Flight[];
+  /** Count of aircraft in the generated scenario. Sourced from the Python
+   *  bridge's `aircraft_count` field. For imported scenarios it defaults to
+   *  `flightsUsed.length`. */
+  aircraftCount: number;
+  /** Enroute-only: per-type requested vs. actual counts. Lets the UI call
+   *  out shortfalls when the pool couldn't satisfy every requested slot. */
+  generationStats?: GenerationStats;
 }
 
 export interface VNASUploadResult {
@@ -175,6 +226,9 @@ declare global {
     ssg: {
       scenario: {
         generate(config: ScenarioConfig): Promise<ScenarioResult>;
+        onProgress(
+          cb: (ev: { stage: string; message: string; percent: number }) => void,
+        ): () => void;
       };
       fs: {
         saveScenario(filename: string, contents: string): Promise<string>;
@@ -188,6 +242,16 @@ declare global {
         upload(scenarioContents: string): Promise<VNASUploadResult>;
         reset(): Promise<void>;
         clearCookies(): Promise<void>;
+      };
+      app: {
+        checkForUpdates(): Promise<{
+          currentVersion: string;
+          latestVersion: string | null;
+          updateAvailable: boolean;
+          releaseUrl: string;
+          error?: string;
+        }>;
+        openExternal(url: string): Promise<void>;
       };
     };
   }

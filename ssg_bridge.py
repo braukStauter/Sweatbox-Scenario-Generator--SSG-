@@ -16,6 +16,7 @@ tee'd to stderr so the Electron main process can surface errors verbatim.
 import json
 import logging
 import os
+import re
 import sys
 import traceback
 from datetime import datetime
@@ -186,6 +187,42 @@ def parse_runway_map(value):
     return out
 
 
+def parse_arrival_procedure_map(value):
+    """Pull per-airport STAR-prefix filters off the enroute arrival-airports
+    row shape. Returns `({'KPHX': ['EAGUL', 'HYDRR']}, ['warning', ...])`.
+
+    Invalid tokens (containing digits, or not alphabetic) are dropped with a
+    warning string so the conclusion screen can surface them. Input is the
+    same `arrivalAirports` list the UI already sends; each row may carry an
+    `arrivals` field (either a list or a CSV string).
+    """
+    out = {}
+    warnings = []
+    if not value or not isinstance(value, list):
+        return out, warnings
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        icao = (item.get('icao') or item.get('airport') or '').strip().upper()
+        if not icao:
+            continue
+        raw = item.get('arrivals')
+        tokens = parse_list(raw, upper=True)
+        valid = []
+        for tok in tokens:
+            if re.match(r'^[A-Z]+$', tok):
+                valid.append(tok)
+            else:
+                warnings.append(
+                    f"{icao}: ignored invalid STAR prefix '{tok}' — use the "
+                    f"5-letter base name without the trailing runway number "
+                    f"(e.g. EAGUL, not EAGUL6)."
+                )
+        if valid:
+            out[icao] = valid
+    return out, warnings
+
+
 def parse_waypoint_star_pairs(value):
     """Accept either:
       - list of {waypoint, star} objects (new UI), or
@@ -271,6 +308,11 @@ def load_parsers(airport):
 
 
 from utils.data_pipeline import to_icao  # noqa: E402,F401
+
+
+# Populated by `dispatch()` for enroute runs and read by `main()` so we
+# can include per-type generation stats in the JSON response.
+_LAST_GENERATION_STATS = None  # Optional[dict]
 
 
 def dispatch(cfg):
@@ -397,6 +439,61 @@ def dispatch(cfg):
         arr_counts = _extract_counts(arr_items)
         dep_counts = _extract_counts(dep_items)
 
+        def _extract_bands(items):
+            """{ICAO: (min_nm, max_nm)} from per-airport spawnMinNm/spawnMaxNm."""
+            if not isinstance(items, list):
+                return {}
+            out = {}
+            for i in items:
+                if not isinstance(i, dict):
+                    continue
+                icao = (i.get('icao') or i.get('airport') or '').strip().upper()
+                if not icao:
+                    continue
+                lo = i.get('spawnMinNm')
+                hi = i.get('spawnMaxNm')
+                try:
+                    lo_f = float(lo) if lo not in (None, '') else None
+                    hi_f = float(hi) if hi not in (None, '') else None
+                except (TypeError, ValueError):
+                    continue
+                if lo_f is None or hi_f is None or hi_f < lo_f:
+                    continue
+                out[icao] = (lo_f, hi_f)
+            return out
+
+        per_airport_arr_bands = _extract_bands(arr_items)
+
+        # STAR prefix filter on the arrival flight pool (e.g., only EAGUL
+        # arrivals to KPHX). Invalid tokens are dropped with warnings that
+        # get surfaced on the conclusion screen alongside shortfall.
+        per_airport_arr_procs, arr_proc_warnings = parse_arrival_procedure_map(arr_items)
+
+        def _parse_band(val, default):
+            if isinstance(val, dict):
+                lo = val.get('minDistanceNm') or val.get('min')
+                hi = val.get('maxDistanceNm') or val.get('max')
+                try:
+                    lo_f = float(lo); hi_f = float(hi)
+                    if hi_f >= lo_f:
+                        return (lo_f, hi_f)
+                except (TypeError, ValueError):
+                    pass
+            return default
+
+        arr_band = _parse_band(cfg.get('arrivalSpawn'), (80.0, 140.0))
+        ovf_band = _parse_band(cfg.get('overflightSpawn'), (10.0, 25.0))
+
+        # Optional custom scenario boundary. When enabled and ≥4 waypoints
+        # are supplied, the scenario replaces the ARTCC polygon with a
+        # user-defined polygon built from these waypoints. The UI validates
+        # the 4-waypoint minimum; the scenario also guards against it.
+        cb = cfg.get('customBoundary') or {}
+        custom_boundary_waypoints = (
+            [w for w in (cb.get('waypoints') or []) if isinstance(w, str) and w.strip()]
+            if cb.get('enabled') else None
+        )
+
         # When the per-airport counts are populated, they authoritatively
         # define the enroute arrivals/departures total. Renderer already
         # does this math; this makes direct-bridge invocations robust too.
@@ -415,6 +512,11 @@ def dispatch(cfg):
             arrival_airport_runways=arr_rwys, departure_airport_runways=dep_rwys,
             per_airport_arrival_counts=arr_counts,
             per_airport_departure_counts=dep_counts,
+            arrival_spawn_band=arr_band,
+            overflight_spawn_band=ovf_band,
+            per_airport_arrival_bands=per_airport_arr_bands,
+            per_airport_arrival_procedures=per_airport_arr_procs,
+            config_warnings=arr_proc_warnings,
             difficulty_config_enroute=enr_diff,
             difficulty_config_arrivals=arr_diff,
             difficulty_config_departures=dep_diff,
@@ -422,7 +524,12 @@ def dispatch(cfg):
             total_session_minutes=total_minutes,
             cached_departures_pool=None, cached_arrivals_pool=None,
             cached_transient_pool=None,
+            custom_boundary_waypoints=custom_boundary_waypoints,
         )
+        # Expose generation stats on the module so `main()` can include
+        # them in the bridge JSON response (enroute only).
+        global _LAST_GENERATION_STATS
+        _LAST_GENERATION_STATS = getattr(sc, 'generation_stats', None)
         return aircraft, airport
 
     # --- Airport-based -----------------------------------------------------
@@ -530,12 +637,15 @@ def main(config_path):
         str(out_dir),
     )
     logger.info(f"Generated {len(aircraft)} aircraft -> {filename}")
-    print(json.dumps({
+    response = {
         'status': 'ok',
         'filename': str(filename),
         'aircraft_count': len(aircraft),
         'logFile': str(log_path),
-    }))
+    }
+    if _LAST_GENERATION_STATS:
+        response['generation_stats'] = _LAST_GENERATION_STATS
+    print(json.dumps(response))
 
 
 if __name__ == '__main__':

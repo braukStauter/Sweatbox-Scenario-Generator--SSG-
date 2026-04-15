@@ -82,19 +82,19 @@ export function AirportSelection() {
               onClick={() => setEnroute(true)}
               title="Enroute (ARTCC) Scenario"
               description="Create an enroute scenario."
-            />
-
-            {enroute && (
-              <div className="row" style={{ gap: 8, marginTop: 4 }}>
-                <ThemedInput
-                  placeholder="ARTCC (e.g. ZAB)"
-                  value={artcc}
-                  maxLength={3}
-                  onChange={e => setArtcc(e.target.value.toUpperCase())}
-                  style={{ maxWidth: 180 }}
-                />
-              </div>
-            )}
+            >
+              {enroute && (
+                <div className="row" style={{ gap: 8 }}>
+                  <ThemedInput
+                    placeholder="ARTCC (e.g. ZAB)"
+                    value={artcc}
+                    maxLength={3}
+                    onChange={e => setArtcc(e.target.value.toUpperCase())}
+                    style={{ maxWidth: 180 }}
+                  />
+                </div>
+              )}
+            </SelectableCard>
           </div>
 
           <div className="row" style={{ marginTop: 16, justifyContent: 'flex-end', flexShrink: 0 }}>

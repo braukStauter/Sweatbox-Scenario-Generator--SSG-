@@ -577,6 +577,7 @@ class FlightDataAPIClient:
         depproc: Optional[str] = None,
         arrproc: Optional[str] = None,
         wakecat: Optional[str] = None,
+        start_offset: int = 0,
         progress_callback: Optional[Callable[[str], None]] = None
     ) -> Optional[List[Dict[str, Any]]]:
         """
@@ -597,7 +598,7 @@ class FlightDataAPIClient:
             List of all flight dictionaries, or None if request fails
         """
         all_flights = []
-        offset = 0
+        offset = max(0, int(start_offset))
 
         while len(all_flights) < max_flights:
             # Calculate limit for this page
@@ -637,7 +638,10 @@ class FlightDataAPIClient:
             if not pagination.get('hasMore', False) or not flights:
                 break
 
-        logger.info(f"Fetched total of {len(all_flights)} flights via pagination")
+        logger.info(
+            f"Fetched {len(all_flights)} flights via pagination "
+            f"(start_offset={start_offset})"
+        )
         return all_flights
 
     def fetch_all_artcc_flights(
@@ -645,6 +649,7 @@ class FlightDataAPIClient:
         artcc_id: str,
         max_flights: int = 2000,
         page_size: int = 500,
+        start_offset: int = 0,
         progress_callback: Optional[Callable[[str], None]] = None
     ) -> Optional[List[Dict[str, Any]]]:
         """
@@ -660,7 +665,7 @@ class FlightDataAPIClient:
             List of all flight dictionaries, or None if request fails
         """
         all_flights = []
-        offset = 0
+        offset = max(0, int(start_offset))
 
         while len(all_flights) < max_flights:
             # Calculate limit for this page
@@ -695,7 +700,10 @@ class FlightDataAPIClient:
             if not pagination.get('hasMore', False) or not flights:
                 break
 
-        logger.info(f"Fetched total of {len(all_flights)} flights for ARTCC {artcc_id} via pagination")
+        logger.info(
+            f"Fetched {len(all_flights)} flights for ARTCC {artcc_id} "
+            f"(start_offset={start_offset})"
+        )
         return all_flights
 
     def clear_cache(self):

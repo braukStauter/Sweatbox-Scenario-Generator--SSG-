@@ -193,6 +193,62 @@ class ARTCCBoundaries:
         return None
 
 
+class CustomBoundary:
+    """Drop-in replacement for :class:`ARTCCBoundaries` that answers with a
+    user-defined polygon instead of the facility's ARTCC polygon.
+
+    The public surface mirrors the methods the enroute scenario actually
+    calls — ``is_point_in_artcc``, ``get_artcc_polygon``, ``get_artcc_bbox``
+    — so swapping one for the other requires no call-site changes. The
+    ``artcc_id`` parameter is ignored on every method; the polygon is
+    single-feature and scoped to this instance.
+
+    Expects ``polygon_coords`` as a list of ``(lon, lat)`` tuples in the
+    order the user entered the waypoints. The last vertex is auto-closed
+    to the first if the caller didn't already close the ring.
+    """
+
+    def __init__(self, polygon_coords: List[Tuple[float, float]]):
+        self._polygon: List[Tuple[float, float]] = [
+            (float(lon), float(lat)) for lon, lat in polygon_coords
+        ]
+        if (
+            len(self._polygon) >= 3
+            and self._polygon[0] != self._polygon[-1]
+        ):
+            self._polygon.append(self._polygon[0])
+
+    def is_point_in_artcc(self, lat: float, lon: float,
+                            artcc_id: Optional[str] = None) -> bool:
+        if len(self._polygon) < 4:
+            # Degenerate polygon (needs at least 3 unique vertices + close).
+            return False
+        return point_in_polygon(lat, lon, self._polygon)
+
+    def get_artcc_polygon(
+        self, artcc_id: Optional[str] = None,
+    ) -> Optional[List[Tuple[float, float]]]:
+        return list(self._polygon) if self._polygon else None
+
+    def get_artcc_bbox(
+        self, artcc_id: Optional[str] = None,
+    ) -> Optional[Tuple[float, float, float, float]]:
+        if not self._polygon:
+            return None
+        lons = [p[0] for p in self._polygon]
+        lats = [p[1] for p in self._polygon]
+        return (min(lons), min(lats), max(lons), max(lats))
+
+    def get_artcc_center(
+        self, artcc_id: Optional[str] = None,
+    ) -> Optional[Tuple[float, float]]:
+        bbox = self.get_artcc_bbox()
+        if not bbox:
+            return None
+        min_lon, min_lat, max_lon, max_lat = bbox
+        return ((min_lat + max_lat) / 2, (min_lon + max_lon) / 2)
+
+
 # Global singleton instance
 _global_artcc_boundaries = None
 
