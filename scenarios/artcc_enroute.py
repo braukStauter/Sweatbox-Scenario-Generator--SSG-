@@ -1548,6 +1548,15 @@ class ArtccEnrouteScenario(BaseScenario):
             'arrival_airport': arrival,
             'min_nm': min_nm,
             'max_nm': max_nm,
+            # Data needed to rebuild the navigation path after a proximity
+            # shift: the filed-route waypoint sequence with cumulative
+            # distances lets us recompute which fixes lie downstream of the
+            # new spawn position.
+            'star_name': arr_proc,
+            'arrival_runway': arrival_runway,
+            'filed_names_snap': spawn.get('_filed_names_snap') or [],
+            'filed_cum_snap': spawn.get('_filed_cum_snap') or [],
+            'filed_star_base': spawn.get('_filed_star_base') or '',
         }
         return aircraft
 
@@ -2179,6 +2188,25 @@ class ArtccEnrouteScenario(BaseScenario):
                     f"(attempt {attempt + 1}/{max_shifts}); skipping"
                 )
                 return None
+            # Carry forward the filed-route snapshot so the nav-path builder
+            # sees fixes past the shifted spawn. ``_shift_spawn_back_on_polyline``
+            # doesn't know about filed_coords/filed_cum, so we rebuild
+            # ``_downstream_filed_fixes`` here from the snapshot on ``current``.
+            filed_names = current.get('_filed_names_snap') or []
+            filed_cums = current.get('_filed_cum_snap') or []
+            star_base = current.get('_filed_star_base') or ''
+            new_forward = shifted.get('_polyline_forward_nm') or 0.0
+            new_downstream: List[str] = []
+            for i, name in enumerate(filed_names):
+                if i < len(filed_cums) and filed_cums[i] > new_forward + 0.1:
+                    if not new_downstream or new_downstream[-1].upper() != name.upper():
+                        new_downstream.append(name)
+            if star_base and new_downstream and new_downstream[-1].upper() == star_base.upper():
+                new_downstream = new_downstream[:-1]
+            shifted['_downstream_filed_fixes'] = new_downstream
+            shifted['_filed_names_snap'] = filed_names
+            shifted['_filed_cum_snap'] = filed_cums
+            shifted['_filed_star_base'] = star_base
             logger.debug(
                 f"{callsign}: {current['fix']} taken, shifting "
                 f"{self.WAYPOINT_COLLISION_BACKUP_NM} NM back to FRD off "
@@ -2293,22 +2321,27 @@ class ArtccEnrouteScenario(BaseScenario):
                     )
 
     def _resolve_spawn_proximity(self, spawn_delay_mode) -> None:
-        """Enforce distance-based spawn spacing on arrivals sharing a filed
-        route. Called after ``apply_spawn_delays`` so every aircraft's
+        """Enforce distance-based spawn spacing on arrivals sharing a STAR.
+        Called after ``apply_spawn_delays`` so every aircraft's
         ``spawn_delay`` (seconds) reflects its final staggering.
 
         Required effective separation between any two arrivals on the same
-        route is:
+        STAR into the same airport:
 
           * ``REQUIRED_NO_DELAY_NM`` (20) when no spawn delay is configured
-            — effective separation is purely physical.
+            — effective separation is purely physical (altitude separation
+            does NOT reduce this requirement).
           * ``REQUIRED_WITH_DELAY_NM`` (10) otherwise — the time offset
             between spawns closes the gap at the pair's average groundspeed.
 
         When two aircraft are too close the later-spawning one is shifted
         back along its polyline (reusing ``_shift_spawn_back_on_polyline``).
         If shifting pushes it past the airport's arrival-band max, that's
-        allowed — we just surface a note.
+        allowed — we just surface a note. After each shift we rebuild the
+        aircraft's navigation_path so it flies the filed fixes between its
+        new spawn point and the original nav-path head — otherwise vNAS
+        would receive the stale "jump straight to first STAR waypoint"
+        string frozen at creation time.
         """
         from models.spawn_delay_mode import SpawnDelayMode
         from utils.geo_utils import calculate_distance_nm
@@ -2316,21 +2349,58 @@ class ArtccEnrouteScenario(BaseScenario):
         REQUIRED_NO_DELAY_NM = 20.0
         REQUIRED_WITH_DELAY_NM = 10.0
         STEP_NM = 5.0
-        MAX_STEPS = 20
+        MAX_STEPS = 60  # up to ~300 NM of polyline available for shifting
 
         no_delay = (spawn_delay_mode == SpawnDelayMode.NONE)
         required = REQUIRED_NO_DELAY_NM if no_delay else REQUIRED_WITH_DELAY_NM
 
-        # Group by (arrival airport, filed route signature). Same-airport
-        # aircraft filed on different routes through the ARTCC rarely share
-        # spawn points, so the simple keying is fine.
+        def _rebuild_downstream_fixes(ctx: Dict, forward_nm: float) -> List[str]:
+            """Recompute the filed-route tokens past the shifted spawn,
+            mirroring ``_downstream_filed`` from _find_arrival_spawn_on_route."""
+            names = ctx.get('filed_names_snap') or []
+            cums = ctx.get('filed_cum_snap') or []
+            star_base = ctx.get('filed_star_base') or ''
+            out: List[str] = []
+            for i, name in enumerate(names):
+                if i < len(cums) and cums[i] > forward_nm + 0.1:
+                    if not out or out[-1].upper() != name.upper():
+                        out.append(name)
+            if star_base and out and out[-1].upper() == star_base.upper():
+                out = out[:-1]
+            return out
+
+        def _rebuild_nav_path(ac) -> None:
+            ctx = ac._spawn_ctx
+            fake_spawn = {
+                'fix': ac.fix,
+                'latitude': ac.latitude,
+                'longitude': ac.longitude,
+                'on_star': False,
+                'boundary_entry': False,
+                'starting_conditions_type': ac.starting_conditions_type,
+                '_downstream_filed_fixes': _rebuild_downstream_fixes(
+                    ctx, ctx.get('forward_nm') or 0.0
+                ),
+            }
+            ac.navigation_path = self._build_arrival_navigation_path(
+                ctx.get('arrival_airport', ''),
+                ctx.get('star_name') or '',
+                ctx.get('arrival_runway'),
+                fake_spawn,
+            )
+
+        # Group all arrival aircraft by (airport, STAR base name). The user's
+        # rule is "same arrival routing" — aircraft on the same STAR, even
+        # if filed via different airways, still need 20 NM in trail when no
+        # spawn delay is configured. Altitude separation doesn't exempt.
         groups: Dict[Tuple[str, str], List] = {}
         for ac in self.aircraft:
             ctx = getattr(ac, '_spawn_ctx', None)
             if not ctx or not ctx.get('polyline_coords'):
                 continue
-            key = (ctx.get('arrival_airport', ''),
-                   (ac.route or '').strip().upper())
+            star = (ctx.get('star_name') or ac.star or '').upper()
+            star_base = re.sub(r'\d+$', '', star)
+            key = (ctx.get('arrival_airport', ''), star_base)
             groups.setdefault(key, []).append(ac)
 
         for key, aircraft_list in groups.items():
@@ -2396,6 +2466,11 @@ class ArtccEnrouteScenario(BaseScenario):
                     ac.fix = new_spawn['fix']
                     ac.starting_conditions_type = new_spawn['starting_conditions_type']
                     ctx['forward_nm'] = new_spawn['_polyline_forward_nm']
+                    # Rebuild nav path so the aircraft still flies through
+                    # every filed fix between the new spawn point and the
+                    # STAR — otherwise vNAS sees the stale path that jumps
+                    # straight to the first STAR waypoint.
+                    _rebuild_nav_path(ac)
                     shifted += 1
 
                     # If we've passed the arrival band max, note it once.
@@ -2864,6 +2939,12 @@ class ArtccEnrouteScenario(BaseScenario):
             d['_anchor_lat'] = anchor_lat
             d['_anchor_lon'] = anchor_lon
             d['_downstream_filed_fixes'] = _downstream_filed(forward_nm)
+            # Snapshots needed to rebuild `_downstream_filed_fixes` after a
+            # post-generation proximity shift (the nav-path string is
+            # otherwise frozen at spawn-creation time).
+            d['_filed_names_snap'] = [n for n, _, _ in filed_coords]
+            d['_filed_cum_snap'] = list(filed_cum)
+            d['_filed_star_base'] = filed_star_base
             return d
 
         if in_band_named:
@@ -3283,47 +3364,20 @@ class ArtccEnrouteScenario(BaseScenario):
         m = re.match(r'^(\d{1,2})([LCR]?)$', cleaned)
         if not m or not m.group(2):
             return cleaned
-        # Normalize to the two-digit form CIFP uses (``7`` -> ``07``) so
-        # lookups against transition names match. ``cleaned`` keeps the
-        # user-entered form as the fallback return value.
+        # Normalize to the two-digit form CIFP / vNAS use (``7R`` -> ``07R``).
         base = m.group(1).zfill(2)
+        cleaned = base + m.group(2)
 
         cifp_parser = self.cifp_parsers.get(airport_icao)
         if not cifp_parser or not active_runways:
             return cleaned
 
-        # ARINC-424 "both parallels" transition: when the STAR publishes a
-        # single ``RW<base>B`` and no side-specific transition for this base,
-        # the user's specific runway (e.g. ``07R``) must be routed as
-        # ``STAR.<base>B`` because that's the only transition vNAS can
-        # resolve. Consult star_transitions, which captures every transition
-        # identifier seen — star_waypoints loses duplicates because its key
-        # is the waypoint name.
-        transitions = getattr(cifp_parser, 'star_transitions', {}).get(star_name, set()) or set()
-        has_both = any(re.match(rf'^RW{base}B$', t.upper()) for t in transitions)
-        has_side = any(re.match(rf'^RW{base}[LCR]$', t.upper()) for t in transitions)
-        if has_both and not has_side:
-            return f"{base}B"
-
-        # Multi-parallel merge: when both ``RW<base>L`` and ``RW<base>R`` are
-        # published AND both of those runways are active in the scenario,
-        # emit ``<base>B`` so vNAS treats either runway assignment as a
-        # match. Uses star_transitions (rather than walking star_waypoints,
-        # where shared waypoint names overwrite each other's transition).
-        side_transitions = {
-            t.upper()[2:] for t in transitions
-            if re.match(rf'^RW{base}[LCR]$', t.upper())
-        }
-        active_clean = {r.replace('RW', '').upper() for r in active_runways}
-
-        def _two_digit(r: str) -> str:
-            m2 = re.match(r'^(\d{1,2})([LCR]?)$', r)
-            return (m2.group(1).zfill(2) + m2.group(2)) if m2 else r
-
-        active_two = {_two_digit(r) for r in active_clean}
-        parallel_active = side_transitions & active_two
-        if len(parallel_active) >= 2:
-            return f"{base}B"
+        # Always emit the user-specified side (e.g. ``07R``) — vNAS pulls
+        # the STAR directly from CIFP and internally maps ARINC-424's
+        # ``RW<base>B`` ("both parallels") transition onto each side, so
+        # ``STAR.07R`` resolves even when CIFP only publishes ``RW07B``.
+        # The reverse syntax (``STAR.07B`` / ``STAR.7B``) is rejected by
+        # vNAS, so never emit it.
         return cleaned
 
     def _has_lat_long_format(self, route: str) -> bool:
